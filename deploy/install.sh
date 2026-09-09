@@ -48,9 +48,14 @@ fi
 
 # 4) forced command: скрипт root-only, sudo на одну команду, ключ прибит к ней ----
 install -m 755 -o root -g root "$HERE/deploy-interview.sh" /usr/local/bin/deploy-interview.sh
-printf '%s ALL=(root) NOPASSWD: /usr/local/bin/deploy-interview.sh\n' "$DEPLOY_USER" > /etc/sudoers.d/deploy-interview
-chmod 440 /etc/sudoers.d/deploy-interview
-visudo -cf /etc/sudoers.d/deploy-interview >/dev/null
+# sudoers: сначала во временный файл и visudo -cf, в /etc/sudoers.d — только валидный (битый файл
+# в sudoers.d ломает sudo всей машине ещё до того, как set -e остановит скрипт)
+SUDO_TMP=$(mktemp)
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/deploy-interview.sh\n' "$DEPLOY_USER" > "$SUDO_TMP"
+chmod 440 "$SUDO_TMP"
+visudo -cf "$SUDO_TMP" >/dev/null
+mv "$SUDO_TMP" /etc/sudoers.d/deploy-interview
+chown root:root /etc/sudoers.d/deploy-interview
 DEPLOY_HOME=$(getent passwd "$DEPLOY_USER" | cut -d: -f6)
 AK="$DEPLOY_HOME/.ssh/authorized_keys"
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$DEPLOY_HOME/.ssh"
@@ -77,9 +82,15 @@ install -m 644 "$HERE/interview.service" /etc/systemd/system/interview.service
 systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/interview.service 2>&1 | grep -v '^$' || true
 
-# 6) nginx ---------------------------------------------------------------------
-install -m 644 "$HERE/nginx-interview.conf" "/etc/nginx/sites-available/$DOMAIN"
-ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
+# 6) nginx — файл, в который certbot уже дописал 443/redirect, не перезаписывать: иначе повторный
+#    запуск тихо снимет HTTPS (nginx -t пройдёт, голый http-блок валиден) ---------------------
+NGX="/etc/nginx/sites-available/$DOMAIN"
+if [ -f "$NGX" ] && grep -qE 'managed by Certbot|listen 443 ssl' "$NGX"; then
+  echo "→ nginx: $NGX уже под certbot — не перезаписываю. Правки блока переносить руками из $HERE/nginx-interview.conf"
+else
+  install -m 644 "$HERE/nginx-interview.conf" "$NGX"
+fi
+ln -sf "$NGX" "/etc/nginx/sites-enabled/$DOMAIN"
 nginx -t
 systemctl reload nginx
 
