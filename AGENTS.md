@@ -18,7 +18,7 @@ frameworks 29, databases 22, python 5, platform 4) — точные числа �
 ./run.sh --build         # форс-пересборка фронта
 ```
 Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, venv) + `npm run dev` (из
-`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на сервер при merge в `main` → порт **8800**
+`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой при merge в `main` → https://interview.paveldiordits.site
 (см. `DEPLOY.md`); в фиче-ветках НЕ пушить в main.
 
 ## Карта репозитория
@@ -88,12 +88,12 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 ## Скиллы проекта (`.claude/skills/`)
 Каждый скилл = `SKILL.md` (+ при необходимости sibling-скрипт на stdlib). Вызывай через Skill-инструмент.
 
-| Скилл | Когда | Что делает |
-|---|---|---|
-| **interview-ideas** | «добавь/допиши/реализуй идею» | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр |
-| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк» | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py` |
-| **interview-balance** | «оцени покрытие/где пробелы» | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py` |
-| **interview-verify** | «проверь, что не сломалось» | import + pytest + build + smoke + рестарт. Скрипт `check_import.py` |
+| Скилл                  | Когда                                           | Что делает                                                                                                        |
+|------------------------|-------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| **interview-ideas**    | «добавь/допиши/реализуй идею»                   | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр |
+| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк» | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py`                             |
+| **interview-balance**  | «оцени покрытие/где пробелы»                    | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py`                                               |
+| **interview-verify**   | «проверь, что не сломалось»                     | import + pytest + build + smoke + рестарт. Скрипт `check_import.py`                                               |
 
 ## Учёт фич
 Каталог фич и бэклог ведутся в **GitHub Issues** репозитория (а не в файлах репо). Реализованные

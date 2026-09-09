@@ -20,7 +20,7 @@ nginx :80/:443 ─┬─ paveldiordits.site            статика           
                 ├─ lexis.paveldiordits.site      → 127.0.0.1:8765  lexis.service   /var/lib/lexis
                 └─ interview.paveldiordits.site  → 127.0.0.1:8770  interview.service  /var/lib/interview   ← новое
 
-GitHub Actions (push в main) ─ npm ci && npm run build ─ tar.gz ─ ssh deploy-interview@host < tar.gz
+GitHub Actions (push в main) ─ npm ci && npm run build ─ tar.gz ─ ssh deploy@host < tar.gz
                                                                       └─ forced command: /usr/local/bin/deploy-interview.sh
                                                                            распаковка → /opt/interview · venv sync · restart · health
 ```
@@ -61,12 +61,12 @@ node на сервере нет (и ставить его на 1 vCPU рядом
 
 **`.github/workflows/deploy.yml`** (переписывается):
 1. `actions/checkout`, `setup-node 20`, `npm ci && npm run build` (tsc + vite — типы проверяются тут).
-2. `tar czf` из `backend/` (без `.venv`, `__pycache__`, `*.db`), `content/`, `frontend/dist/`,
-   `deploy/` → `interview.tar.gz`.
+2. `tar czf` из `backend/` (без `.venv`, `__pycache__`, `*.db`), `content/`, `frontend/dist/` →
+   `interview.tar.gz` (`deploy/` не едет: юнит и скрипты ставит только `install.sh`).
 3. Ключ из `secrets.DEPLOY_INTERVIEW_SSH_KEY`, host-key **закреплён явно** в шаге (тот же
    `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1sEThhqUNxeSWgjUtOOuulxk6EMVNAizFdjoCAPlXY`, что у сайта),
    хост из `vars.DEPLOY_HOST` (уже есть в репозитории портфолио; здесь заводится своя переменная).
-4. `ssh deploy-interview@$HOST < interview.tar.gz` — forced command читает архив со stdin.
+4. `ssh deploy@$HOST < interview.tar.gz` — forced command читает архив со stdin.
 5. Внешняя проверка: `curl https://interview.paveldiordits.site/api/health` → 200, и `GET /api/graph`
    без cookie → 401 (аутентификация включена — именно то, чего не было на NL).
 `concurrency: deploy-production`, `cancel-in-progress: false`. `deploy-dev.yml` **удаляется** — dev-контур
@@ -81,22 +81,25 @@ node на сервере нет (и ставить его на 1 vCPU рядом
 3. venv: `python3 -m venv` при отсутствии, `pip install -q -r requirements.txt` от `interview`.
    Хеш `requirements.txt` кэшируется в `/opt/interview/.req.sha256` — pip запускается только при
    изменении (экономия минут на 1 vCPU).
-4. `install -m 644 deploy/interview.service /etc/systemd/system/` (юнит едет с кодом — как у lexis),
-   `daemon-reload`, `systemctl restart interview`.
+4. `systemctl enable interview` + `systemctl restart interview`. Юнит скрипт **не ставит** — только
+   `install.sh`: иначе архив от раннера мог бы подсунуть `User=root`.
 5. Health: до 15 с ждёт `curl -fsS http://127.0.0.1:8770/api/health`; при провале печатает
    `journalctl -u interview -n 40` и выходит 1 (раннер краснеет).
 Скрипт запускается от **root** через `sudo`: в `authorized_keys` деплой-пользователя ключ прибит к
-`command="sudo /usr/local/bin/deploy-interview.sh"`, а в `/etc/sudoers.d/deploy-interview` —
-`deploy-interview ALL=(root) NOPASSWD: /usr/local/bin/deploy-interview.sh`. Это единственное, что ключ
+`command="sudo -n /usr/local/bin/deploy-interview.sh"`, а в `/etc/sudoers.d/deploy-interview` —
+`deploy ALL=(root) NOPASSWD: /usr/local/bin/deploy-interview.sh`. Это единственное, что ключ
 умеет: `no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty`.
 
 ### 5. Разовый провижининг — `deploy/install.sh`
 Идемпотентный, запускается владельцем от root **один раз** (и повторно при правке nginx/юнита):
 ```
-ssh root@37.46.132.95 'bash -s' < deploy/install.sh
+tar czf - -C deploy . | ssh root@37.46.132.95 'rm -rf /root/interview-deploy && mkdir -p /root/interview-deploy \
+  && tar xzf - -C /root/interview-deploy && DEPLOY_PUBKEY="…" bash /root/interview-deploy/install.sh'
 ```
-- Пользователи: `interview` (сервис) и `deploy-interview` (только для CI, `nologin`-shell не
-  подходит — sshd нужен shell для forced command, ставится `/bin/sh`).
+(файлы `deploy/` едут вместе со скриптом — `bash -s` со stdin их не доставил бы).
+- Пользователи: `interview` (сервис) и существующий `deploy` (им же выкладывается сайт) — ключ interview
+  добавляется второй строкой в его `authorized_keys` со своим forced command; отдельный пользователь не
+  заводится, чтобы не упереться в `AllowUsers` sshd.
 - Каталоги `/opt/interview`, `/var/lib/interview` с владельцем `interview`; `python3-venv`, `rsync`.
 - `/etc/interview.env` (600, root): `INTERVIEW_OWNER_EMAIL`, `INTERVIEW_OWNER_PASSWORD` — берутся из
   переменных `OWNER_EMAIL`/`OWNER_PASSWORD` окружения запуска, иначе пароль генерируется и печатается.
