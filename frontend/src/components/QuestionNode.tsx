@@ -1,12 +1,13 @@
 import { type NodeProps } from "@xyflow/react";
 import { memo } from "react";
-import { hexA, levelColor, levelLabel, type PoolConfig, type QNode } from "../types";
+import { hexA, levelColor, levelLabel, lighten, type PoolConfig, type QNode } from "../types";
 import { useT } from "../i18n";
 
 export interface QuestionNodeData {
   node: QNode;
   pool: PoolConfig;
   color: string;
+  dark?: boolean;
   score?: number;
   current?: boolean;
   dimmed?: boolean;
@@ -18,9 +19,10 @@ export interface QuestionNodeData {
 // полный текст/код живёт в drawer. Теги показываем чипами.
 function QuestionNodeImpl({ data, selected }: NodeProps) {
   const t = useT();
-  const { node, pool, color, score, current, dimmed, hidden } = data as QuestionNodeData;
+  const { node, pool, color, dark, score, current, dimmed, hidden } = data as QuestionNodeData;
   const isTask = node.kind === "task";
   const heading = node.title || node.question;
+  const diffColor = levelColor(pool, node.difficulty);
 
   return (
     <div
@@ -44,7 +46,11 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
         <span
           className="qnode__diff"
           data-diff={node.difficulty}
-          style={{ background: hexA(levelColor(pool, node.difficulty), 0.15), color: levelColor(pool, node.difficulty) }}
+          style={
+            dark
+              ? { background: hexA(diffColor, 0.22), color: lighten(diffColor, 0.55) }
+              : { background: hexA(diffColor, 0.15), color: diffColor }
+          }
         >
           {levelLabel(pool, node.difficulty)}
         </span>

@@ -34,7 +34,9 @@ export function SessionsPage({ pools }: { pools: PoolConfig[] }) {
     const pool = poolOf(s.pool);
     const full = details[s.id];
     if (!pool || !full) return;
-    const nodes = (await api.graph(pool.id)).nodes;
+    // includeHidden — как в BoardPage (Ruling 8): завершённая сессия не должна терять из отчёта
+    // оценённую ноду, скрытую позже sync'ом или tombstone'ом удаления.
+    const nodes = (await api.graph(pool.id, { includeHidden: true })).nodes;
     const iv = ivs.find((i) => i.id === full.interviewer_id);
     downloadReport(full.candidate, nodes, scoresOf(full), pool, notesOf(full), { interviewer: iv?.name ?? null, position: null, seniority: null }, full);
   };

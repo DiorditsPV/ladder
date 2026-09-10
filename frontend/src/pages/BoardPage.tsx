@@ -51,6 +51,7 @@ import {
   levelColor,
   levelLabel,
   levelOrder,
+  lighten,
   type ImportErr,
   type PoolConfig,
   type QNode,
@@ -215,7 +216,7 @@ function buildNodes(
     const dimmed =
       (planIds != null && !planIds.has(n.id)) ||
       activeBlocks[n.block] === false ||
-      !activeDiffs[n.difficulty] ||
+      activeDiffs[n.difficulty] === false ||
       !activeKinds[n.kind] ||
       !tagOk ||
       !matchesQuery(n, query) ||
@@ -232,6 +233,7 @@ function buildNodes(
         node: n,
         pool,
         color: blockColor(pool, n.block),
+        dark,
         score: scores[n.id],
         current: n.id === currentId,
         dimmed,
@@ -488,7 +490,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     for (const n of graph) {
       const tagOk = !anyTag || n.tags.some((t) => activeTags[t]);
       const inPlan = planIds == null || planIds.has(n.id);
-      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         s.add(n.id);
       }
     }
@@ -518,17 +520,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     return rows;
   }, [placement, nodeMap, walkOrder]);
 
+  // Режим сессии (открыта по ?session=<id>, включая гостя по приглашению) грузит граф со
+  // скрытыми: иначе завершённая сессия теряет из отчёта/доски оценённую ноду, которую позже
+  // скрыл sync или tombstone (Ruling 8). Обычная доска — без скрытых, как раньше.
   const loadGraph = useCallback(
     () =>
       api
-        .graph(pool.id)
+        .graph(pool.id, { includeHidden: sessionFromUrl != null })
         .then((g) => {
           setGraph(g.nodes);
           setErrors(g.errors);
           setPlacement(swimlaneLayout(g.nodes, pool));
         })
         .catch((err) => setErrors([{ file: "API", error: String(err) }])),
-    [pool],
+    [pool, sessionFromUrl],
   );
 
   useEffect(() => {
@@ -831,7 +836,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     }
     for (const n of graph) {
       const tagOk = !anyTagActive || n.tags.some((t) => activeTags[t]);
-      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         total++;
         if (scores[n.id] != null) done++;
       }
@@ -1284,7 +1289,17 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                   <div className="hud">
                     <span
                       className="hud__diff"
-                      style={{ background: hexA(levelColor(pool, currentNode.difficulty), 0.15), color: levelColor(pool, currentNode.difficulty) }}
+                      style={
+                        theme === "dark"
+                          ? {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.22),
+                              color: lighten(levelColor(pool, currentNode.difficulty), 0.55),
+                            }
+                          : {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.15),
+                              color: levelColor(pool, currentNode.difficulty),
+                            }
+                      }
                     >
                       {levelLabel(pool, currentNode.difficulty)}
                     </span>

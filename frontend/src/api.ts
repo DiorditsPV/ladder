@@ -131,8 +131,12 @@ export const api = {
     fetch(`${BASE}/pools/${encodeURIComponent(id)}`, { method: "DELETE" }).then(
       json<{ deleted: string; nodes_removed: number; sessions_kept: number }>,
     ),
-  graph: (pool: string) =>
-    fetch(`${BASE}/graph?pool=${encodeURIComponent(pool)}`).then(json<GraphResponse>),
+  // includeHidden — доска сессии и отчёт: скрытые (sync/tombstone) ноды не должны пропадать
+  // из уже оценённой сессии; обычная доска и банк грузят граф без него.
+  graph: (pool: string, opts?: { includeHidden?: boolean }) =>
+    fetch(
+      `${BASE}/graph?pool=${encodeURIComponent(pool)}${opts?.includeHidden ? "&include_hidden=1" : ""}`,
+    ).then(json<GraphResponse>),
   // plan — набор вопросов сессии (см. SetupPage); без него сессия идёт по всей матрице.
   createSession: (pool: string, candidate: string, candidateId?: number, interviewerId?: number, plan?: PlanIn) =>
     fetch(`${BASE}/sessions`, {
