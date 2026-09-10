@@ -1,6 +1,4 @@
 Screenshots are produced by `frontend/shots.mjs` (`npm run shots`) against the English demo
-content in `demo/content-en`.
-
-**Out of date.** `shots.mjs` still drives the interview mode (sessions, scores, verdict) that was
-removed from the product, so it fails as is and the remaining images predate the removal. Rewrite
-it around the checklist before regenerating.
+content in `demo/content-en`, on a seeded checklist: about 60% of the track's cards carry a
+known / review / unknown status, picked deterministically from the card id so reruns give the
+same frames. See the header of `shots.mjs` for the two commands.
