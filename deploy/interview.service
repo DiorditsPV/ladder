@@ -1,0 +1,31 @@
+# /etc/systemd/system/interview.service — сервис «Интервью» (FastAPI + SQLite).
+# Ставится deploy/install.sh (от root) и только им: deploy-interview.sh юнит не трогает,
+# чтобы архив от раннера не мог подменить User=. Слепок с lexis.service на том же сервере.
+[Unit]
+Description=interview graph (FastAPI)
+After=network.target
+
+[Service]
+User=interview
+Group=interview
+WorkingDirectory=/opt/interview/backend
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=INTERVIEW_DB_PATH=/var/lib/interview/interview.db
+Environment=INTERVIEW_CONTENT_DIR=/opt/interview/content
+Environment=INTERVIEW_FRONTEND_DIR=/opt/interview/frontend/dist
+# owner-креды; без файла юнит не стартует — намеренно: с пустым окружением приложение
+# завело бы owner со случайным паролем в логе, и войти было бы нечем
+EnvironmentFile=/etc/interview.env
+# только localhost: наружу — через nginx; --proxy-headers, чтобы схема/IP брались из X-Forwarded-*
+ExecStart=/opt/interview/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8770 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+MemoryMax=400M
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/interview
+
+[Install]
+WantedBy=multi-user.target

@@ -72,7 +72,7 @@ docker compose up -d`; changing them on a running instance requires recreating t
 If `:8000` is taken (say `./run.sh` already runs there), use
 `INTERVIEW_PORT=8080 docker compose up -d`.
 
-The layout inside the container mirrors the server one from `deploy/bootstrap.sh`: code in `/app`,
+The layout inside the container mirrors the server one from `deploy/interview.service`: code in `/app`,
 content in `/app/content`, database in a named volume on `/data`. Rebuilding the image does not
 touch the data, and `content/` can stay read-only — the back end never writes there (uploads are
 parsed in a temp directory and stored in the database).
@@ -221,8 +221,9 @@ cd frontend && npm run shots     # in a second terminal
 
 ## Deploy
 
-Merging into `main` deploys to the server over SSH via GitHub Actions, port **8800**; `dev` deploys
-to port **8801**. Details and the one-time secret setup are in `DEPLOY.md`.
+Merging into `main` deploys to **https://interview.paveldiordits.site** via GitHub Actions: the front end is
+built on the runner and shipped as one tarball to a forced-command SSH key on the server. Details and the
+one-time server setup are in `DEPLOY.md`.
 
 See `REPORT.md` for the design notes behind the architecture, and `AGENTS.md` for the repository
 map and content conventions.
