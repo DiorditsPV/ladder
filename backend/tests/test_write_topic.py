@@ -54,6 +54,19 @@ def test_writes_normalized_files_and_pool_yaml(tmp_path):
     assert "ячеек тоньше 1: 0" in r.stdout
 
 
+def test_pool_tags_extend_vocabulary_and_check_mode(tmp_path):
+    spec = _spec([_card(1, tags=["elicitation"])])
+    r = _run(tmp_path, spec, "--per-cell", "0")
+    assert r.returncode == 1 and "pool.tags" in r.stderr
+    spec["pool"]["tags"] = ["elicitation"]
+    r = _run(tmp_path, spec, "--per-cell", "0", "--check")
+    assert r.returncode == 0 and not (tmp_path / "content").exists()  # --check ничего не пишет
+    assert "ответ" in r.stdout and "знаков" in r.stdout  # короткий ответ → предупреждение
+    r = _run(tmp_path, spec, "--per-cell", "0")
+    assert r.returncode == 0
+    assert yaml.safe_load((tmp_path / "content/kafka/pool.yaml").read_text(encoding="utf-8"))["tags"] == ["elicitation"]
+
+
 def test_thin_cells_exit_2(tmp_path):
     r = _run(tmp_path, _spec([_card(1)]), "--per-cell", "2")
     assert r.returncode == 2 and "ячеек тоньше 2: 4" in r.stdout
@@ -63,7 +76,7 @@ def test_rejects_bad_tag_level_prefix_and_subblock(tmp_path):
     for bad, msg in [
         (_card(1, tags=["kafka"]), "tags"),
         (_card(1, level="senior"), "difficulty"),
-        ({**_card(1), "id": "core-01"}, "префиксом"),
+        ({**_card(1), "id": "kafka-core-01"}, "<block>-NN"),  # блок в id не совпадает с block=ops
         (_card(1, "core", "concepts"), "subblock"),  # у core есть под-колонки — нужен subblock
     ]:
         r = _run(tmp_path, _spec([bad]), "--per-cell", "1")
