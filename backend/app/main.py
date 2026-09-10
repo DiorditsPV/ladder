@@ -1,4 +1,4 @@
-"""FastAPI-приложение сервиса интервью «граф вопросов».
+"""FastAPI-приложение Ladder: направления, доска вопросов и чек-лист разбора.
 
 Запуск:  uvicorn app.main:app --reload  (из каталога backend/)
 Конфиг через переменные окружения:
@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -20,30 +19,24 @@ from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .auth import (
     COOKIE_NAME,
-    check_session_scope,
     current_user,
-    guest_scope,
     hash_password,
     require_member,
     require_owner,
-    require_session_member,
     verify_password,
 )
-from .db import SESSION_MAX_AGE, Database, invite_state
-from .hub import SessionHub
+from .db import SESSION_MAX_AGE, Database
 from .importer import parse_file, validate_against_pool
 from .models import GraphResponse, Kind, Node
 from .pools import (
     DEFAULT_LEVELS,
     PoolCfg,
     PoolConfigError,
-    block_weights,
     blocks_to_json,
     default_pool_id,
     levels_to_json,
@@ -55,15 +48,14 @@ from .pools import (
     pool_from_row,
     slug_from_label,
 )
-from .sampler import build_interview, filter_nodes, matrix_order
-from .seed import seed_interviewer_if_empty, seed_owner_if_empty
+from .seed import seed_owner_if_empty
 from .sync import sync_pools
 from .tenancy import resolve_tenant
 
-log = logging.getLogger("interview")
+log = logging.getLogger("ladder")
 
 BASE_DIR = Path(__file__).resolve().parent.parent          # backend/
-PROJECT_DIR = BASE_DIR.parent                              # interview/
+PROJECT_DIR = BASE_DIR.parent                              # ladder/
 CONTENT_DIR = Path(os.environ.get("INTERVIEW_CONTENT_DIR", PROJECT_DIR / "content"))
 DB_PATH = Path(os.environ.get("INTERVIEW_DB_PATH", BASE_DIR / "interview.db"))
 FRONTEND_DIR = Path(os.environ.get("INTERVIEW_FRONTEND_DIR", PROJECT_DIR / "frontend" / "dist"))
@@ -86,7 +78,7 @@ def _resolve_owner_password() -> tuple[str, bool]:
 
 OWNER_PASSWORD, _OWNER_PASSWORD_GENERATED = _resolve_owner_password()
 
-app = FastAPI(title="Interview Graph", version="0.1.0")
+app = FastAPI(title="Ladder", version="0.1.0")
 
 # CORS для dev-режима Vite (localhost:5173). allow_credentials=True — фронт шлёт session-cookie
 # (credentials:'include'); со списком явных origin это валидно (с "*" — нет).
@@ -100,7 +92,6 @@ app.add_middleware(
 
 db = Database(DB_PATH)
 app.state.db = db  # auth-зависимости берут db отсюда (request.app.state.db)
-hub = SessionHub()
 
 # Пулы направлений: content/<pool>/pool.yaml — источник конфига и seed-нод (источник правды
 # в рантайме — БД, см. _pools: направления создаются/правятся/удаляются из UI). На старте —
@@ -114,9 +105,6 @@ log.info("content sync: created=%s updated=%s nodes=%d hidden=%d conflicts=%d er
          _sync["created"], _sync["updated"], _sync["nodes_upserted"], len(_sync["hidden"]), len(_sync["conflicts"]), len(_sync["errors"]))
 if _sync["errors"]:
     log.warning("content import errors: %s", _sync["errors"])
-# Сид интервьюера по умолчанию («Я») для тенанта default — у сессии всегда есть проводивший.
-if seed_interviewer_if_empty(db, resolve_tenant()):
-    log.info("seeded default interviewer")
 # Сид первого owner-аккаунта для тенанта default — иначе после включения auth некому войти.
 if seed_owner_if_empty(db, resolve_tenant(), OWNER_EMAIL, OWNER_PASSWORD):
     log.info("seeded owner account %s", OWNER_EMAIL)
@@ -142,77 +130,6 @@ class UserCreate(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=6)
     role: str = Field(default="member", pattern="^(owner|member|viewer)$")
-
-
-class PlanIn(BaseModel):
-    """План интервью: какие вопросы войдут в сессию.
-
-    manual — `nodeIds` в заданном порядке, либо (без nodeIds) все подходящие под фильтры в порядке
-    матрицы; auto — сэмплер по весам разделов: `count` вопросов из отфильтрованных.
-    """
-
-    mode: str = Field(pattern="^(manual|auto)$")
-    blocks: Optional[List[str]] = None
-    subblocks: Optional[Dict[str, List[str]]] = None
-    difficulties: Optional[List[str]] = None
-    count: int = Field(default=7, ge=1, le=200)
-    node_ids: Optional[List[str]] = Field(default=None, alias="nodeIds")
-    seed: Optional[int] = None
-    model_config = {"populate_by_name": True}
-
-
-class FinishIn(BaseModel):
-    """Итог сессии: решение и общий комментарий интервьюера."""
-
-    decision: str = Field(pattern="^(hire|no_hire|hold)$")
-    summary: str = ""
-
-
-class SessionCreate(BaseModel):
-    candidate: str = Field(min_length=1)
-    candidate_id: Optional[int] = Field(default=None, alias="candidateId")
-    interviewer_id: Optional[int] = Field(default=None, alias="interviewerId")
-    pool: Optional[str] = None  # id пула; None → пул по умолчанию (совместимость со старым фронтом)
-    plan: Optional[PlanIn] = None  # без плана — сессия по всей матрице (как раньше)
-    model_config = {"populate_by_name": True}
-
-
-class CandidateCreate(BaseModel):
-    name: str = Field(min_length=1)
-    position: Optional[str] = None
-    seniority: Optional[str] = None
-    contact: Optional[str] = None
-    note: Optional[str] = None
-
-
-class CandidateUpdate(BaseModel):
-    """Правка кандидата — только переданные поля (None = не менять)."""
-
-    name: Optional[str] = Field(default=None, min_length=1)
-    position: Optional[str] = None
-    seniority: Optional[str] = None
-    contact: Optional[str] = None
-    note: Optional[str] = None
-
-
-class InterviewerCreate(BaseModel):
-    name: str = Field(min_length=1)
-    email: Optional[str] = None
-    role: Optional[str] = None
-
-
-class ScoreIn(BaseModel):
-    node_id: str = Field(alias="nodeId")
-    score: int = Field(ge=1, le=5)
-    note: Optional[str] = None
-    model_config = {"populate_by_name": True}
-
-
-class InterviewRequest(BaseModel):
-    count: int = Field(default=20, ge=1, le=200)
-    difficulties: Optional[List[str]] = None
-    pool: Optional[str] = None
-    seed: Optional[int] = None
 
 
 class ImportFile(BaseModel):
@@ -301,9 +218,7 @@ def logout(request: Request, response: Response) -> dict:
 
 @app.get("/api/auth/me")
 def auth_me(request: Request, user: dict = Depends(current_user)) -> dict:
-    scope = guest_scope(request)
-    # guest: вошёл по ссылке-приглашению, доступ ограничен одной сессией (фронт показывает только её доску).
-    return {**_public_user(user), "guest": scope is not None, "scope_session_id": scope}
+    return _public_user(user)
 
 
 # ---------- users (управление пользователями — owner) ----------
@@ -348,14 +263,11 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
 
 
 def _pool_out(request: Request, p: PoolCfg, user: dict) -> dict:
-    """Форма направления для API: конфиг + счётчики вопросов и сессий + сводка чек-листа юзера."""
+    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа юзера."""
     tenant = resolve_tenant(request)
     return {
         **p.to_dict(),
-        "counts": {
-            "nodes": db.count_nodes(tenant, pool=p.id),
-            "sessions": db.count_sessions(tenant, p.id),
-        },
+        "counts": {"nodes": db.count_nodes(tenant, pool=p.id)},
         "progress": db.progress_summary(tenant, user["id"], p.id),
     }
 
@@ -364,9 +276,7 @@ def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> 
     """Ноды пула из БД (источник правды) как объекты Node для текущего тенанта.
 
     По умолчанию скрытые (sync — пропавшая из файлов seed-нода, или tombstone удалённой из UI)
-    не попадают ни на доску, ни в выборку интервью (sampler/планы зовут без include_hidden).
-    Доска в режиме сессии и отчёт зовут с include_hidden=True: завершённая сессия не должна
-    терять оценённые ноды из-за более позднего скрытия/tombstone.
+    на доску не попадают; include_hidden=True оставлен для служебных вызовов и тестов.
     """
     tenant = resolve_tenant(request)
     return [
@@ -467,13 +377,11 @@ def update_pool(
 
 @app.delete("/api/pools/{pool_id}")
 def delete_pool(pool_id: str, request: Request, _user: dict = Depends(require_member)) -> dict:
-    """Удалить направление: вопросы удаляются, сессии остаются в истории, id остаётся занятым."""
-    tenant = resolve_tenant(request)
-    kept = db.count_sessions(tenant, pool_id)
-    removed = db.delete_pool(tenant, pool_id)
+    """Удалить направление: вопросы удаляются, id остаётся занятым (tombstone)."""
+    removed = db.delete_pool(resolve_tenant(request), pool_id)
     if removed is None:
         raise HTTPException(status_code=404, detail=f"pool '{pool_id}' not found")
-    return {"deleted": pool_id, "nodes_removed": removed, "sessions_kept": kept}
+    return {"deleted": pool_id, "nodes_removed": removed}
 
 
 @app.post("/api/pools/sync")
@@ -490,7 +398,6 @@ def get_graph(
     _user: dict = Depends(current_user),
 ) -> GraphResponse:
     # Вопросы читаются из БД (а не с диска) — рантайм-правки переживают деплой.
-    # include_hidden — доска сессии и отчёт (см. _db_nodes); обычная доска и сэмплер без него.
     return GraphResponse(
         nodes=_db_nodes(request, _pool_or_404(request, pool), include_hidden=include_hidden), errors=[]
     )
@@ -648,274 +555,6 @@ def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = 
 @app.delete("/api/progress/{node_id}")
 def clear_progress(node_id: str, request: Request, user: dict = Depends(require_member)) -> dict:
     return {"cleared": db.clear_progress(resolve_tenant(request), user["id"], node_id)}
-
-
-@app.post("/api/interview")
-def make_interview(
-    req: InterviewRequest, request: Request, _user: dict = Depends(current_user)
-) -> dict:
-    pool = _pool_or_404(request, req.pool)
-    order = build_interview(
-        _db_nodes(request, pool),
-        count=req.count,
-        difficulties=req.difficulties,
-        block_weights=block_weights(pool),
-        seed=req.seed,
-    )
-    return {"order": order}
-
-
-# ---------- people (interviewers + candidates) ----------
-@app.get("/api/candidates")
-def list_candidates(request: Request, _user: dict = Depends(current_user)) -> list:
-    return db.list_candidates(resolve_tenant(request))
-
-
-@app.post("/api/candidates")
-def add_candidate(
-    body: CandidateCreate, request: Request, _user: dict = Depends(require_member)
-) -> dict:
-    return db.create_candidate(resolve_tenant(request), body.model_dump())
-
-
-@app.put("/api/candidates/{candidate_id}")
-def edit_candidate(
-    candidate_id: int, body: CandidateUpdate, request: Request,
-    _user: dict = Depends(require_member),
-) -> dict:
-    tenant = resolve_tenant(request)
-    updated = db.update_candidate(tenant, candidate_id, body.model_dump(exclude_none=True))
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"candidate '{candidate_id}' not found")
-    return updated
-
-
-@app.get("/api/interviewers")
-def list_interviewers(request: Request, _user: dict = Depends(current_user)) -> list:
-    return db.list_interviewers(resolve_tenant(request))
-
-
-@app.post("/api/interviewers")
-def add_interviewer(
-    body: InterviewerCreate, request: Request, _user: dict = Depends(require_member)
-) -> dict:
-    return db.create_interviewer(resolve_tenant(request), body.model_dump())
-
-
-# ---------- sessions ----------
-@app.post("/api/sessions")
-def create_session(
-    body: SessionCreate, request: Request, _user: dict = Depends(require_member)
-) -> dict:
-    tenant = resolve_tenant(request)
-    # Если передан candidate_id — денормализуем имя в sessions.candidate (фиксация имени
-    # на момент интервью + быстрый показ без джойна). Иначе используем свободный текст.
-    candidate_name = body.candidate
-    if body.candidate_id is not None:
-        cand = db.get_candidate(tenant, body.candidate_id)
-        if cand is None:
-            raise HTTPException(status_code=404, detail=f"candidate '{body.candidate_id}' not found")
-        candidate_name = cand["name"]
-    pool = _pool_or_404(request, body.pool)
-    interviewer_id = body.interviewer_id
-    if interviewer_id is None:
-        # Интервьюер из UI больше не выбирается (старт сессии живёт на главной): сессии всё равно
-        # нужен проводивший для отчёта и страницы сессий — берём первого интервьюера тенанта (сид «Я»).
-        ivs = db.list_interviewers(tenant)
-        interviewer_id = ivs[0]["id"] if ivs else None
-    plan = _build_plan(request, pool, body.plan) if body.plan else None
-    return db.create_session(
-        candidate_name,
-        tenant_id=tenant,
-        candidate_id=body.candidate_id,
-        interviewer_id=interviewer_id,
-        pool=pool.id,
-        plan=plan,
-    )
-
-
-def _build_plan(request: Request, pool: PoolCfg, p: PlanIn) -> dict:
-    """Собрать `order` плана из условий (см. PlanIn). Пустой набор или чужие id → 422.
-
-    В плане храним и условия, и итоговый порядок: доска ведёт по `order`, отчёт и повтор
-    интервью опираются на условия.
-    """
-    nodes = _db_nodes(request, pool)
-    if p.mode == "manual" and p.node_ids:
-        known = {n.id for n in nodes}
-        unknown = [i for i in p.node_ids if i not in known]
-        if unknown:
-            raise HTTPException(status_code=422, detail=f"unknown node ids: {', '.join(unknown)}")
-        order = list(dict.fromkeys(p.node_ids))  # порядок как передали, без дублей
-    else:
-        picked = filter_nodes(nodes, blocks=p.blocks, subblocks=p.subblocks, difficulties=p.difficulties)
-        if p.mode == "auto":
-            order = build_interview(picked, count=p.count, block_weights=block_weights(pool), seed=p.seed)
-        else:
-            order = matrix_order(
-                picked,
-                block_order=[b.id for b in pool.blocks],
-                sub_order={b.id: [s.id for s in b.subblocks] for b in pool.blocks},
-                level_order=[l.id for l in pool.levels],
-            )
-    if not order:
-        raise HTTPException(status_code=422, detail="no questions match the plan")
-    return {
-        "mode": p.mode,
-        "blocks": p.blocks,
-        "subblocks": p.subblocks,
-        "difficulties": p.difficulties,
-        "count": p.count if p.mode == "auto" else len(order),
-        "order": order,
-    }
-
-
-@app.get("/api/sessions")
-def list_sessions(
-    request: Request, pool: Optional[str] = None, _user: dict = Depends(current_user)
-) -> list:
-    tenant = resolve_tenant(request)
-    rows = db.list_sessions(tenant, pool=_pool_or_404(request, pool).id if pool else None)
-    scope = guest_scope(request)
-    return rows if scope is None else [s for s in rows if s["id"] == scope]
-
-
-@app.get("/api/sessions/{session_id}")
-def get_session(session_id: int, request: Request, _user: dict = Depends(current_user)) -> dict:
-    check_session_scope(request, session_id)
-    session = db.get_session(session_id, resolve_tenant(request))
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    return session
-
-
-@app.post("/api/sessions/{session_id}/score")
-async def set_score(
-    session_id: int, body: ScoreIn, request: Request, _user: dict = Depends(require_session_member)
-) -> dict:
-    check_session_scope(request, session_id)
-    tenant = resolve_tenant(request)
-    if db.get_session(session_id, tenant) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    session = db.set_score(session_id, body.node_id, body.score, body.note, tenant_id=tenant)
-    hub.publish(session_id, session)
-    return session
-
-
-class InviteIn(BaseModel):
-    role: str = Field(default="viewer", pattern="^(viewer|member)$")
-    expires_hours: int = Field(default=24, ge=1, le=168)  # срок жизни ссылки: от часа до недели
-
-
-@app.post("/api/sessions/{session_id}/invite")
-def invite_to_session(
-    session_id: int, body: InviteIn, request: Request, user: dict = Depends(require_member)
-) -> dict:
-    """Ссылка для коллеги: гость входит по #/join/<token> без аккаунта и видит только эту сессию.
-
-    member — может оценивать и подводить итог, viewer — только смотреть. Ссылка многоразовая
-    до истечения срока (expires_hours, по умолчанию сутки) или отзыва.
-    """
-    from datetime import datetime, timedelta, timezone
-
-    tenant = resolve_tenant(request)
-    if db.get_session(session_id, tenant) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=body.expires_hours)).isoformat(timespec="seconds")
-    token = db.create_invite(tenant, session_id, body.role, user.get("id"), expires_at)
-    return {"token": token, "role": body.role, "session_id": session_id, "url": f"#/join/{token}", "expires_at": expires_at}
-
-
-@app.get("/api/sessions/{session_id}/invites")
-def list_invites(session_id: int, request: Request, _user: dict = Depends(require_member)) -> list:
-    """Приглашения сессии с состоянием (active | expired | revoked) — для отзыва из UI."""
-    tenant = resolve_tenant(request)
-    if db.get_session(session_id, tenant) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    return db.list_invites(tenant, session_id)
-
-
-@app.delete("/api/sessions/{session_id}/invites/{token}")
-def revoke_invite(
-    session_id: int, token: str, request: Request, _user: dict = Depends(require_member)
-) -> dict:
-    """Отозвать приглашение: ссылка перестаёт работать, вошедшие по ней гости выкидываются."""
-    if not db.revoke_invite(resolve_tenant(request), session_id, token):
-        raise HTTPException(status_code=404, detail="invite not found")
-    return {"revoked": token}
-
-
-@app.post("/api/join/{token}")
-def join_by_invite(token: str, response: Response) -> dict:
-    """Гостевой вход по приглашению: cookie auth-сессии, ограниченной сессией интервью.
-
-    404 — нет такой ссылки; 410 — отозвана или истекла.
-    """
-    invite = db.get_invite(token)
-    if invite is None or db.get_session(invite["session_id"], invite["tenant_id"]) is None:
-        raise HTTPException(status_code=404, detail="invite not found")
-    if invite_state(invite) != "active":
-        raise HTTPException(status_code=410, detail=f"invite {invite_state(invite)}")
-    cookie = db.create_guest_auth_session(invite)
-    response.set_cookie(COOKIE_NAME, cookie, httponly=True, samesite="lax", path="/", max_age=SESSION_MAX_AGE)
-    session = db.get_session(invite["session_id"], invite["tenant_id"])
-    return {"session_id": invite["session_id"], "pool": session["pool"], "role": invite["role"]}
-
-
-@app.post("/api/sessions/{session_id}/finish")
-async def finish_session(
-    session_id: int, body: FinishIn, request: Request, _user: dict = Depends(require_session_member)
-) -> dict:
-    """Завершить интервью: статус finished, решение и комментарий. Повторный вызов правит итог.
-
-    Публикуется в SSE-поток сессии — второй интервьюер видит итог без перезагрузки.
-    """
-    check_session_scope(request, session_id)
-    tenant = resolve_tenant(request)
-    session = db.finish_session(session_id, tenant, body.decision, body.summary.strip())
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    hub.publish(session_id, session)
-    return session
-
-
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-@app.get("/api/sessions/{session_id}/events")
-async def session_events(
-    session_id: int, request: Request, _user: dict = Depends(current_user)
-) -> StreamingResponse:
-    """SSE-поток: снимок сессии при подключении + обновления после каждой оценки.
-
-    Позволяет интервьюеру и HR одновременно видеть изменения по одному кандидату.
-    """
-    check_session_scope(request, session_id)
-    session = db.get_session(session_id, resolve_tenant(request))
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    queue = hub.subscribe(session_id)
-
-    async def gen():
-        try:
-            yield _sse("snapshot", session)
-            while True:
-                try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=15)
-                    yield _sse("update", payload)
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-                if await request.is_disconnected():
-                    break
-        finally:
-            hub.unsubscribe(session_id, queue)
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @app.get("/api/health")

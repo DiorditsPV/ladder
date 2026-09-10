@@ -1,6 +1,6 @@
 """Тесты чек-листа разбора (progress): DAL напрямую + API /api/progress.
 
-Статус карточки — per-user (не per-сессия интервью, как scores). DAL-тесты дёргают
+Статус карточки — per-user (у каждого свой чек-лист по направлению). DAL-тесты дёргают
 app.main.db напрямую (как test_nodes.py::test_hidden_node_excluded_when_requested),
 API-тесты — через TestClient, залогинившись owner'ом (паттерн _client() из test_nodes.py).
 Каждый тест чистит за собой созданные ноды/статусы, поэтому не зависит от порядка
