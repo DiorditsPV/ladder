@@ -5,8 +5,8 @@ id: system-analyst-modeling-03
 kind: question
 subblock: process
 tags:
-- orchestration
-- domain
+- process
+- stakeholders
 title: Модели AS-IS и TO-BE
 topic: as-is-to-be
 weight: 1

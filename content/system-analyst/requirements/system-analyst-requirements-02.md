@@ -5,8 +5,8 @@ id: system-analyst-requirements-02
 kind: question
 subblock: analysis
 tags:
+- requirements
 - quality
-- architecture
 title: Функциональные и нефункциональные требования
 topic: fr-nfr
 weight: 1

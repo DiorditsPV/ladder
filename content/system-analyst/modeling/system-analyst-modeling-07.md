@@ -5,7 +5,7 @@ id: system-analyst-modeling-07
 kind: question
 subblock: process
 tags:
-- orchestration
+- process
 - architecture
 title: Границы процесса и декомпозиция
 topic: decomposition

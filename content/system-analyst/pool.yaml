@@ -8,7 +8,7 @@ blocks:
 - id: requirements
   label: Требования
   color: '#2563eb'
-  weight: 25
+  weight: 27
   subblocks:
   - id: elicitation
     label: Сбор
@@ -28,7 +28,7 @@ blocks:
 - id: data
   label: Данные
   color: '#16a34a'
-  weight: 25
+  weight: 23
   subblocks:
   - id: sql
     label: SQL
@@ -52,3 +52,8 @@ levels:
   label: Проектирование
 - id: expert
   label: Экспертиза
+tags:
+- requirements
+- process
+- contracts
+- stakeholders

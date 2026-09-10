@@ -5,7 +5,7 @@ id: system-analyst-modeling-09
 kind: question
 subblock: process
 tags:
-- orchestration
+- process
 - quality
 title: Когда моделирование избыточно
 topic: modeling-limits

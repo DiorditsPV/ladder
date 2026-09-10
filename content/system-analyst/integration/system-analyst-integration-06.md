@@ -5,6 +5,7 @@ id: system-analyst-integration-06
 kind: question
 subblock: api
 tags:
+- contracts
 - consistency
 - distributed
 title: Идемпотентность и повторные запросы

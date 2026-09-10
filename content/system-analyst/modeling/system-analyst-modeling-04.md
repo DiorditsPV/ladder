@@ -5,7 +5,7 @@ id: system-analyst-modeling-04
 kind: question
 subblock: process
 tags:
-- orchestration
+- process
 - consistency
 title: Шлюзы BPMN и типичные ошибки ветвления
 topic: gateways

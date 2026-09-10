@@ -5,8 +5,9 @@ id: system-analyst-requirements-05
 kind: question
 subblock: analysis
 tags:
-- domain
-- optimization
+- requirements
+- stakeholders
+- process
 title: 'Приоритизация бэклога: MoSCoW и WSJF'
 topic: prioritization
 weight: 1

@@ -6,7 +6,7 @@ kind: question
 subblock: uml
 tags:
 - quality
-- architecture
+- process
 title: Поддержание моделей в актуальном состоянии
 topic: model-drift
 weight: 1

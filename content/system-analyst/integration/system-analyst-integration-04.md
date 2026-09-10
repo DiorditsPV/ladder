@@ -5,8 +5,8 @@ id: system-analyst-integration-04
 kind: question
 subblock: api
 tags:
+- contracts
 - quality
-- architecture
 title: Формат и коды ошибок API
 topic: errors
 weight: 1

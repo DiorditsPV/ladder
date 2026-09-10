@@ -5,8 +5,8 @@ id: system-analyst-requirements-01
 kind: question
 subblock: elicitation
 tags:
-- domain
-- quality
+- requirements
+- stakeholders
 title: Источники и методы выявления требований
 topic: elicitation-methods
 weight: 1

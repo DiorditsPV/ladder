@@ -5,8 +5,8 @@ id: system-analyst-modeling-01
 kind: question
 subblock: process
 tags:
+- process
 - orchestration
-- domain
 title: Базовые элементы нотации BPMN
 topic: bpmn-basics
 weight: 1

@@ -5,9 +5,10 @@ id: system-analyst-requirements-07
 kind: question
 subblock: analysis
 tags:
+- requirements
 - quality
-- architecture
-title: Трассируемость требований
+- process
+title: Трассируемость требований в продуктовой команде
 topic: traceability
 weight: 1
 ---

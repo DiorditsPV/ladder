@@ -5,8 +5,8 @@ id: system-analyst-requirements-09
 kind: question
 subblock: elicitation
 tags:
-- domain
-- quality
+- stakeholders
+- requirements
 title: Конфликт требований двух стейкхолдеров
 topic: conflict
 weight: 1

@@ -5,7 +5,7 @@ id: system-analyst-integration-07
 kind: question
 subblock: api
 tags:
-- architecture
+- contracts
 - deployment
 title: Версионирование и совместимость API
 topic: versioning

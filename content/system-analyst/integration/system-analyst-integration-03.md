@@ -5,7 +5,7 @@ id: system-analyst-integration-03
 kind: question
 subblock: api
 tags:
-- architecture
+- contracts
 - quality
 title: Описание контракта в OpenAPI
 topic: openapi

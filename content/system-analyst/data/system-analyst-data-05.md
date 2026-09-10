@@ -6,7 +6,7 @@ kind: question
 subblock: data-model
 tags:
 - data-modeling
-title: Связь многие-ко-многим
+title: Реализация связи многие-ко-многим
 topic: many-to-many
 weight: 1
 ---

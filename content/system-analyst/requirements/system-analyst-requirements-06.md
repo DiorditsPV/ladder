@@ -5,6 +5,7 @@ id: system-analyst-requirements-06
 kind: question
 subblock: documentation
 tags:
+- requirements
 - quality
 title: Критерии приёмки в формате Given–When–Then
 topic: acceptance-criteria

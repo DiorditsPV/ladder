@@ -5,7 +5,7 @@ id: system-analyst-requirements-08
 kind: question
 subblock: documentation
 tags:
-- architecture
+- requirements
 - quality
 title: Структура спецификации на фичу
 topic: spec-structure

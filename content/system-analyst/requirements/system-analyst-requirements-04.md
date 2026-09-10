@@ -5,8 +5,8 @@ id: system-analyst-requirements-04
 kind: question
 subblock: elicitation
 tags:
-- domain
-- quality
+- requirements
+- stakeholders
 title: Интервью со стейкхолдером
 topic: interview
 weight: 1

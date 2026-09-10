@@ -5,8 +5,8 @@ id: system-analyst-requirements-03
 kind: question
 subblock: documentation
 tags:
+- requirements
 - quality
-- domain
 title: User story и критерии приёмки
 topic: user-story
 weight: 1

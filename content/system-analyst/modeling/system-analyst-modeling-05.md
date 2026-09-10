@@ -5,8 +5,8 @@ id: system-analyst-modeling-05
 kind: question
 subblock: uml
 tags:
+- contracts
 - architecture
-- distributed
 title: Диаграмма последовательности для интеграции
 topic: sequence
 weight: 1

@@ -5,8 +5,9 @@ id: system-analyst-requirements-10
 kind: question
 subblock: analysis
 tags:
-- quality
-- domain
+- requirements
+- process
+- stakeholders
 title: Управление изменениями требований
 topic: change-management
 weight: 1

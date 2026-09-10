@@ -6,7 +6,7 @@ kind: question
 subblock: uml
 tags:
 - architecture
-- domain
+- process
 title: Какие UML-диаграммы нужны аналитику
 topic: uml-kinds
 weight: 1

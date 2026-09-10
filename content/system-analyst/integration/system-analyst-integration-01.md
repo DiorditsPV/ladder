@@ -5,6 +5,7 @@ id: system-analyst-integration-01
 kind: question
 subblock: api
 tags:
+- contracts
 - architecture
 title: Ресурсы, методы и коды ответов REST
 topic: rest-basics
