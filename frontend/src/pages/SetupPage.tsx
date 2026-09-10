@@ -106,9 +106,8 @@ export function SetupPage({ pool, initial }: { pool: PoolConfig; initial: SetupI
         count: mode === "auto" ? count : undefined,
       };
       const s = await api.createSession(pool.id, candName || "—", candidateId ?? undefined, undefined, plan);
-      // Именованная сессия персистит в БД — локальный черновик оценок больше не нужен;
-      // таймер интервью стартует здесь, доска читает timerStart:<pool>.
-      localStorage.removeItem(`draftScores:${pool.id}`);
+      // Ruling C3: черновиков оценок вне сессии больше нет — только таймер интервью
+      // стартует здесь, доска читает timerStart:<pool>.
       localStorage.setItem(`timerStart:${pool.id}`, String(Date.now()));
       navigate(href.board(pool.id, s.id));
     } catch {

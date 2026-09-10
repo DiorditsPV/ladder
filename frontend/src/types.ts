@@ -52,7 +52,11 @@ export interface PoolConfig {
   blocks: BlockCfg[];
   levels: LevelCfg[];
   counts?: { nodes: number; sessions: number };
+  progress?: { known: number; review: number; unknown: number; total: number };
 }
+
+// Статус чек-листа разбора (вне сессии, per-user): «знаю» / «повторить» / «не знаю».
+export type Progress = "known" | "review" | "unknown";
 
 const FALLBACK_COLOR = "#64748b";
 

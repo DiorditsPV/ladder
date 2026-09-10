@@ -278,6 +278,26 @@ button:disabled:hover { background: var(--surface); }
 .qnode__tags { display: flex; flex-wrap: wrap; gap: 3px; }
 .tagchip { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); padding: 1px 5px; border-radius: 4px; }
 
+/* ---- study-progress: точка статуса чек-листа разбора (вне сессии), слева от заголовка ---- */
+.qnode__status {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle; background: var(--border-strong);
+}
+.qnode__status[data-status="known"] { background: #16a34a; }
+.qnode__status[data-status="review"] { background: #d97706; }
+.qnode__status[data-status="unknown"] { background: #dc2626; }
+
+/* ---- drawer: три кнопки статуса вместо блока оценки (вне сессии) ---- */
+.statusbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.statusbtn {
+  flex: 1 1 auto; font-size: 12px; padding: 6px 10px; border: 1px solid var(--border-strong);
+  border-radius: 6px; background: var(--surface); color: var(--text); white-space: nowrap;
+}
+.statusbtn:hover { background: var(--hover); }
+.statusbtn--known.statusbtn--on { background: #16a34a; border-color: #16a34a; color: #fff; }
+.statusbtn--review.statusbtn--on { background: #d97706; border-color: #d97706; color: #fff; }
+.statusbtn--unknown.statusbtn--on { background: #dc2626; border-color: #dc2626; color: #fff; }
+
 /* ---- drawer ---- */
 .drawer {
   flex: 0 0 460px; width: 460px; max-width: 92vw; height: 100%;
@@ -364,10 +384,12 @@ button:disabled:hover { background: var(--surface); }
 .guides__h { position: absolute; left: 0; height: 0; border-top: 2.5px solid var(--border-strong); opacity: .9; }
 .guides__v { position: absolute; top: 0; width: 0; border-left: 2.5px solid var(--border-strong); opacity: .8; }
 .bands__label {
-  position: absolute; display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; letter-spacing: .12em; writing-mode: vertical-rl;
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; font-size: 12px; font-weight: 700; letter-spacing: .12em; writing-mode: vertical-rl;
   transform: rotate(180deg); border-radius: 8px;
 }
+/* ---- study-progress: счётчик разобранных/оценённых по ряду (уровню), под подписью ---- */
+.bands__count { font-size: 12px; font-weight: 600; opacity: .75; }
 
 /* ---- кнопки-состояния ---- */
 .btn--on { background: #4338ca; color: #fff; border-color: #4338ca; }
@@ -731,6 +753,11 @@ a.iconbtn { text-decoration: none; display: inline-block; }
 .poolcard__meta { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 13px; color: var(--text); }
 .poolcard__stat { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .poolcard__stat svg { color: var(--accent); flex: 0 0 auto; }
+/* study-progress: доля «знаю» карточек направления — тонкая полоска под статистикой. */
+.poolcard__progress { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.poolcard__progress-track { width: 100%; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.poolcard__progress-fill { height: 100%; background: #16a34a; border-radius: 999px; transition: width 0.25s ease; }
+.poolcard__progress-label { font-size: 11px; color: var(--text-muted); }
 .poolcard__actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
 .poolcard .poolcard__start { display: inline-flex; align-items: center; gap: 8px; }
 .poolcard__open {
