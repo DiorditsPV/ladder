@@ -19,8 +19,8 @@ frameworks 29, databases 22, python 5, platform 4) — точные числа �
 ./run.sh --build         # форс-пересборка фронта
 ```
 Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, venv) + `npm run dev` (из
-`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой при merge в `main` → https://interview.paveldiordits.site
-(см. `DEPLOY.md`); в фиче-ветках НЕ пушить в main.
+`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на https://interview.paveldiordits.site — только ручной запуск `Deploy`
+(см. `DEPLOY.md`); merge в `main` ничего не выкладывает; фичи идут через `dev`.
 
 ## Карта репозитория
 - `backend/app/` — `models.py` (pydantic `Node`, `extra="forbid"`), `importer.py` (.md+.json через

@@ -61,7 +61,7 @@ npm run smoke                    # node smoke.mjs, playwright headless
 
 ## Деплой (в автономном цикле НЕ выполняется)
 
-GitHub Actions: push/merge в `main` → prod (https://interview.paveldiordits.site, `deploy.yml`, см. `DEPLOY.md`); dev-контура на сервере нет — проверка перед merge локально. CI (`ci.yml`) — на PR в dev/main и push в `feature/**`.
+GitHub Actions: `Deploy` — только ручной запуск (`workflow_dispatch`) на https://interview.paveldiordits.site, см. `DEPLOY.md`; merge в `main` ничего не выкладывает; dev-контура на сервере нет — проверка перед merge локально. CI (`ci.yml`) — на PR в dev/main и push в `feature/**`.
 
 ## STOP-условия (любое → остановка)
 
