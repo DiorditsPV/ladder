@@ -78,8 +78,8 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - **Новый тип ноды на канве** = регистрация в `nodeTypes` (BoardPage.tsx).
 - **Теги — только из ~17 сквозных концептов** (architecture, orchestration, optimization, …),
   1–3 на ноду, без тех-имён (технология видна по колонке). Полный список — в `AGENTS.md`.
-- В фиче-ветках **не пушить в `main`**: merge в `main` триггерит автодеплой на сервер (порт 8800,
-  см. `DEPLOY.md`).
+- В фиче-ветках **не пушить в `main`**: merge в `main` триггерит автодеплой на
+  interview.paveldiordits.site (см. `DEPLOY.md`).
 - **Новый пул** = каталог `content/<id>/` с `pool.yaml` (id = имя каталога); id нод уникальны в пределах
   тенанта — используйте префикс пула.
 
