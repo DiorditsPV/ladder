@@ -10,9 +10,6 @@
   --border: #e5e7eb;
   --border-strong: #d1d5db;
   --hover: #f3f4f6;
-  --scored-bg: #f0fdf4;
-  --star-empty: #d1d5db;
-  --scored-border: #86efac;
   --tag-bg: #eef2ff;
   --tag-fg: #4338ca;
   --code-inline-bg: #f3f4f6;
@@ -35,9 +32,6 @@
   --border: #66788f;
   --border-strong: #7e90a7;
   --hover: #43587a;
-  --scored-bg: rgba(34, 197, 94, 0.2);
-  --star-empty: #66788f;
-  --scored-border: rgba(74, 222, 128, 0.55);
   --tag-bg: rgba(129, 140, 248, 0.24);
   --tag-fg: #cdd6ff;
   --code-inline-bg: #243348;
@@ -76,7 +70,7 @@ body {
 .topbar__back:hover { color: var(--text); }
 .topbar__count { color: var(--text-faint); font-size: 13px; white-space: nowrap; }
 
-/* Кнопки toolbar'а одного роста (button и a); primary — только «Начать интервью». */
+/* Кнопки toolbar'а одного роста (button и a). */
 .tbbtn {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; line-height: 1.2;
   font-weight: 500; border: 1px solid var(--border-strong); border-radius: 6px;
@@ -108,12 +102,6 @@ body {
 .tbmenu__item:disabled:hover { background: transparent; }
 .tbmenu__item svg { color: var(--text-muted); flex: 0 0 auto; }
 
-/* ряд сессии — тише: отделён линией; выход и «Завершить» прижаты вправо */
-.topbar__row--session { padding-top: 6px; border-top: 1px solid var(--border); }
-.session { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; }
-.session__active { font-size: 13px; color: var(--text); white-space: nowrap; }
-.session__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-
 /* ---- страницы кроме доски: тонкая полоса «← Меню · заголовок» + содержимое ---- */
 .page { display: flex; flex-direction: column; min-height: 100vh; background: var(--bg); }
 .pageshell {
@@ -128,24 +116,6 @@ body {
 .pageshell__actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .page__body { flex: 1; padding: 20px 16px; max-width: 1280px; width: 100%; margin: 0 auto; box-sizing: border-box; }
 
-.progress { display: flex; align-items: center; gap: 8px; }
-.progress__track {
-  width: 120px; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden;
-}
-.progress__fill {
-  height: 100%; background: #2563eb; border-radius: 999px; transition: width 0.25s ease;
-}
-.progress__label {
-  color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.livedot {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; font-weight: 700; letter-spacing: .04em;
-  color: var(--text-faint);
-}
-.livedot--on { color: #16a34a; }
-.livedot--on { animation: livepulse 1.6s ease-in-out infinite; }
-@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 button {
   padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--surface); color: var(--text); cursor: pointer; font-size: 14px;
@@ -205,29 +175,6 @@ button:disabled:hover { background: var(--surface); }
 .canvas { flex: 1; min-width: 0; }
 .loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); }
 
-.interview {
-  width: 260px; background: var(--surface); border-right: 1px solid var(--border);
-  overflow-y: auto; padding: 8px 10px;
-}
-.interview h4 { margin: 6px 4px; }
-.interview ol { margin: 0; padding: 0 0 0 4px; list-style: none; }
-.interview li { margin: 4px 0; }
-.interview h4 { font-size: 13px; color: var(--text-muted); }
-.iv-block {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
-  margin: 10px 4px 4px;
-}
-.ivbtn {
-  display: block; width: 100%; text-align: left; border-left: 4px solid; font-size: 12px;
-  padding: 6px 8px; line-height: 1.3; margin: 3px 0; border-radius: 4px;
-  background: var(--surface); color: var(--text); cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.ivbtn:hover { background: var(--hover); }
-.ivbtn--current { box-shadow: 0 0 0 2px #2563eb; font-weight: 600; }
-.ivbtn--scored { color: var(--text-muted); }
-.ivbtn__check { color: #16a34a; font-weight: 700; margin-right: 4px; }
-
 /* ---- custom node ---- */
 .qnode {
   width: 280px; min-height: 110px; background: var(--surface); color: var(--text);
@@ -236,7 +183,6 @@ button:disabled:hover { background: var(--surface); }
   display: flex; flex-direction: column; gap: 6px; font-size: 13px;
 }
 .qnode--selected { box-shadow: 0 0 0 3px #93c5fd; }
-.qnode--scored { background: var(--scored-bg); border-color: var(--scored-border); }
 .qnode--current {
   opacity: 1 !important;
   transform: scale(1.02);
@@ -263,22 +209,10 @@ button:disabled:hover { background: var(--surface); }
   font-size: 11px; color: #fff; padding: 1px 6px; border-radius: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; opacity: .9;
 }
-/* Балл на карточке: цифра в бейдже читается на любом масштабе доски. */
-.qnode__grade {
-  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
-  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
-}
-.qnode__grade[data-band="high"] { background: #dcfce7; color: #166534; }
-.qnode__grade[data-band="mid"] { background: #fef9c3; color: #854d0e; }
-.qnode__grade[data-band="low"] { background: #fee2e2; color: #991b1b; }
-.qnode__grade--empty { background: transparent; color: var(--text-faint); font-weight: 500; }
-[data-theme="dark"] .qnode__grade[data-band="high"] { background: rgba(34, 197, 94, 0.22); color: #86efac; }
-[data-theme="dark"] .qnode__grade[data-band="mid"] { background: rgba(234, 179, 8, 0.22); color: #fde047; }
-[data-theme="dark"] .qnode__grade[data-band="low"] { background: rgba(239, 68, 68, 0.22); color: #fca5a5; }
 .qnode__tags { display: flex; flex-wrap: wrap; gap: 3px; }
 .tagchip { font-size: 10px; background: var(--tag-bg); color: var(--tag-fg); padding: 1px 5px; border-radius: 4px; }
 
-/* ---- study-progress: точка статуса чек-листа разбора (вне сессии), слева от заголовка ---- */
+/* ---- study-progress: точка статуса чек-листа разбора, слева от заголовка ---- */
 .qnode__status {
   display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   margin-right: 6px; vertical-align: middle; background: var(--border-strong);
@@ -287,7 +221,7 @@ button:disabled:hover { background: var(--surface); }
 .qnode__status[data-status="review"] { background: #d97706; }
 .qnode__status[data-status="unknown"] { background: #dc2626; }
 
-/* ---- drawer: три кнопки статуса вместо блока оценки (вне сессии) ---- */
+/* ---- drawer: три кнопки статуса чек-листа ---- */
 .statusbar { display: flex; flex-wrap: wrap; gap: 6px; }
 .statusbtn {
   flex: 1 1 auto; font-size: 12px; padding: 6px 10px; border: 1px solid var(--border-strong);
@@ -333,24 +267,6 @@ button:disabled:hover { background: var(--surface); }
 .rubric { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.6; }
 
 .drawer__scoring { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
-.scorebar { display: flex; align-items: center; gap: 4px; }
-.scorebtn { color: var(--star-empty); font-size: 20px; border: none; background: none; padding: 2px 4px; }
-.scorebtn:hover { background: none; }
-.scorebtn--on { color: #f59e0b; }
-.scoreval { margin-left: 8px; font-weight: 600; color: var(--text-muted); }
-.drawer__note {
-  width: 100%; margin-top: 8px; min-height: 56px; resize: vertical; box-sizing: border-box;
-  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px;
-  background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
-}
-
-.nextlist { list-style: none; margin: 0; padding: 0; }
-.nextlist li { margin: 6px 0; }
-.nextbtn { width: 100%; text-align: left; font-size: 13px; line-height: 1.35; }
-.nexttype {
-  display: inline-block; font-size: 10px; background: var(--tag-bg); color: var(--tag-fg);
-  padding: 1px 6px; border-radius: 4px; margin-right: 6px;
-}
 
 /* ---- swimlanes (фоновые дорожки + ось сложности) ---- */
 .lane { position: relative; border-radius: 10px; pointer-events: none; overflow: hidden; }
@@ -388,7 +304,7 @@ button:disabled:hover { background: var(--surface); }
   gap: 4px; font-size: 12px; font-weight: 700; letter-spacing: .12em; writing-mode: vertical-rl;
   transform: rotate(180deg); border-radius: 8px;
 }
-/* ---- study-progress: счётчик разобранных/оценённых по ряду (уровню), под подписью ---- */
+/* ---- study-progress: счётчик разобранных по ряду (уровню), под подписью ---- */
 .bands__count { font-size: 12px; font-weight: 600; opacity: .75; }
 
 /* ---- кнопки-состояния ---- */
@@ -466,41 +382,10 @@ button:disabled:hover { background: var(--surface); }
   flex: 1 1 auto; min-width: 0;
 }
 .hud__score { display: flex; gap: 2px; }
-.hud__score .scorebtn { font-size: 18px; }
 .hud__timer {
   font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text-muted);
   white-space: nowrap; padding: 0 4px;
 }
-
-/* ---- сравнение кандидатов ---- */
-.cmp-modal {
-  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-}
-.cmp-modal__card {
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 8px 32px var(--shadow-strong);
-  width: min(640px, 92vw); max-height: 86vh; overflow-y: auto; padding: 16px 18px;
-  display: flex; flex-direction: column; gap: 12px;
-}
-.cmp-modal__head { display: flex; align-items: center; justify-content: space-between; }
-.cmp-modal__close { padding: 2px 8px; line-height: 1; }
-.cmp-modal__empty { color: var(--text-muted); margin: 8px 0; }
-.cmp-modal__list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
-.cmp-modal__item {
-  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px;
-  cursor: pointer; font-size: 14px;
-}
-.cmp-modal__item:hover { background: var(--hover); }
-.cmp-modal__date { margin-left: auto; font-size: 12px; color: var(--text-faint); }
-.cmp-modal__run { align-self: flex-start; }
-.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.cmp-table th, .cmp-table td {
-  border: 1px solid var(--border); padding: 6px 10px; text-align: center;
-}
-.cmp-table th:first-child, .cmp-table td:first-child { text-align: left; color: var(--text-muted); }
-.cmp-table th { background: var(--hover); color: var(--heading); }
-.cmp-table__total td { font-weight: 700; border-top: 2px solid var(--border-strong); }
 
 /* ---- шпаргалка горячих клавиш ---- */
 .help-modal {
@@ -558,11 +443,6 @@ kbd {
   font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap;
   padding-left: 8px; border-left: 1px solid var(--border); margin-left: 2px;
 }
-.cta-done {
-  background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600;
-}
-.cta-done:hover { filter: brightness(1.08); background: var(--accent); }
-
 /* Экран «Все вопросы» (bank-browser): полноэкранный оверлей просмотра банка. */
 .bankbrowser {
   position: fixed; inset: 0; z-index: 50; background: var(--bg);
@@ -684,27 +564,13 @@ kbd {
 /* банк как страница: без fixed-оверлея */
 .bankbrowser--embedded { position: static; inset: auto; height: auto; min-height: 60vh; }
 
-/* ---- таблицы и формы страниц ---- */
-.formrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
-.formrow input { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); }
-/* узкий вьюпорт: таблица шире контейнера скроллится сама, а не раздвигает страницу
-   (#18 — матрица скриншотов 390px). min-width: max-content — не сжимается уже своего
-   содержимого (иначе текст ломается по буквам). */
-.table-wrap { width: 100%; overflow-x: auto; }
-.table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 14px; background: var(--surface); border: 1px solid var(--border); }
-.table th, .table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
-.table th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-.table__link { display: block; font-size: 12px; color: var(--accent); text-decoration: none; }
-.table__edit input { width: 100%; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface); color: var(--text); }
-a.iconbtn { text-decoration: none; display: inline-block; }
-
 /* ---- i18n: переключатель языка (в шапках главной, страниц и доски) ---- */
 .langswitch { font-size: 11px; letter-spacing: .08em; font-weight: 700; }
 /* ---- pool-crud: карточка «+ Новое направление», кнопки изменить/удалить, модалка ---- */
 .poolform .drawer__field input, .poolform .drawer__field select { width: 100%; box-sizing: border-box; }
 
 /* ---- главная v2 (ТЗ 2026-09-03): сетка 3/2/1, нейтральные чипы колонок, меню •••,
-   primary «Начать интервью →» + secondary «Открыть вопросы →», разделы отделены линией ---- */
+   primary «Открыть доску →» + secondary «Банк вопросов» ---- */
 .home__h2 { margin: 22px 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-faint); }
 .home__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .home__add { font-size: 12px; color: var(--text-muted); padding: 4px 10px; }
@@ -893,63 +759,3 @@ a.iconbtn { text-decoration: none; display: inline-block; }
   .wizard__step-name { display: none; }                      /* на узком экране — только номера шагов… */
   .wizard__step--on .wizard__step-name { display: inline; } /* …и название текущего */
 }
-
-/* ---- настройка интервью (#/setup/<pool>): кандидат → разделы → уровни → набор → старт ---- */
-.setup { display: grid; gap: 18px; max-width: 880px; }
-.setup__section { display: grid; gap: 10px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
-.setup__h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-faint); }
-.setup__row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
-.setup__row input, .setup__row select { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); }
-.setup__name { min-width: 220px; }
-.setup__blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 18px; }
-.setup__block { display: grid; gap: 6px; }
-.setup__check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.setup__check--block { font-weight: 600; }
-.setup__check input[type="checkbox"], .setup__check input[type="radio"] { margin: 0; }
-.setup__dot { width: 10px; height: 10px; border-radius: 999px; flex: 0 0 auto; }
-.setup__subs { display: grid; gap: 4px; padding-left: 24px; }
-.setup__subs .setup__check { font-size: 12px; color: var(--text-muted); }
-.setup__modes { display: grid; gap: 8px; }
-.setup__count { width: 64px; margin-left: 6px; padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); }
-.setup__summary { font-size: 13px; color: var(--text); }
-.setup__summary--empty { color: #b91c1c; }
-.setup__actions { display: flex; justify-content: flex-end; gap: 10px; }
-.setup__actions .iconbtn { text-decoration: none; }
-.setup__start { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 14px; }
-
-/* ---- итог сессии: модалка «Завершить», бейджи статуса/решения, вкладки на странице сессий ---- */
-.finish { display: grid; gap: 12px; min-width: min(520px, 92vw); }
-.finish__decisions { display: flex; gap: 8px; flex-wrap: wrap; }
-.finish__decision {
-  display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--border-strong);
-  border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--surface);
-}
-.finish__decision input { margin: 0; }
-.finish__decision--on.finish__decision--hire { border-color: #16a34a; background: rgba(22, 163, 74, .10); }
-.finish__decision--on.finish__decision--no_hire { border-color: #b91c1c; background: rgba(185, 28, 28, .10); }
-.finish__decision--on.finish__decision--hold { border-color: #d97706; background: rgba(217, 119, 6, .12); }
-.finish__summary { width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
-.badge--live { color: #1d4ed8; background: rgba(37, 99, 235, .10); border-color: rgba(37, 99, 235, .25); }
-.badge--done { color: var(--text-muted); background: var(--hover); border-color: var(--border); }
-.badge--hire { color: #15803d; background: rgba(22, 163, 74, .10); border-color: rgba(22, 163, 74, .3); }
-.badge--no_hire { color: #b91c1c; background: rgba(185, 28, 28, .10); border-color: rgba(185, 28, 28, .3); }
-.badge--hold { color: #b45309; background: rgba(217, 119, 6, .12); border-color: rgba(217, 119, 6, .3); }
-.session__status { display: inline-flex; align-items: center; gap: 6px; }
-.tabs { display: flex; gap: 6px; margin: 0 0 12px; }
-.tabs__tab { font-size: 13px; padding: 5px 12px; border-radius: 999px; border-color: transparent; background: transparent; color: var(--text-muted); }
-.tabs__tab--on { background: var(--hover); color: var(--text); border-color: var(--border); }
-
-/* ---- ссылка-приглашение в сессию ---- */
-.invitemenu { min-width: 320px; }
-.invite__result { display: grid; gap: 6px; padding: 4px; }
-.invite__url { width: 100%; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
-.invite__btns { display: flex; gap: 6px; }
-.invite__ttl { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 12px; color: var(--text-muted); }
-.invite__hours { padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
-.invite__list { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
-.invite__list-head { padding: 4px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); }
-.invite__row { display: flex; align-items: center; gap: 8px; padding: 2px 10px; font-size: 12px; }
-.invite__role { font-weight: 600; }
-.invite__exp { flex: 1; }
-.invite__revoke { font-size: 12px; padding: 3px 8px; color: #b91c1c; }

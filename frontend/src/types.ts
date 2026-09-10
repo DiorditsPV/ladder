@@ -51,11 +51,11 @@ export interface PoolConfig {
   description: string;
   blocks: BlockCfg[];
   levels: LevelCfg[];
-  counts?: { nodes: number; sessions: number };
+  counts?: { nodes: number };
   progress?: { known: number; review: number; unknown: number; total: number };
 }
 
-// Статус чек-листа разбора (вне сессии, per-user): «знаю» / «повторить» / «не знаю».
+// Статус чек-листа разбора (per-user): «знаю» / «повторить» / «не знаю».
 export type Progress = "known" | "review" | "unknown";
 
 const FALLBACK_COLOR = "#64748b";
@@ -103,72 +103,6 @@ export interface ImportAdded {
 export interface ImportResult {
   added: ImportAdded[];
   errors: ImportErr[];
-}
-
-// Кандидат/специалист (people-schema) — запись в БД, история сессий по candidate_id.
-export interface Candidate {
-  id: number;
-  tenant_id?: string;
-  name: string;
-  position?: string | null;
-  seniority?: string | null;
-  contact?: string | null;
-  note?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-// Интервьюер (кто проводит). user_id — шов к auth-пользователю (пока null).
-export interface Interviewer {
-  id: number;
-  tenant_id?: string;
-  name: string;
-  email?: string | null;
-  role?: string | null;
-  user_id?: string | null;
-  created_at?: string;
-}
-
-// План интервью (sessions.plan): условия подбора и итоговый порядок вопросов. null — сессия по всей матрице.
-export interface SessionPlan {
-  mode: "manual" | "auto";
-  blocks?: string[] | null;
-  subblocks?: Record<string, string[]> | null;
-  difficulties?: string[] | null;
-  count: number;
-  order: string[];
-}
-
-export interface SessionMeta {
-  id: number;
-  candidate: string;
-  pool: string;
-  candidate_id?: number | null;
-  interviewer_id?: number | null;
-  created_at: string;
-  plan_count?: number | null; // в списках вместо самого плана
-  // Итог сессии: active → finished с решением и комментарием интервьюера.
-  status?: "active" | "finished";
-  decision?: Decision | null;
-  summary?: string | null;
-  finished_at?: string | null;
-}
-
-export type Decision = "hire" | "no_hire" | "hold";
-
-export interface Session extends SessionMeta {
-  plan?: SessionPlan | null;
-  scores: Record<string, { node_id: string; score: number; note?: string; created_at: string }>;
-}
-
-// Сессия без оценок — для списков (GET /api/sessions возвращает SELECT * без scores).
-export interface SessionSummary {
-  id: number;
-  candidate: string;
-  pool: string;
-  candidate_id?: number | null;
-  interviewer_id?: number | null;
-  created_at: string;
 }
 
 // rgba из hex-цвета с заданной прозрачностью (для полупрозрачных дорожек).

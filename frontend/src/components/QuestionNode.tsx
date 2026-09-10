@@ -8,10 +8,7 @@ export interface QuestionNodeData {
   pool: PoolConfig;
   color: string;
   dark?: boolean;
-  score?: number;
   status?: Progress;
-  // Точка статуса чек-листа рисуется только вне сессии (в сессии статусы не показываются).
-  showStatus?: boolean;
   current?: boolean;
   dimmed?: boolean;
   hidden?: boolean;
@@ -22,7 +19,7 @@ export interface QuestionNodeData {
 // полный текст/код живёт в drawer. Теги показываем чипами.
 function QuestionNodeImpl({ data, selected }: NodeProps) {
   const t = useT();
-  const { node, pool, color, dark, score, status, showStatus, current, dimmed, hidden } = data as QuestionNodeData;
+  const { node, pool, color, dark, status, current, dimmed, hidden } = data as QuestionNodeData;
   const isTask = node.kind === "task";
   const heading = node.title || node.question;
   const diffColor = levelColor(pool, node.difficulty);
@@ -33,7 +30,6 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
         "qnode",
         selected ? "qnode--selected" : "",
         current ? "qnode--current" : "",
-        score != null ? "qnode--scored" : "",
         dimmed ? "qnode--dimmed" : "",
         hidden ? "qnode--hidden" : "",
       ].join(" ")}
@@ -60,7 +56,7 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
       </div>
 
       <div className="qnode__title">
-        {showStatus && <span className="qnode__status" data-status={status} />}
+        <span className="qnode__status" data-status={status} />
         {heading}
       </div>
 
@@ -82,15 +78,6 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
         <span className="qnode__topic" style={{ background: color }}>
           {node.topic}
         </span>
-        {/* Балл цифрой, а не пятью точками: на масштабе «вся доска» точки нечитаемы,
-            а оценённость карточки — главный сигнал во время интервью. */}
-        {score != null ? (
-          <span className="qnode__grade" data-band={score >= 4 ? "high" : score === 3 ? "mid" : "low"}>
-            {score}/5
-          </span>
-        ) : (
-          <span className="qnode__grade qnode__grade--empty">—</span>
-        )}
       </div>
     </div>
   );
