@@ -38,16 +38,20 @@ from .auth import (
 from .db import SESSION_MAX_AGE, Database, invite_state
 from .hub import SessionHub
 from .importer import parse_file, validate_against_pool
-from .models import Difficulty, GraphResponse, Kind, Node
+from .models import GraphResponse, Kind, Node
 from .pools import (
+    DEFAULT_LEVELS,
     PoolCfg,
     PoolConfigError,
     block_weights,
     blocks_to_json,
     default_pool_id,
+    levels_to_json,
     load_pools,
     normalize_blocks,
+    normalize_levels,
     parse_blocks,
+    parse_levels,
     pool_from_row,
     slug_from_label,
 )
@@ -222,7 +226,7 @@ class NodeCreate(BaseModel):
     pool: Optional[str] = None
     block: str = Field(min_length=1)
     topic: str = Field(min_length=1)
-    difficulty: Difficulty = "middle"
+    difficulty: str = Field(min_length=1)
     kind: Kind = "question"
     title: Optional[str] = None
     question: str = Field(min_length=1)
@@ -234,7 +238,7 @@ class NodeUpdate(BaseModel):
     """Структурная правка вопроса — только переданные поля (None = не менять)."""
 
     title: Optional[str] = None
-    difficulty: Optional[Difficulty] = None
+    difficulty: Optional[str] = None
     question: Optional[str] = None
     answer: Optional[str] = None
 
@@ -246,6 +250,7 @@ class PoolCreate(BaseModel):
     description: str = ""
     preset: Optional[str] = None  # id существующего направления
     blocks: Optional[List[dict]] = None  # [{label, color, subblocks?: [{label}]}] — см. pools.normalize_blocks
+    levels: Optional[List[dict]] = None  # [{label}] — см. pools.normalize_levels; без preset и без levels → DEFAULT_LEVELS
 
 
 class PoolUpdate(BaseModel):
@@ -254,6 +259,7 @@ class PoolUpdate(BaseModel):
     label: Optional[str] = Field(default=None, min_length=1)
     description: Optional[str] = None
     blocks: Optional[List[dict]] = None
+    levels: Optional[List[dict]] = None
 
 
 # ---------- auth (login / logout / me) ----------
@@ -387,16 +393,20 @@ def create_pool(body: PoolCreate, request: Request, _user: dict = Depends(requir
     if preset_id:
         preset = _pool_or_404(request, preset_id)
         blocks = json.loads(blocks_to_json(preset.blocks))
+        levels = json.loads(levels_to_json(preset.levels))
         copy_from: Optional[str] = preset.id
     else:
         blocks = _blocks_or_422(body.blocks, ())
+        levels = _levels_or_422(body.levels, ()) if body.levels is not None else json.loads(levels_to_json(DEFAULT_LEVELS))
         copy_from = None
     base = slug_from_label(label)
     pid, n = base, 2
     while db.get_pool(tenant, pid) is not None:
         pid, n = f"{base}-{n}", n + 1
     try:
-        row = db.create_pool(tenant, pid, label, body.description.strip(), blocks, copy_from=copy_from)
+        row = db.create_pool(
+            tenant, pid, label, body.description.strip(), blocks, copy_from=copy_from, levels=levels
+        )
     except sqlite3.IntegrityError as exc:
         # id копии ноды (<pool>-<id>) занят чужой нодой — транзакция откатилась, пул не создан.
         raise HTTPException(status_code=409, detail=f"node id collision while copying preset: {exc}")
@@ -411,6 +421,23 @@ def _blocks_or_422(raw: list, existing: tuple) -> list:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+def _levels_or_422(raw: list, existing: tuple) -> list:
+    """Уровни из UI: достроить id (normalize_levels), проверить как pool.yaml (parse_levels) → список dict."""
+    try:
+        return json.loads(levels_to_json(parse_levels(normalize_levels(raw, existing))))
+    except PoolConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _difficulty_or_422(pool: PoolCfg, difficulty: str) -> str:
+    if difficulty not in pool.level_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"difficulty '{difficulty}' is not declared in pool '{pool.id}' (allowed: {', '.join(l.id for l in pool.levels)})",
+        )
+    return difficulty
+
+
 @app.put("/api/pools/{pool_id}")
 def update_pool(
     pool_id: str, body: PoolUpdate, request: Request, _user: dict = Depends(require_member)
@@ -422,6 +449,8 @@ def update_pool(
         # Колонки — динамические данные направления: новые получают id из названия, вопросы
         # удалённых колонок удаляются, удалённых под-колонок — остаются без под-колонки (см. db.update_pool).
         fields["blocks"] = _blocks_or_422(body.blocks, _pool_or_404(request, pool_id).blocks)
+    if body.levels is not None:
+        fields["levels"] = _levels_or_422(body.levels, _pool_or_404(request, pool_id).levels)
     row = db.update_pool(resolve_tenant(request), pool_id, fields)
     if row is None:
         raise HTTPException(status_code=404, detail=f"pool '{pool_id}' not found")
@@ -517,6 +546,7 @@ def add_node(body: NodeCreate, request: Request, _user: dict = Depends(require_m
     """Создать новый вопрос в банке пула (БД, source='user'). id генерится из topic/title."""
     tenant = resolve_tenant(request)
     pool = _pool_or_404(request, body.pool)
+    _difficulty_or_422(pool, body.difficulty)
     base = _slugify(body.topic or body.title or body.block)
     node_id = _unique_node_id(tenant, base)
     node = Node.model_validate({**body.model_dump(exclude={"pool"}), "pool": pool.id, "id": node_id})
@@ -538,6 +568,8 @@ def edit_node(
     if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
     fields = body.model_dump(exclude_none=True)
+    if "difficulty" in fields:
+        _difficulty_or_422(_pool_or_404(request, existing["pool"]), fields["difficulty"])
     merged = {**existing, **fields}
     # existing несёт БД-поля (source/hidden/timestamps), которых нет в Node (extra=forbid):
     # валидируем только подмножество полей Node, а в БД пишем полный merged (db читает по .get).
@@ -548,7 +580,8 @@ def edit_node(
             validate_against_pool(node, pools[merged["pool"]])
     except Exception as exc:  # noqa: BLE001 — pydantic ValidationError / block вне пула → 422
         raise HTTPException(status_code=422, detail=str(exc))
-    saved = db.upsert_node(tenant, merged, source=existing.get("source", "user"))
+    # правка из UI делает ноду пользовательской: файлы content/ её больше не перетирают (см. sync.py).
+    saved = db.upsert_node(tenant, merged, source="user")
     return {"updated": saved["id"]}
 
 
@@ -667,6 +700,7 @@ def _build_plan(request: Request, pool: PoolCfg, p: PlanIn) -> dict:
                 picked,
                 block_order=[b.id for b in pool.blocks],
                 sub_order={b.id: [s.id for s in b.subblocks] for b in pool.blocks},
+                level_order=[l.id for l in pool.levels],
             )
     if not order:
         raise HTTPException(status_code=422, detail="no questions match the plan")

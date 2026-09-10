@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Блок — строка: допустимые значения задаёт pool.yaml пула, проверяет импортёр
 # (validate_against_pool), а не схема — у каждого пула своя таксономия.
 Block = str
-Difficulty = Literal["base", "junior", "middle", "senior"]
+# Уровень — строка: допустимые значения задаёт список levels в pool.yaml пула (как block),
+# проверяет импортёр (validate_against_pool) и API, а не схема.
+Difficulty = str
 Kind = Literal["question", "task"]
 
 
@@ -29,7 +31,7 @@ class Node(BaseModel):
     subblock: Optional[str] = None  # под-блок внутри блока (напр. airflow/pyspark/dbt)
     topic: str
     title: Optional[str] = None  # короткий заголовок для карточки (полный текст — в drawer)
-    difficulty: Difficulty = "middle"
+    difficulty: Difficulty
     weight: int = Field(default=1, ge=0)
     question: str
     answer: str = ""

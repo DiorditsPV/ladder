@@ -78,9 +78,9 @@ def test_missing_content_dir(tmp_path):
     assert load_pools(tmp_path / "nope") == {}
 
 
-MD_OK = "---\nid: alpha-01\nblock: alpha\nsubblock: a1\ntopic: t\ntitle: T\n---\n## Вопрос\nq?\n## Ответ\na.\n"
-MD_BAD_BLOCK = "---\nid: bad-01\nblock: gamma\ntopic: t\n---\n## Вопрос\nq?\n"
-MD_BAD_SUB = "---\nid: bad-02\nblock: alpha\nsubblock: zzz\ntopic: t\n---\n## Вопрос\nq?\n"
+MD_OK = "---\nid: alpha-01\nblock: alpha\nsubblock: a1\ntopic: t\ntitle: T\ndifficulty: middle\n---\n## Вопрос\nq?\n## Ответ\na.\n"
+MD_BAD_BLOCK = "---\nid: bad-01\nblock: gamma\ntopic: t\ndifficulty: middle\n---\n## Вопрос\nq?\n"
+MD_BAD_SUB = "---\nid: bad-02\nblock: alpha\nsubblock: zzz\ntopic: t\ndifficulty: middle\n---\n## Вопрос\nq?\n"
 
 
 def test_parse_file_sets_pool(tmp_path):
@@ -109,7 +109,7 @@ def test_load_pool_content_validates_blocks(tmp_path):
 def test_validate_against_pool_ok_without_subblock(tmp_path):
     _mk(tmp_path, "demo", VALID)
     pool = load_pools(tmp_path)["demo"]
-    node = Node(id="b-1", pool="demo", block="beta", topic="t", question="q")
+    node = Node(id="b-1", pool="demo", block="beta", topic="t", difficulty="middle", question="q")
     validate_against_pool(node, pool)  # не бросает
 
 

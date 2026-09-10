@@ -53,7 +53,7 @@ def test_create_node_appears_in_graph():
 
 def test_create_node_generates_unique_ids():
     c = _client()
-    payload = {"block": "python", "topic": "Dup", "question": "q?"}
+    payload = {"block": "python", "topic": "Dup", "difficulty": "middle", "question": "q?"}
     id1 = c.post("/api/nodes", json=payload).json()["id"]
     id2 = c.post("/api/nodes", json=payload).json()["id"]
     try:
@@ -67,21 +67,21 @@ def test_create_node_generates_unique_ids():
 def test_create_node_validation_error():
     c = _client()
     # пустой question → 422 (Field min_length=1).
-    assert c.post("/api/nodes", json={"block": "python", "topic": "t", "question": ""}).status_code == 422
+    assert c.post("/api/nodes", json={"block": "python", "topic": "t", "difficulty": "middle", "question": ""}).status_code == 422
     # неизвестный блок → 400 (вне таксономии пула, см. test_create_node_block_outside_pool_400).
-    assert c.post("/api/nodes", json={"block": "nope", "topic": "t", "question": "q?"}).status_code == 400
+    assert c.post("/api/nodes", json={"block": "nope", "topic": "t", "difficulty": "middle", "question": "q?"}).status_code == 400
 
 
 def test_create_node_block_outside_pool_400():
     c = _client()
-    r = c.post("/api/nodes", json={"block": "requirements", "topic": "x", "question": "q?"})
+    r = c.post("/api/nodes", json={"block": "requirements", "topic": "x", "difficulty": "middle", "question": "q?"})
     assert r.status_code == 400
     assert "requirements" in r.json()["detail"]
 
 
 def test_create_node_gets_pool():
     c = _client()
-    r = c.post("/api/nodes", json={"pool": "data-engineer", "block": "python", "topic": "Pooled", "question": "q?"})
+    r = c.post("/api/nodes", json={"pool": "data-engineer", "block": "python", "topic": "Pooled", "difficulty": "middle", "question": "q?"})
     assert r.status_code == 200, r.text
     nid = r.json()["id"]
     try:
@@ -94,7 +94,7 @@ def test_create_node_gets_pool():
 def test_update_node_changes_graph():
     c = _client()
     new_id = c.post(
-        "/api/nodes", json={"block": "python", "topic": "Orig", "question": "q?", "answer": "a"}
+        "/api/nodes", json={"block": "python", "topic": "Orig", "difficulty": "middle", "question": "q?", "answer": "a"}
     ).json()["id"]
     try:
         r = c.put(
@@ -117,7 +117,7 @@ def test_update_missing_node_404():
 
 def test_update_invalid_value_422():
     c = _client()
-    new_id = c.post("/api/nodes", json={"block": "python", "topic": "t", "question": "q?"}).json()["id"]
+    new_id = c.post("/api/nodes", json={"block": "python", "topic": "t", "difficulty": "middle", "question": "q?"}).json()["id"]
     try:
         assert c.put(f"/api/nodes/{new_id}", json={"difficulty": "wizard"}).status_code == 422
     finally:
@@ -126,7 +126,7 @@ def test_update_invalid_value_422():
 
 def test_delete_node_removes_from_graph():
     c = _client()
-    new_id = c.post("/api/nodes", json={"block": "python", "topic": "Bye", "question": "q?"}).json()["id"]
+    new_id = c.post("/api/nodes", json={"block": "python", "topic": "Bye", "difficulty": "middle", "question": "q?"}).json()["id"]
     assert new_id in _graph_ids(c)
     assert c.delete(f"/api/nodes/{new_id}").status_code == 200
     assert new_id not in _graph_ids(c)
@@ -146,7 +146,7 @@ def test_hidden_node_excluded_when_requested():
 
     c = _client()
     tenant = "default"
-    new_id = c.post("/api/nodes", json={"block": "python", "topic": "Hideme", "question": "q?"}).json()["id"]
+    new_id = c.post("/api/nodes", json={"block": "python", "topic": "Hideme", "difficulty": "middle", "question": "q?"}).json()["id"]
     db = main_module.db
     try:
         db.set_node_hidden(tenant, new_id, True)

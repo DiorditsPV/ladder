@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS pools (
     label       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     blocks      TEXT NOT NULL,                 -- JSON: [{id,label,color,weight,subblocks:[{id,label}]}]
+    levels      TEXT NOT NULL DEFAULT '[]',        -- JSON: [{id,label}]; '[]' → DEFAULT_LEVELS при чтении
     source      TEXT NOT NULL DEFAULT 'seed',  -- seed | user
     deleted_at  TEXT,                          -- tombstone: сид не воскрешает, id остаётся занятым
     created_at  TEXT NOT NULL,
@@ -154,9 +155,10 @@ def invite_state(inv: Dict) -> str:
 
 
 def _row_to_pool(row: sqlite3.Row) -> Dict:
-    """Строка pools → dict направления: blocks из JSON в список."""
+    """Строка pools → dict направления: blocks/levels из JSON в список."""
     d = dict(row)
     d["blocks"] = json.loads(d.get("blocks") or "[]")
+    d["levels"] = json.loads(d.get("levels") or "[]")
     return d
 
 
@@ -169,6 +171,18 @@ class Database:
             self._migrate_sessions(conn)
             self._migrate_nodes(conn)
             self._migrate_auth_sessions(conn)
+            self._migrate_pools(conn)
+
+    @staticmethod
+    def _migrate_pools(conn: sqlite3.Connection) -> None:
+        """Уровни как данные направления: столбец pools.levels. Старые строки получают прежнюю
+        четвёрку явно (не '[]'), чтобы ответ API не зависел от того, когда пул создан."""
+        from .pools import DEFAULT_LEVELS, levels_to_json
+
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(pools)").fetchall()}
+        if "levels" not in cols:
+            conn.execute("ALTER TABLE pools ADD COLUMN levels TEXT NOT NULL DEFAULT '[]'")
+        conn.execute("UPDATE pools SET levels = ? WHERE levels = '[]'", (levels_to_json(DEFAULT_LEVELS),))
 
     @staticmethod
     def _migrate_auth_sessions(conn: sqlite3.Connection) -> None:
@@ -513,19 +527,20 @@ class Database:
     def upsert_pool_seed(self, tenant_id: str, pool: Dict) -> bool:
         """Сид конфига направления: INSERT OR IGNORE — правки из UI и tombstone переживают рестарт.
 
-        `pool` — {id, label, description, blocks: list}. Возвращает True, если строка вставлена.
+        `pool` — {id, label, description, blocks: list, levels?: list}. Возвращает True, если строка вставлена.
         """
         now = _now()
         with self._conn() as conn:
             cur = conn.execute(
                 """
                 INSERT OR IGNORE INTO pools (
-                    tenant_id, id, label, description, blocks, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'seed', ?, ?)
+                    tenant_id, id, label, description, blocks, levels, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'seed', ?, ?)
                 """,
                 (
                     tenant_id, pool["id"], pool["label"], pool.get("description") or "",
-                    json.dumps(pool["blocks"], ensure_ascii=False), now, now,
+                    json.dumps(pool["blocks"], ensure_ascii=False),
+                    json.dumps(pool.get("levels") or [], ensure_ascii=False), now, now,
                 ),
             )
         return cur.rowcount == 1
@@ -538,40 +553,49 @@ class Database:
         description: str,
         blocks: List[Dict],
         copy_from: Optional[str] = None,
+        levels: Optional[List[Dict]] = None,
     ) -> Dict:
         """Направление из UI (source='user'); с copy_from — ещё и копия его вопросов.
 
         Строка пула и копии нод пишутся одной транзакцией: падение посередине (в том числе
         коллизия id ноды) откатывает всё, «пула-сироты» без вопросов не остаётся.
-        Занятость id пула проверяет вызывающий (get_pool).
+        Занятость id пула проверяет вызывающий (get_pool). Уровни: без copy_from — переданные
+        (или '[]' → DEFAULT_LEVELS при чтении); с copy_from и levels=None — уровни пресета.
         """
         now = _now()
+        if copy_from is not None and levels is None:
+            levels = self.get_pool(tenant_id, copy_from)["levels"]
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO pools (
-                    tenant_id, id, label, description, blocks, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'user', ?, ?)
+                    tenant_id, id, label, description, blocks, levels, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?)
                 """,
-                (tenant_id, pool_id, label, description, json.dumps(blocks, ensure_ascii=False), now, now),
+                (
+                    tenant_id, pool_id, label, description, json.dumps(blocks, ensure_ascii=False),
+                    json.dumps(levels or [], ensure_ascii=False), now, now,
+                ),
             )
             if copy_from is not None:
                 self._copy_nodes(conn, tenant_id, copy_from, pool_id, now)
         return self.get_pool(tenant_id, pool_id)
 
     def update_pool(self, tenant_id: str, pool_id: str, fields: Dict) -> Optional[Dict]:
-        """Правка названия/описания/колонок (остальные ключи игнорируются). None — нет или удалено.
+        """Правка названия/описания/колонок/уровней (остальные ключи игнорируются). None — нет или удалено.
 
-        `blocks` — уже валидированный список dict (см. pools.normalize_blocks + parse_blocks).
-        Смена колонок и её последствия для вопросов — одна транзакция: вопросы исчезнувших колонок
-        удаляются, вопросы исчезнувших под-колонок остаются в колонке без под-колонки.
+        `blocks`/`levels` — уже валидированные списки dict (см. pools.normalize_blocks + parse_blocks,
+        pools.normalize_levels + parse_levels). Смена колонок и её последствия для вопросов — одна
+        транзакция: вопросы исчезнувших колонок удаляются, вопросы исчезнувших под-колонок остаются
+        в колонке без под-колонки; вопросы исчезнувших уровней удаляются.
         """
         current = self.get_pool(tenant_id, pool_id)
         if current is None or current["deleted_at"] is not None:
             return None
         allowed = {k: v for k, v in fields.items() if k in ("label", "description")}
         blocks = fields.get("blocks")
-        if not allowed and blocks is None:
+        levels = fields.get("levels")
+        if not allowed and blocks is None and levels is None:
             return current
         now = _now()
         with self._conn() as conn:
@@ -603,6 +627,19 @@ class Database:
                         f"AND block = ? AND subblock IS NOT NULL {cond}",
                         (now, tenant_id, pool_id, b["id"], *subs),
                     )
+            if levels is not None:
+                kept_l = [l["id"] for l in levels]
+                if not kept_l:
+                    raise ValueError("levels must not be empty")
+                conn.execute(
+                    "UPDATE pools SET levels = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
+                    (json.dumps(levels, ensure_ascii=False), now, tenant_id, pool_id),
+                )
+                marks = ",".join("?" * len(kept_l))
+                conn.execute(
+                    f"DELETE FROM nodes WHERE tenant_id = ? AND pool = ? AND difficulty NOT IN ({marks})",
+                    (tenant_id, pool_id, *kept_l),
+                )
         return self.get_pool(tenant_id, pool_id)
 
     def delete_pool(self, tenant_id: str, pool_id: str) -> Optional[int]:
