@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarDays, CircleHelp, ClipboardList, Ellipsis, Play, Radio, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type AuthUser } from "../api";
 import { LangSwitch } from "../components/LangSwitch";
 import { PoolFormModal } from "../components/PoolFormModal";
 import { nWord, useT } from "../i18n";
@@ -12,7 +12,7 @@ type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
 
 // Главное меню: направления как входы на доски + разделы проведения интервью (кандидаты, сессии,
 // подключение). Карточка направления: название, описание, статистика, нейтральные чипы колонок,
-// primary «Начать интервью →», secondary «Открыть вопросы →», меню ••• (редактировать/дублировать/удалить).
+// primary «Открыть доску →» (разбор темы), secondary «Начать интервью» (проверка кандидата), меню ••• (редактировать/дублировать/удалить).
 // Пулов может не быть вовсе (content/ без pool.yaml) — говорим об этом, а не рисуем пустоту.
 // «Начать интервью» ведёт на экран настройки интервью (#/setup/<pool>): кандидат, разделы, уровни, набор.
 // onChanged — направления создаются/правятся/удаляются здесь же (pool-crud); список живёт в Router.
@@ -24,6 +24,13 @@ export function HomePage({
   const t = useT();
   const [modal, setModal] = useState<PoolModal>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // Сводка «Обновить из файлов» — полоской над списком, как notice; пункт меню виден только owner'у
+  // (ручка /api/pools/sync — owner-only).
+  const [note, setNote] = useState<string | null>(null);
+  const [role, setRole] = useState<AuthUser["role"] | null>(null);
+  useEffect(() => {
+    api.me().then((me) => setRole(me.role)).catch(() => setRole(null));
+  }, []);
   // Меню ••• закрывается кликом мимо и Esc — как обычный dropdown.
   useEffect(() => {
     if (!menuFor) return;
@@ -64,6 +71,27 @@ export function HomePage({
     }
   };
 
+  // «Обновить из файлов» — content/ → БД без рестарта: новые направления, правки конфигов и seed-нод.
+  // Пользовательские вопросы (source=user) файлы не трогают; исчезнувшие seed-ноды прячутся.
+  const syncFromFiles = async () => {
+    try {
+      const r = await api.syncPools();
+      let text = t("Обновлено из файлов: направлений {p}, вопросов {n}, скрыто {h}, конфликтов {c}", {
+        p: r.created.length + r.updated.length,
+        n: r.nodes_upserted,
+        h: r.hidden.length,
+        c: r.conflicts.length,
+      });
+      if (r.errors.length) {
+        text += ". " + t("Ошибок импорта: {n}; первая — {file}: {error}", { n: r.errors.length, file: r.errors[0].file, error: r.errors[0].error });
+      }
+      setNote(text);
+      onChanged();
+    } catch {
+      alert(t("Не удалось обновить из файлов"));
+    }
+  };
+
   // Статистика направления с правильными формами числа: «61 вопрос», «25 сессий».
   const questions = (n: number) => `${n} ${nWord(n, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
   const sessions = (n: number) => `${n} ${nWord(n, ["сессия", "сессии", "сессий"], ["session", "sessions"])}`;
@@ -73,13 +101,14 @@ export function HomePage({
   return (
     <div className="page home">
       <header className="pageshell">
-        <h1 className="pageshell__title">{t("Интервью · доска вопросов")}</h1>
+        <h1 className="pageshell__title">{t("Ladder · разбор тем по ступеням")}</h1>
         <div className="pageshell__actions">
           <LangSwitch />
         </div>
       </header>
       <main className="page__body">
         {notice && <div className="errbar">{notice}</div>}
+        {note && <div className="errbar errbar--ok">{note}</div>}
 
         <div className="home__head">
           <h2 className="home__h2">{t("Направления")}</h2>
@@ -118,6 +147,11 @@ export function HomePage({
                   <button className="poolcard__dup" role="menuitem" onClick={() => { setMenuFor(null); duplicate(p); }}>
                     {t("Дублировать")}
                   </button>
+                  {role === "owner" && (
+                    <button className="poolcard__sync" role="menuitem" onClick={() => { setMenuFor(null); syncFromFiles(); }}>
+                      {t("Обновить из файлов")}
+                    </button>
+                  )}
                   <div className="poolcard__dropdown-sep" role="separator" />
                   <button className="poolcard__delete" role="menuitem" onClick={() => { setMenuFor(null); remove(p); }}>
                     {t("Удалить")}
@@ -138,6 +172,20 @@ export function HomePage({
                 <span className="poolcard__stat"><CircleHelp size={16} strokeWidth={2} aria-hidden="true" />{questions(p.counts?.nodes ?? 0)}</span>
                 <span className="poolcard__stat"><CalendarDays size={16} strokeWidth={2} aria-hidden="true" />{sessions(p.counts?.sessions ?? 0)}</span>
               </div>
+              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user, вне сессии). */}
+              {p.progress && p.progress.total > 0 && (
+                <div className="poolcard__progress">
+                  <div className="poolcard__progress-track">
+                    <div
+                      className="poolcard__progress-fill"
+                      style={{ width: `${Math.round((p.progress.known / p.progress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="poolcard__progress-label">
+                    {t("разобрано {k} из {n}", { k: p.progress.known, n: p.progress.total })}
+                  </span>
+                </div>
+              )}
               <div className="poolcard__blocks">
                 {p.blocks.map((b) => (
                   <span key={b.id} className="poolcard__block">{b.label}</span>
@@ -145,13 +193,13 @@ export function HomePage({
               </div>
               {/* Действия лежат над «растяжкой»; margin-top:auto прижимает их к низу — карточки в ряду одной высоты. */}
               <div className="poolcard__actions">
-                <a className="poolcard__start btn--primary" href={href.setup(p.id)}>
+                <a className="poolcard__open btn--primary" href={href.board(p.id)}>
+                  {t("Открыть доску")}
+                  <ArrowRight size={16} {...ICON} aria-hidden="true" />
+                </a>
+                <a className="poolcard__start" href={href.setup(p.id)}>
                   <Play size={15} strokeWidth={2} aria-hidden="true" />
                   {t("Начать интервью")}
-                </a>
-                <a className="poolcard__open" href={href.bank(p.id)}>
-                  {t("Открыть вопросы")}
-                  <ArrowRight size={16} {...ICON} aria-hidden="true" />
                 </a>
               </div>
             </div>

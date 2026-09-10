@@ -289,7 +289,7 @@ def _delete_node(node_id: str):
 def test_api_import_valid_with_id():
     c = _client()
     md = (
-        "---\nid: zzz-upload-test-01\nblock: databases\ntopic: Загрузка\n---\n"
+        "---\nid: zzz-upload-test-01\nblock: databases\ntopic: Загрузка\ndifficulty: middle\n---\n"
         "## Вопрос\nТестовый вопрос?\n## Ответ\nОтвет.\n"
     )
     try:
@@ -308,7 +308,7 @@ def test_api_import_valid_with_id():
 
 def test_api_import_idless_md_takes_stem():
     c = _client()
-    md = "---\nblock: python\ntopic: Стем\n---\n## Вопрос\nОткуда id?\n"
+    md = "---\nblock: python\ntopic: Стем\ndifficulty: middle\n---\n## Вопрос\nОткуда id?\n"
     try:
         r = c.post("/api/import", json={"filename": "zzz-stem-01.md", "content": md})
         data = r.json()
@@ -321,7 +321,7 @@ def test_api_import_idless_md_takes_stem():
 def test_api_import_duplicate_rejected():
     """Повторная загрузка той же id отклоняется (нода уже в банке)."""
     c = _client()
-    md = "---\nid: zzz-dup-01\nblock: python\ntopic: Дубль\n---\n## Вопрос\nq?\n"
+    md = "---\nid: zzz-dup-01\nblock: python\ntopic: Дубль\ndifficulty: middle\n---\n## Вопрос\nq?\n"
     try:
         first = c.post("/api/import", json={"filename": "a.md", "content": md}).json()
         assert any(a["id"] == "zzz-dup-01" for a in first["added"])
@@ -345,7 +345,7 @@ def test_api_import_invalid_not_written():
 
 def test_api_import_duplicate_id():
     c = _client()
-    dup = "---\nid: sql-01\nblock: databases\ntopic: dup\n---\n## Вопрос\nq\n"
+    dup = "---\nid: sql-01\nblock: databases\ntopic: dup\ndifficulty: middle\n---\n## Вопрос\nq\n"
     r = c.post("/api/import", json={"filename": "dup.md", "content": dup})
     data = r.json()
     assert data["added"] == []
@@ -356,7 +356,7 @@ def test_api_import_duplicate_id():
 
 def test_api_import_rejects_block_outside_pool():
     c = _client()
-    md = "---\nid: zzz-outside-01\nblock: requirements\ntopic: t\n---\n## Вопрос\nq?\n"
+    md = "---\nid: zzz-outside-01\nblock: requirements\ntopic: t\ndifficulty: middle\n---\n## Вопрос\nq?\n"
     r = c.post("/api/import", json={"filename": "x.md", "content": md, "pool": "data-engineer"})
     data = r.json()
     assert data["added"] == []
@@ -366,7 +366,7 @@ def test_api_import_rejects_block_outside_pool():
 
 def test_api_import_default_pool_and_graph_visibility():
     c = _client()
-    md = "---\nid: zzz-pooled-01\nblock: python\ntopic: t\n---\n## Вопрос\nq?\n"
+    md = "---\nid: zzz-pooled-01\nblock: python\ntopic: t\ndifficulty: middle\n---\n## Вопрос\nq?\n"
     try:
         data = c.post("/api/import", json={"filename": "p.md", "content": md}).json()
         assert any(a["id"] == "zzz-pooled-01" for a in data["added"])

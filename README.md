@@ -1,8 +1,11 @@
-# Interview Graph
+# Ladder
 
-A self-hosted web app for running technical interviews. The heart of it is an interactive
+A self-hosted board for studying a technology topic by rungs: a topic is split into columns and its own difficulty
+levels, every cell holds question cards, and you mark each one as known / review / unknown. Running a technical
+interview on the same board is the second mode. The heart of it is an interactive
 **question matrix** on a canvas: one column per section (Frameworks / Databases / Python /
-Platform), cards inside a column ranked by difficulty (base → junior → middle → senior).
+Platform), cards inside a column ranked by the pool's own difficulty levels (`levels` in `pool.yaml`, 2–8;
+base → junior → middle → senior by default).
 A card is a question or a hands-on task plus a reference answer, a 1–5 score and the
 interviewer's note. Content lives in Markdown/JSON and is imported into the question bank.
 
@@ -72,7 +75,7 @@ docker compose up -d`; changing them on a running instance requires recreating t
 If `:8000` is taken (say `./run.sh` already runs there), use
 `INTERVIEW_PORT=8080 docker compose up -d`.
 
-The layout inside the container mirrors the server one from `deploy/bootstrap.sh`: code in `/app`,
+The layout inside the container mirrors the server one from `deploy/interview.service`: code in `/app`,
 content in `/app/content`, database in a named volume on `/data`. Rebuilding the image does not
 touch the data, and `content/` can stay read-only — the back end never writes there (uploads are
 parsed in a temp directory and stored in the database).
@@ -107,7 +110,9 @@ it is a board of cards grouped by section and difficulty, not a dependency graph
 - **HUD at the bottom** — current question, position in the plan, 1–5 score, "Next →", timer.
 - **Filters** — sections, difficulty, kind and tags, plus full-text search; "unscored only" appears
   inside a session.
-- **Keyboard:** `1–5` score the current card, `↑↓` move by difficulty, `←→` between columns,
+- **Checklist (outside a session):** each card gets a status — `1` known, `2` review, `3` unknown — kept per user;
+  column counters and the home page show how much of a track is covered.
+- **Keyboard:** `1–5` score the current card (in a session), `↑↓` move by difficulty, `←→` between columns,
   `Enter` opens the drawer, `n` goes to the next unscored question, `Esc` clears the current one,
   `?` shows the shortcut cheat sheet.
 
@@ -123,7 +128,7 @@ status, and "Export" produces the HTML report described above.
 ## Content
 
 Questions live in track pools: `content/<pool>/pool.yaml` describes the sections (column order,
-labels, colours, sub-columns, weights) and `content/<pool>/<block>/*.md|*.json` holds the questions
+labels, colours, sub-columns, weights) and the difficulty levels (`levels`, the matrix rows) and `content/<pool>/<block>/*.md|*.json` holds the questions
 themselves. `pool.yaml` is the seed: at runtime tracks are read from the database, so they can be
 created, edited and deleted from the UI (`POST/PUT/DELETE /api/pools`). A new track is either a copy
 of an existing one (structure and questions included) or a structure you build yourself in the
@@ -139,6 +144,7 @@ The repository ships two Russian-language pools used in real interviews plus a
 id: spark-shuffle-01
 kind: question            # question | task
 block: frameworks         # one of blocks[].id in pool.yaml
+difficulty: middle        # one of levels[].id in pool.yaml (base/junior/middle/senior when levels is omitted)
 subblock: pyspark         # (optional) sub-column inside the section
 title: Shuffle in Spark   # short heading shown on the card
 topic: distributed-batch
@@ -221,8 +227,10 @@ cd frontend && npm run shots     # in a second terminal
 
 ## Deploy
 
-Merging into `main` deploys to the server over SSH via GitHub Actions, port **8800**; `dev` deploys
-to port **8801**. Details and the one-time secret setup are in `DEPLOY.md`.
+Deploying to **https://interview.paveldiordits.site** is a manual GitHub Actions run (*Deploy → Run workflow*);
+merging into `main` deploys nothing. The front end is
+built on the runner and shipped as one tarball to a forced-command SSH key on the server. Details and the
+one-time server setup are in `DEPLOY.md`.
 
 See `REPORT.md` for the design notes behind the architecture, and `AGENTS.md` for the repository
 map and content conventions.

@@ -1,0 +1,31 @@
+# /etc/systemd/system/ladder.service — сервис «Интервью» (FastAPI + SQLite).
+# Ставится deploy/install.sh (от root) и только им: deploy-ladder.sh юнит не трогает,
+# чтобы архив от раннера не мог подменить User=. Слепок с lexis.service на том же сервере.
+[Unit]
+Description=ladder (FastAPI)
+After=network.target
+
+[Service]
+User=ladder
+Group=ladder
+WorkingDirectory=/opt/ladder/backend
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=INTERVIEW_DB_PATH=/var/lib/ladder/ladder.db
+Environment=INTERVIEW_CONTENT_DIR=/opt/ladder/content
+Environment=INTERVIEW_FRONTEND_DIR=/opt/ladder/frontend/dist
+# owner-креды; без файла юнит не стартует — намеренно: с пустым окружением приложение
+# завело бы owner со случайным паролем в логе, и войти было бы нечем
+EnvironmentFile=/etc/ladder.env
+# только localhost: наружу — через nginx; --proxy-headers, чтобы схема/IP брались из X-Forwarded-*
+ExecStart=/opt/ladder/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8770 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+MemoryMax=400M
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/ladder
+
+[Install]
+WantedBy=multi-user.target

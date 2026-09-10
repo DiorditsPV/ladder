@@ -38,21 +38,26 @@ from .auth import (
 from .db import SESSION_MAX_AGE, Database, invite_state
 from .hub import SessionHub
 from .importer import parse_file, validate_against_pool
-from .models import Difficulty, GraphResponse, Kind, Node
+from .models import GraphResponse, Kind, Node
 from .pools import (
+    DEFAULT_LEVELS,
     PoolCfg,
     PoolConfigError,
     block_weights,
     blocks_to_json,
     default_pool_id,
+    levels_to_json,
     load_pools,
     normalize_blocks,
+    normalize_levels,
     parse_blocks,
+    parse_levels,
     pool_from_row,
     slug_from_label,
 )
 from .sampler import build_interview, filter_nodes, matrix_order
-from .seed import seed_interviewer_if_empty, seed_owner_if_empty, seed_pool_if_empty
+from .seed import seed_interviewer_if_empty, seed_owner_if_empty
+from .sync import sync_pools
 from .tenancy import resolve_tenant
 
 log = logging.getLogger("interview")
@@ -97,18 +102,18 @@ db = Database(DB_PATH)
 app.state.db = db  # auth-зависимости берут db отсюда (request.app.state.db)
 hub = SessionHub()
 
-# Пулы направлений: content/<pool>/pool.yaml — сид таблицы pools (источник правды в рантайме —
-# БД, см. _pools: направления создаются/правятся/удаляются из UI). Сид — на каждый пул отдельно:
-# конфиг INSERT OR IGNORE, ноды — только в пустой пул.
+# Пулы направлений: content/<pool>/pool.yaml — источник конфига и seed-нод (источник правды
+# в рантайме — БД, см. _pools: направления создаются/правятся/удаляются из UI). На старте —
+# та же синхронизация, что и по POST /api/pools/sync: новые направления создаются, существующие
+# обновляются конфигом без каскадных удалений, seed-ноды upsert-ятся, user-ноды не трогаются.
 _CONTENT_POOLS: Dict[str, PoolCfg] = load_pools(CONTENT_DIR)
 if not _CONTENT_POOLS:
     log.warning("no pools found in %s — /api/pools will be empty until a pool is created", CONTENT_DIR)
-for _pool in _CONTENT_POOLS.values():
-    _seeded, _seed_errors = seed_pool_if_empty(db, resolve_tenant(), _pool)
-    if _seeded:
-        log.info("seeded %d nodes into pool %s", _seeded, _pool.id)
-    if _seed_errors:
-        log.warning("content import errors in pool %s: %s", _pool.id, _seed_errors)
+_sync = sync_pools(db, resolve_tenant(), CONTENT_DIR)
+log.info("content sync: created=%s updated=%s nodes=%d hidden=%d conflicts=%d errors=%d",
+         _sync["created"], _sync["updated"], _sync["nodes_upserted"], len(_sync["hidden"]), len(_sync["conflicts"]), len(_sync["errors"]))
+if _sync["errors"]:
+    log.warning("content import errors: %s", _sync["errors"])
 # Сид интервьюера по умолчанию («Я») для тенанта default — у сессии всегда есть проводивший.
 if seed_interviewer_if_empty(db, resolve_tenant()):
     log.info("seeded default interviewer")
@@ -222,7 +227,7 @@ class NodeCreate(BaseModel):
     pool: Optional[str] = None
     block: str = Field(min_length=1)
     topic: str = Field(min_length=1)
-    difficulty: Difficulty = "middle"
+    difficulty: str = Field(min_length=1)
     kind: Kind = "question"
     title: Optional[str] = None
     question: str = Field(min_length=1)
@@ -234,7 +239,7 @@ class NodeUpdate(BaseModel):
     """Структурная правка вопроса — только переданные поля (None = не менять)."""
 
     title: Optional[str] = None
-    difficulty: Optional[Difficulty] = None
+    difficulty: Optional[str] = None
     question: Optional[str] = None
     answer: Optional[str] = None
 
@@ -246,6 +251,7 @@ class PoolCreate(BaseModel):
     description: str = ""
     preset: Optional[str] = None  # id существующего направления
     blocks: Optional[List[dict]] = None  # [{label, color, subblocks?: [{label}]}] — см. pools.normalize_blocks
+    levels: Optional[List[dict]] = None  # [{label}] — см. pools.normalize_levels; без preset и без levels → DEFAULT_LEVELS
 
 
 class PoolUpdate(BaseModel):
@@ -254,6 +260,7 @@ class PoolUpdate(BaseModel):
     label: Optional[str] = Field(default=None, min_length=1)
     description: Optional[str] = None
     blocks: Optional[List[dict]] = None
+    levels: Optional[List[dict]] = None
 
 
 # ---------- auth (login / logout / me) ----------
@@ -340,8 +347,8 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
     return pools[pid]
 
 
-def _pool_out(request: Request, p: PoolCfg) -> dict:
-    """Форма направления для API: конфиг + счётчики вопросов и сессий."""
+def _pool_out(request: Request, p: PoolCfg, user: dict) -> dict:
+    """Форма направления для API: конфиг + счётчики вопросов и сессий + сводка чек-листа юзера."""
     tenant = resolve_tenant(request)
     return {
         **p.to_dict(),
@@ -349,21 +356,28 @@ def _pool_out(request: Request, p: PoolCfg) -> dict:
             "nodes": db.count_nodes(tenant, pool=p.id),
             "sessions": db.count_sessions(tenant, p.id),
         },
+        "progress": db.progress_summary(tenant, user["id"], p.id),
     }
 
 
-def _db_nodes(request: Request, pool: PoolCfg) -> List[Node]:
-    """Ноды пула из БД (источник правды) как объекты Node для текущего тенанта."""
+def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> List[Node]:
+    """Ноды пула из БД (источник правды) как объекты Node для текущего тенанта.
+
+    По умолчанию скрытые (sync — пропавшая из файлов seed-нода, или tombstone удалённой из UI)
+    не попадают ни на доску, ни в выборку интервью (sampler/планы зовут без include_hidden).
+    Доска в режиме сессии и отчёт зовут с include_hidden=True: завершённая сессия не должна
+    терять оценённые ноды из-за более позднего скрытия/tombstone.
+    """
     tenant = resolve_tenant(request)
     return [
         Node.model_validate({k: v for k, v in row.items() if k in _NODE_FIELDS})
-        for row in db.list_nodes(tenant, pool=pool.id)
+        for row in db.list_nodes(tenant, pool=pool.id, include_hidden=include_hidden)
     ]
 
 
 @app.get("/api/pools")
 def get_pools(request: Request, _user: dict = Depends(current_user)) -> list:
-    return [_pool_out(request, p) for p in _pools(request).values()]
+    return [_pool_out(request, p, _user) for p in _pools(request).values()]
 
 
 @app.post("/api/pools")
@@ -387,20 +401,24 @@ def create_pool(body: PoolCreate, request: Request, _user: dict = Depends(requir
     if preset_id:
         preset = _pool_or_404(request, preset_id)
         blocks = json.loads(blocks_to_json(preset.blocks))
+        levels = json.loads(levels_to_json(preset.levels))
         copy_from: Optional[str] = preset.id
     else:
         blocks = _blocks_or_422(body.blocks, ())
+        levels = _levels_or_422(body.levels, ()) if body.levels is not None else json.loads(levels_to_json(DEFAULT_LEVELS))
         copy_from = None
     base = slug_from_label(label)
     pid, n = base, 2
     while db.get_pool(tenant, pid) is not None:
         pid, n = f"{base}-{n}", n + 1
     try:
-        row = db.create_pool(tenant, pid, label, body.description.strip(), blocks, copy_from=copy_from)
+        row = db.create_pool(
+            tenant, pid, label, body.description.strip(), blocks, copy_from=copy_from, levels=levels
+        )
     except sqlite3.IntegrityError as exc:
         # id копии ноды (<pool>-<id>) занят чужой нодой — транзакция откатилась, пул не создан.
         raise HTTPException(status_code=409, detail=f"node id collision while copying preset: {exc}")
-    return _pool_out(request, pool_from_row(row))
+    return _pool_out(request, pool_from_row(row), _user)
 
 
 def _blocks_or_422(raw: list, existing: tuple) -> list:
@@ -409,6 +427,23 @@ def _blocks_or_422(raw: list, existing: tuple) -> list:
         return json.loads(blocks_to_json(parse_blocks(normalize_blocks(raw, existing))))
     except PoolConfigError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _levels_or_422(raw: list, existing: tuple) -> list:
+    """Уровни из UI: достроить id (normalize_levels), проверить как pool.yaml (parse_levels) → список dict."""
+    try:
+        return json.loads(levels_to_json(parse_levels(normalize_levels(raw, existing))))
+    except PoolConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _difficulty_or_422(pool: PoolCfg, difficulty: str) -> str:
+    if difficulty not in pool.level_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"difficulty '{difficulty}' is not declared in pool '{pool.id}' (allowed: {', '.join(l.id for l in pool.levels)})",
+        )
+    return difficulty
 
 
 @app.put("/api/pools/{pool_id}")
@@ -422,10 +457,12 @@ def update_pool(
         # Колонки — динамические данные направления: новые получают id из названия, вопросы
         # удалённых колонок удаляются, удалённых под-колонок — остаются без под-колонки (см. db.update_pool).
         fields["blocks"] = _blocks_or_422(body.blocks, _pool_or_404(request, pool_id).blocks)
+    if body.levels is not None:
+        fields["levels"] = _levels_or_422(body.levels, _pool_or_404(request, pool_id).levels)
     row = db.update_pool(resolve_tenant(request), pool_id, fields)
     if row is None:
         raise HTTPException(status_code=404, detail=f"pool '{pool_id}' not found")
-    return _pool_out(request, pool_from_row(row))
+    return _pool_out(request, pool_from_row(row), _user)
 
 
 @app.delete("/api/pools/{pool_id}")
@@ -439,12 +476,24 @@ def delete_pool(pool_id: str, request: Request, _user: dict = Depends(require_me
     return {"deleted": pool_id, "nodes_removed": removed, "sessions_kept": kept}
 
 
+@app.post("/api/pools/sync")
+def sync_content(request: Request, _owner: dict = Depends(require_owner)) -> dict:
+    """Перечитать content/: новые направления, обновлённые конфиги и seed-ноды; user-ноды не трогаются."""
+    return sync_pools(db, resolve_tenant(request), CONTENT_DIR)
+
+
 @app.get("/api/graph", response_model=GraphResponse)
 def get_graph(
-    request: Request, pool: Optional[str] = None, _user: dict = Depends(current_user)
+    request: Request,
+    pool: Optional[str] = None,
+    include_hidden: bool = False,
+    _user: dict = Depends(current_user),
 ) -> GraphResponse:
     # Вопросы читаются из БД (а не с диска) — рантайм-правки переживают деплой.
-    return GraphResponse(nodes=_db_nodes(request, _pool_or_404(request, pool)), errors=[])
+    # include_hidden — доска сессии и отчёт (см. _db_nodes); обычная доска и сэмплер без него.
+    return GraphResponse(
+        nodes=_db_nodes(request, _pool_or_404(request, pool), include_hidden=include_hidden), errors=[]
+    )
 
 
 @app.post("/api/import")
@@ -517,6 +566,7 @@ def add_node(body: NodeCreate, request: Request, _user: dict = Depends(require_m
     """Создать новый вопрос в банке пула (БД, source='user'). id генерится из topic/title."""
     tenant = resolve_tenant(request)
     pool = _pool_or_404(request, body.pool)
+    _difficulty_or_422(pool, body.difficulty)
     base = _slugify(body.topic or body.title or body.block)
     node_id = _unique_node_id(tenant, base)
     node = Node.model_validate({**body.model_dump(exclude={"pool"}), "pool": pool.id, "id": node_id})
@@ -538,6 +588,8 @@ def edit_node(
     if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
     fields = body.model_dump(exclude_none=True)
+    if "difficulty" in fields:
+        _difficulty_or_422(_pool_or_404(request, existing["pool"]), fields["difficulty"])
     merged = {**existing, **fields}
     # existing несёт БД-поля (source/hidden/timestamps), которых нет в Node (extra=forbid):
     # валидируем только подмножество полей Node, а в БД пишем полный merged (db читает по .get).
@@ -548,17 +600,54 @@ def edit_node(
             validate_against_pool(node, pools[merged["pool"]])
     except Exception as exc:  # noqa: BLE001 — pydantic ValidationError / block вне пула → 422
         raise HTTPException(status_code=422, detail=str(exc))
-    saved = db.upsert_node(tenant, merged, source=existing.get("source", "user"))
+    # правка из UI делает ноду пользовательской: файлы content/ её больше не перетирают (см. sync.py).
+    saved = db.upsert_node(tenant, merged, source="user")
     return {"updated": saved["id"]}
 
 
 @app.delete("/api/nodes/{node_id}")
 def remove_node(node_id: str, request: Request, _user: dict = Depends(require_member)) -> dict:
-    """Безвозвратно удалить вопрос из банка (БД). 404, если нет."""
+    """Удалить вопрос из банка. 404, если нет.
+
+    Seed-нода (source='seed') — не DELETE, а tombstone (hidden=1, source='user'): файл в content/
+    остаётся источником этой ноды, и обычный DELETE её воскресил бы при следующем sync (sync
+    пропускает только user-ноды). Пользовательская нода (source='user') удаляется как раньше.
+    """
     tenant = resolve_tenant(request)
-    if not db.delete_node(tenant, node_id):
+    existing = db.get_node(tenant, node_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
-    return {"deleted": node_id}
+    if existing["source"] == "seed":
+        db.tombstone_node(tenant, node_id)
+        return {"deleted": node_id, "tombstoned": True}
+    db.delete_node(tenant, node_id)
+    return {"deleted": node_id, "tombstoned": False}
+
+
+# ---------- progress (чек-лист разбора) ----------
+# Ruling C4: значения статуса — один источник (Database.PROGRESS_STATUSES), а не дублирующийся паттерн.
+class ProgressIn(BaseModel):
+    status: str = Field(pattern="^(" + "|".join(Database.PROGRESS_STATUSES) + ")$")
+
+
+@app.get("/api/progress")
+def get_progress(request: Request, pool: Optional[str] = None, user: dict = Depends(current_user)) -> dict:
+    p = _pool_or_404(request, pool)
+    return db.get_progress(resolve_tenant(request), user["id"], p.id)
+
+
+@app.put("/api/progress/{node_id}")
+def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(require_member)) -> dict:
+    """Статус карточки для текущего пользователя. Гость (по ссылке) статусы не ставит — 403 из require_member."""
+    tenant = resolve_tenant(request)
+    if db.get_node(tenant, node_id) is None:
+        raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
+    return db.set_progress(tenant, user["id"], node_id, body.status)
+
+
+@app.delete("/api/progress/{node_id}")
+def clear_progress(node_id: str, request: Request, user: dict = Depends(require_member)) -> dict:
+    return {"cleared": db.clear_progress(resolve_tenant(request), user["id"], node_id)}
 
 
 @app.post("/api/interview")
@@ -667,6 +756,7 @@ def _build_plan(request: Request, pool: PoolCfg, p: PlanIn) -> dict:
                 picked,
                 block_order=[b.id for b in pool.blocks],
                 sub_order={b.id: [s.id for s in b.subblocks] for b in pool.blocks},
+                level_order=[l.id for l in pool.levels],
             )
     if not order:
         raise HTTPException(status_code=422, detail="no questions match the plan")

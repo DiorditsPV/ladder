@@ -38,7 +38,6 @@ import { downloadBank, downloadReport } from "../report";
 import {
   CARD_H,
   CARD_W,
-  DIFFS,
   LABEL_W,
   subOf,
   swimlaneLayout,
@@ -48,10 +47,14 @@ import {
   blockColor,
   blockLabel,
   blockOrder,
-  DIFF_COLOR,
-  type Difficulty,
+  hexA,
+  levelColor,
+  levelLabel,
+  levelOrder,
+  lighten,
   type ImportErr,
   type PoolConfig,
+  type Progress,
   type QNode,
   type Session,
 } from "../types";
@@ -116,7 +119,10 @@ function buildNodes(
   graph: QNode[],
   pool: PoolConfig,
   p: Placement,
+  bandCounts: Record<string, { done: number; count: number }>,
   scores: Record<string, number>,
+  statuses: Record<string, Progress>,
+  inSession: boolean,
   currentId: string | null,
   selectedId: string | null,
   activeBlocks: Record<string, boolean>,
@@ -125,6 +131,7 @@ function buildNodes(
   activeKinds: Record<string, boolean>,
   query: string,
   unscoredOnly: boolean,
+  unresolvedOnly: boolean,
   hiddenIds: Set<string>,
   showHidden: boolean,
   guidesH: boolean,
@@ -139,7 +146,13 @@ function buildNodes(
     id: "bg-bands",
     type: "bands",
     position: { x: -LABEL_W, y: 0 },
-    data: { bands: p.bands, width: p.width, labelW: LABEL_W, height: p.height, dark },
+    data: {
+      bands: p.bands.map((b) => ({ ...b, ...(bandCounts[b.difficulty] ?? { done: 0, count: 0 }) })),
+      width: p.width,
+      labelW: LABEL_W,
+      height: p.height,
+      dark,
+    },
     draggable: false,
     selectable: false,
     zIndex: -5,
@@ -159,7 +172,10 @@ function buildNodes(
 
   for (const bg of p.blockGroups) {
     const blockNodes = graph.filter((n) => n.block === bg.block);
-    const done = blockNodes.filter((n) => scores[n.id] != null).length;
+    // В сессии считаем оценённые вопросы, вне сессии — разобранные («знаю») по чек-листу.
+    const done = inSession
+      ? blockNodes.filter((n) => scores[n.id] != null).length
+      : blockNodes.filter((n) => statuses[n.id] === "known").length;
     nodes.push({
       id: `bg-${bg.block}`,
       type: "blockGroup",
@@ -184,7 +200,9 @@ function buildNodes(
   for (const col of p.columns) {
     if (!col.label) continue;
     const colNodes = graph.filter((n) => n.block === col.block && subOf(n) === col.subblock);
-    const done = colNodes.filter((n) => scores[n.id] != null).length;
+    const done = inSession
+      ? colNodes.filter((n) => scores[n.id] != null).length
+      : colNodes.filter((n) => statuses[n.id] === "known").length;
     nodes.push({
       id: `sh-${col.block}-${col.subblock}`,
       type: "subhead",
@@ -214,11 +232,12 @@ function buildNodes(
     const dimmed =
       (planIds != null && !planIds.has(n.id)) ||
       activeBlocks[n.block] === false ||
-      !activeDiffs[n.difficulty] ||
+      activeDiffs[n.difficulty] === false ||
       !activeKinds[n.kind] ||
       !tagOk ||
       !matchesQuery(n, query) ||
-      (unscoredOnly && scores[n.id] != null) ||
+      (inSession && unscoredOnly && scores[n.id] != null) ||
+      (!inSession && unresolvedOnly && statuses[n.id] === "known") ||
       (hidden && !showHidden);
     nodes.push({
       id: n.id,
@@ -229,8 +248,12 @@ function buildNodes(
       height: CARD_H,
       data: {
         node: n,
+        pool,
         color: blockColor(pool, n.block),
+        dark,
         score: scores[n.id],
+        status: statuses[n.id],
+        showStatus: !inSession,
         current: n.id === currentId,
         dimmed,
         hidden: hidden && showHidden,
@@ -271,20 +294,9 @@ function readHiddenIds(pool: string): Set<string> {
   }
 }
 
-// draft-autosave: черновик оценок (без активной сессии) — устойчивость к refresh/крашу.
-function readDraftScores(pool: string): Record<string, number> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(legacyKey("draftScores", pool)) || "{}");
-    if (!raw || typeof raw !== "object") return {};
-    const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(raw)) if (typeof v === "number") out[k] = v;
-    return out;
-  } catch {
-    return {};
-  }
-}
+// Чек-лист разбора: клавиша → статус (1=знаю, 2=повторить, 3=не знаю), вне сессии.
+const STATUS_BY_KEY: Record<string, Progress> = { "1": "known", "2": "review", "3": "unknown" };
 
-const ALL_DIFFS: Record<string, boolean> = Object.fromEntries(DIFFS.map((d) => [d, true]));
 const KINDS = ["question", "task"] as const;
 const KIND_LABEL: Record<string, string> = { question: "вопрос", task: "задача" };
 const KIND_COLOR: Record<string, string> = { question: "#2563eb", task: "#9333ea" };
@@ -296,7 +308,8 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [graph, setGraph] = useState<QNode[]>([]);
   const [errors, setErrors] = useState<ImportErr[]>([]);
   const [placement, setPlacement] = useState<Placement | null>(null);
-  const [scores, setScores] = useState<Record<string, number>>(() => readDraftScores(pool.id));
+  // Ruling C3: оценки — только в сессии (из БД через joinSession); вне сессии черновиков нет.
+  const [scores, setScores] = useState<Record<string, number>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -306,6 +319,12 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   // Сессия стартует с главной (StartSessionForm) и приходит сюда по ?session=<id>;
   // своей строки кандидата у доски больше нет.
   const [session, setSession] = useState<Session | null>(null);
+  // Режим сессии — локальное состояние (не sessionFromUrl напрямую): «Выйти» чистит адрес
+  // через replaceState без remount'а доски, поэтому проп остался бы «залипшим».
+  const [inSession, setInSession] = useState<boolean>(sessionFromUrl != null);
+  // Чек-лист разбора (вне сессии, per-user): known|review|unknown по видимым нодам пула.
+  const [statuses, setStatuses] = useState<Record<string, Progress>>({});
+  const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [live, setLive] = useState(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
@@ -347,7 +366,12 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
   );
-  const [activeDiffs, setActiveDiffs] = useState<Record<string, boolean>>(ALL_DIFFS);
+  // Уровни пула — задаются pool.levels; набор пересчитывается при смене пула (см. эффект ниже).
+  const allDiffs = useMemo(() => Object.fromEntries(levelOrder(pool).map((d) => [d, true])), [pool]);
+  const [activeDiffs, setActiveDiffs] = useState<Record<string, boolean>>(allDiffs);
+  // BoardPage перемонтируется по key={pool.id} (см. Router.tsx), но фильтр уровней подстраховываем
+  // явным сбросом — набор уровней у нового пула не совпадает со старым.
+  useEffect(() => setActiveDiffs(allDiffs), [pool.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeTags, setActiveTags] = useState<Record<string, boolean>>({});
   const [activeKinds, setActiveKinds] = useState<Record<string, boolean>>(ALL_KINDS);
   const [query, setQuery] = useState("");
@@ -400,15 +424,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     () => localStorage.setItem(`hiddenIds:${pool.id}`, JSON.stringify([...hiddenIds])),
     [hiddenIds, pool.id],
   );
-  // draft-autosave: persist черновика оценок, пока нет активной сессии (в сессии — БД источник правды).
-  useEffect(() => {
-    if (session) return;
-    try {
-      localStorage.setItem(`draftScores:${pool.id}`, JSON.stringify(scores));
-    } catch {
-      /* ignore quota errors */
-    }
-  }, [scores, session, pool.id]);
 
   // hide-local: скрыть/вернуть вопрос на доску (клиентски, не трогает банк/БД).
   const toggleHide = useCallback((id: string) => {
@@ -482,7 +497,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     for (const n of graph) {
       const tagOk = !anyTag || n.tags.some((t) => activeTags[t]);
       const inPlan = planIds == null || planIds.has(n.id);
-      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         s.add(n.id);
       }
     }
@@ -494,6 +509,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     () => planOrder ?? (placement ? placement.order.flat() : []),
     [planOrder, placement],
   );
+
+  // Ruling C2: счётчики по рядам (уровням сложности) для BandsNode — по видимому срезу
+  // (см. visibleIds): вне сессии done = «знаю», в сессии — оценённые.
+  const bandCounts = useMemo(() => {
+    const out: Record<string, { done: number; count: number }> = {};
+    for (const n of graph) {
+      if (!visibleIds.has(n.id)) continue;
+      const b = (out[n.difficulty] ??= { done: 0, count: 0 });
+      b.count++;
+      const isDone = inSession ? scores[n.id] != null : statuses[n.id] === "known";
+      if (isDone) b.done++;
+    }
+    return out;
+  }, [graph, visibleIds, scores, statuses, inSession]);
 
   // Строки агенды в порядке обхода, с заголовком при смене блока.
   const agendaRows = useMemo(() => {
@@ -512,22 +541,31 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     return rows;
   }, [placement, nodeMap, walkOrder]);
 
+  // Режим сессии (открыта по ?session=<id>, включая гостя по приглашению) грузит граф со
+  // скрытыми: иначе завершённая сессия теряет из отчёта/доски оценённую ноду, которую позже
+  // скрыл sync или tombstone (Ruling 8). Обычная доска — без скрытых, как раньше.
   const loadGraph = useCallback(
     () =>
       api
-        .graph(pool.id)
+        .graph(pool.id, { includeHidden: sessionFromUrl != null })
         .then((g) => {
           setGraph(g.nodes);
           setErrors(g.errors);
           setPlacement(swimlaneLayout(g.nodes, pool));
         })
         .catch((err) => setErrors([{ file: "API", error: String(err) }])),
-    [pool],
+    [pool, sessionFromUrl],
   );
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
+
+  // Чек-лист разбора грузится только вне сессии; после «Выйти» (inSession → false) — перечитать.
+  useEffect(() => {
+    if (inSession) return;
+    api.progress(pool.id).then(setStatuses).catch(() => setStatuses({}));
+  }, [pool.id, inSession]);
 
   // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор/оценку).
   const deleteNode = useCallback(
@@ -568,9 +606,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const rfNodes = useMemo(
     () =>
       placement
-        ? buildNodes(graph, pool, placement, scores, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unscoredOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark", planIds)
+        ? buildNodes(graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark", planIds)
         : [],
-    [graph, pool, placement, scores, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unscoredOnly, hiddenIds, showHidden, guidesH, guidesV, theme, planIds],
+    [graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme, planIds],
   );
 
   const centerOn = useCallback(
@@ -583,12 +621,39 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [placement],
   );
 
+  // Ruling C3: оценки — только в сессии; вне сессии — no-op (черновиков без сессии больше нет).
   const applyScore = useCallback(
     (nodeId: string, score: number) => {
+      if (!session) return;
       setScores((s) => ({ ...s, [nodeId]: score }));
-      if (session) api.setScore(session.id, nodeId, score, notes[nodeId]).catch(() => void 0);
+      api.setScore(session.id, nodeId, score, notes[nodeId]).catch(() => void 0);
     },
     [session, notes],
+  );
+
+  // Чек-лист разбора: статус карточки (вне сессии). Optimistic update + откат при ошибке;
+  // повтор той же клавиши/кнопки с тем же статусом снимает его (DELETE вместо PUT).
+  const setStatus = useCallback(
+    (nodeId: string, status: Progress) => {
+      const prevStatus = statuses[nodeId];
+      const clearing = prevStatus === status;
+      setStatuses((s) => {
+        const next = { ...s };
+        if (clearing) delete next[nodeId];
+        else next[nodeId] = status;
+        return next;
+      });
+      const request = clearing ? api.clearProgress(nodeId) : api.setProgress(nodeId, status);
+      request.catch(() => {
+        setStatuses((s) => {
+          const next = { ...s };
+          if (prevStatus == null) delete next[nodeId];
+          else next[nodeId] = prevStatus;
+          return next;
+        });
+      });
+    },
+    [statuses],
   );
 
   // Заметка интервьюера на ноду: персистится вместе с оценкой (схема scores: score+note).
@@ -633,6 +698,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     moveCurrent(flat[(start + 1 + flat.length) % flat.length]);
   }, [placement, currentId, scores, moveCurrent, visibleIds, walkOrder]);
 
+  // Хоткеи чек-листа (1-3, вне сессии): следующая ВИДИМАЯ карточка в порядке матрицы —
+  // следующая в колонке, затем первая следующей колонки; те же фильтры и «только
+  // неразобранное», что у nextQuestion. Пусто после фильтра — остаёмся на месте.
+  // Возвращает id новой текущей карточки (для drawer, п.2) или null.
+  const nextInMatrix = useCallback((): string | null => {
+    if (!placement) return null;
+    const flat = walkOrder.filter((id) => visibleIds.has(id) && (!unresolvedOnly || statuses[id] !== "known"));
+    if (!flat.length) return null;
+    const idx = currentId ? flat.indexOf(currentId) : -1;
+    const next = flat[(idx + 1 + flat.length) % flat.length];
+    if (next) moveCurrent(next);
+    return next ?? null;
+  }, [placement, currentId, moveCurrent, walkOrder, visibleIds, unresolvedOnly, statuses]);
+
   // Сессия с планом: стартуем с первого неоценённого вопроса плана, как только доска готова.
   useEffect(() => {
     if (!planOrder || !placement || currentId) return;
@@ -654,7 +733,15 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
       }
       if (!placement) return;
       if (e.key >= "1" && e.key <= "5") {
-        if (currentId) applyScore(currentId, Number(e.key));
+        if (!currentId) return;
+        if (inSession) {
+          applyScore(currentId, Number(e.key));
+        } else if (e.key in STATUS_BY_KEY) {
+          setStatus(currentId, STATUS_BY_KEY[e.key]);
+          // Drawer открыт — курсор оценки должен идти вместе с ним (иначе drawer «отстаёт»).
+          const nextId = nextInMatrix();
+          if (nextId != null && selectedId != null) setSelectedId(nextId);
+        }
         return;
       }
       if (e.key === "Enter") {
@@ -702,7 +789,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [placement, currentId, selectedId, applyScore, moveCurrent, nextQuestion]);
+  }, [placement, currentId, selectedId, inSession, applyScore, moveCurrent, nextQuestion, setStatus, nextInMatrix]);
 
   // Привязать активную сессию к адресу (#/board/<pool>?session=<id>) — ссылкой можно поделиться.
   // replaceState не шлёт hashchange: роутер не перерисовывает доску, состояние остаётся.
@@ -717,10 +804,13 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
       try {
         const s = await api.getSession(id);
         setSession(s);
+        setInSession(true);
+        setUnresolvedOnly(false); // чип «Только неразобранное» есть только вне сессии — иначе индикатор фильтров залипнет
         setScores(scoresOf(s));
         setNotes(notesOf(s));
         setSessionParam(id);
       } catch {
+        setInSession(false);
         setSessionParam(null);
       }
     },
@@ -729,8 +819,11 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
 
   const leaveSession = useCallback(() => {
     setSession(null);
+    setInSession(false);
     setLive(false);
     setUnscoredOnly(false); // чип «Только неоценённые» есть только в сессии — фильтр не должен остаться висеть
+    setUnresolvedOnly(false); // симметрично: «Только неразобранное» — только вне сессии
+    setScores({}); // Ruling C3: черновиков вне сессии нет — не тащим оценки покинутой сессии на доску
     setSessionParam(null);
   }, [setSessionParam]);
 
@@ -764,7 +857,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   }, [session]);
 
   const toggleBlock = (b: string) => setActiveBlocks((s) => ({ ...s, [b]: !s[b] }));
-  const toggleDiff = (d: Difficulty) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
+  const toggleDiff = (d: string) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
   const toggleTag = (t: string) => setActiveTags((s) => ({ ...s, [t]: !s[t] }));
   const clearTags = () => setActiveTags({});
   const toggleKind = (k: string) => setActiveKinds((s) => ({ ...s, [k]: !s[k] }));
@@ -790,16 +883,24 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
       alive = false;
     };
   }, [session]);
-  const progress = useMemo(() => {
+  // Прогресс по блокам для чипов фильтра: в сессии — оценённые, вне сессии — разобранные («знаю»).
+  const blockProgress = useMemo(() => {
     const out: Record<string, { done: number; total: number }> = {};
     for (const b of blockOrder(pool)) out[b] = { done: 0, total: 0 };
     for (const n of graph) {
       out[n.block] ??= { done: 0, total: 0 };
       out[n.block].total++;
-      if (scores[n.id] != null) out[n.block].done++;
+      const isDone = inSession ? scores[n.id] != null : statuses[n.id] === "known";
+      if (isDone) out[n.block].done++;
     }
     return out;
-  }, [graph, scores, pool]);
+  }, [graph, scores, statuses, inSession, pool]);
+
+  // Число разобранных («знаю») карточек — для HUD/toolbar вне сессии.
+  const known = useMemo(
+    () => Object.values(statuses).filter((s) => s === "known").length,
+    [statuses],
+  );
 
   const anyTagActive = Object.values(activeTags).some(Boolean);
   // Свёрнутая панель не должна прятать факт, что доска отфильтрована, — отсюда точка-индикатор.
@@ -807,8 +908,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     anyTagActive ||
     query.trim() !== "" ||
     unscoredOnly ||
+    unresolvedOnly ||
     blockOrder(pool).some((b) => !activeBlocks[b]) ||
-    DIFFS.some((d) => !activeDiffs[d]) ||
+    levelOrder(pool).some((d) => !activeDiffs[d]) ||
     KINDS.some((k) => !activeKinds[k]);
   // Прогресс по ТЕКУЩЕМУ отфильтрованному набору. Условие "проходит фильтры" держать в
   // синхроне с предикатом `dimmed` в buildNodes (block/diff/kind/tag).
@@ -825,7 +927,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     }
     for (const n of graph) {
       const tagOk = !anyTagActive || n.tags.some((t) => activeTags[t]);
-      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         total++;
         if (scores[n.id] != null) done++;
       }
@@ -924,7 +1026,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                 // Настройка интервью получает текущие фильтры доски: выбранная область → набор вопросов.
                 href={href.setup(pool.id, {
                   blocks: blockOrder(pool).filter((b) => activeBlocks[b] !== false),
-                  diffs: DIFFS.filter((d) => activeDiffs[d]),
+                  diffs: levelOrder(pool).filter((d) => activeDiffs[d]),
                 })}
               >
                 <Play size={15} strokeWidth={2} aria-hidden="true" />
@@ -1195,24 +1297,24 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                           }}
                           onClick={() => toggleBlock(b)}
                         >
-                          {blockLabel(pool, b)} {progress[b].done}/{progress[b].total}
+                          {blockLabel(pool, b)} {blockProgress[b].done}/{blockProgress[b].total}
                         </button>
                       ))}
                     </div>
                     <div className="fp__group">
                       <h2 className="fp__title">{t("Сложность")}</h2>
-                      {DIFFS.map((d) => (
+                      {levelOrder(pool).map((d) => (
                         <button
                           key={d}
                           className={`fp__chip ${activeDiffs[d] ? "" : "fp__chip--off"}`}
                           style={{
-                            borderColor: DIFF_COLOR[d],
-                            color: activeDiffs[d] ? "#fff" : DIFF_COLOR[d],
-                            background: activeDiffs[d] ? DIFF_COLOR[d] : "transparent",
+                            borderColor: levelColor(pool, d),
+                            color: activeDiffs[d] ? "#fff" : levelColor(pool, d),
+                            background: activeDiffs[d] ? levelColor(pool, d) : "transparent",
                           }}
                           onClick={() => toggleDiff(d)}
                         >
-                          {d}
+                          {levelLabel(pool, d)}
                         </button>
                       ))}
                     </div>
@@ -1233,10 +1335,11 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                         </button>
                       ))}
                     </div>
-                    {/* Прогресс-фильтр — только в сессии (ТЗ 13): без неё оценки — черновик, не ход интервью. */}
-                    {session && (
-                      <div className="fp__group">
-                        <h2 className="fp__title">{t("Прогресс")}</h2>
+                    {/* Прогресс-фильтр: в сессии — «только неоценённые» (ход интервью), вне сессии —
+                        «только неразобранное» (чек-лист разбора, гасит уже «знаю» карточки). */}
+                    <div className="fp__group">
+                      <h2 className="fp__title">{t("Прогресс")}</h2>
+                      {inSession ? (
                         <button
                           className={`fp__chip ${unscoredOnly ? "" : "fp__chip--off"}`}
                           style={{
@@ -1248,8 +1351,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                         >
                           {t("Только неоценённые")}
                         </button>
-                      </div>
-                    )}
+                      ) : (
+                        <button
+                          className={`fp__chip ${unresolvedOnly ? "" : "fp__chip--off"}`}
+                          style={{
+                            borderColor: "#16a34a",
+                            color: unresolvedOnly ? "#fff" : "#16a34a",
+                            background: unresolvedOnly ? "#16a34a" : "transparent",
+                          }}
+                          onClick={() => setUnresolvedOnly((v) => !v)}
+                        >
+                          {t("Только неразобранное")}
+                        </button>
+                      )}
+                    </div>
                     <div className="fp__group fp__group--tags">
                       <div className="fp__title">
                         {t("Теги")}
@@ -1276,8 +1391,21 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
               {currentNode && (
                 <Panel position="bottom-center">
                   <div className="hud">
-                    <span className="hud__diff" data-diff={currentNode.difficulty}>
-                      {currentNode.difficulty}
+                    <span
+                      className="hud__diff"
+                      style={
+                        theme === "dark"
+                          ? {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.22),
+                              color: lighten(levelColor(pool, currentNode.difficulty), 0.55),
+                            }
+                          : {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.15),
+                              color: levelColor(pool, currentNode.difficulty),
+                            }
+                      }
+                    >
+                      {levelLabel(pool, currentNode.difficulty)}
                     </span>
                     <span className="hud__title" title={currentNode.question}>
                       {currentNode.title || currentNode.question}
@@ -1291,24 +1419,50 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                     <span className="hud__progress">
                       {planOrder
                         ? `${Math.max(0, planOrder.indexOf(currentNode.id)) + 1}/${planOrder.length}`
-                        : `${scored}/${graph.length}`}
+                        : inSession
+                        ? `${scored}/${graph.length}`
+                        : `${t("Разобрано")} ${known}/${graph.length}`}
                       {" · "}
                       {currentNode.topic}
                     </span>
+                    {/* Ruling C3: вне сессии HUD ставит статусы чек-листа, не оценки; звёзды — только в сессии. */}
                     <span className="hud__score">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <button
-                          key={i}
-                          className={
-                            scores[currentId!] != null && i <= scores[currentId!]
-                              ? "scorebtn scorebtn--on"
-                              : "scorebtn"
-                          }
-                          onClick={() => applyScore(currentId!, i)}
-                        >
-                          ●
-                        </button>
-                      ))}
+                      {inSession ? (
+                        [1, 2, 3, 4, 5].map((i) => (
+                          <button
+                            key={i}
+                            className={
+                              scores[currentId!] != null && i <= scores[currentId!]
+                                ? "scorebtn scorebtn--on"
+                                : "scorebtn"
+                            }
+                            onClick={() => applyScore(currentId!, i)}
+                          >
+                            ●
+                          </button>
+                        ))
+                      ) : (
+                        <>
+                          <button
+                            className={`statusbtn statusbtn--known ${statuses[currentId!] === "known" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "known")}
+                          >
+                            {t("Знаю (1)")}
+                          </button>
+                          <button
+                            className={`statusbtn statusbtn--review ${statuses[currentId!] === "review" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "review")}
+                          >
+                            {t("Повторить (2)")}
+                          </button>
+                          <button
+                            className={`statusbtn statusbtn--unknown ${statuses[currentId!] === "unknown" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "unknown")}
+                          >
+                            {t("Не знаю (3)")}
+                          </button>
+                        </>
+                      )}
                     </span>
                     <button onClick={() => setSelectedId(currentId)}>{t("Открыть")}</button>
                     <button className="btn--primary" onClick={nextQuestion}>
@@ -1329,6 +1483,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
           pool={pool}
           score={selectedId ? scores[selectedId] : undefined}
           note={selectedId ? notes[selectedId] : undefined}
+          status={selectedId ? statuses[selectedId] : undefined}
+          inSession={inSession}
+          onStatus={setStatus}
           fullscreen={fullscreen}
           hidden={selectedId ? hiddenIds.has(selectedId) : false}
           onToggleHide={toggleHide}

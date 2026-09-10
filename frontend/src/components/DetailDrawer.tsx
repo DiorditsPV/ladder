@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { blockColor, blockLabel, type Difficulty, type PoolConfig, type QNode } from "../types";
+import { blockColor, blockLabel, levelLabel, levelOrder, type PoolConfig, type Progress, type QNode } from "../types";
 import type { NodeUpdate } from "../api";
 import { useT } from "../i18n";
 
@@ -11,6 +11,11 @@ interface Props {
   pool: PoolConfig;
   score?: number;
   note?: string;
+  // Чек-лист разбора: статус текущей карточки + сеттер. Показывается вместо блока оценки
+  // вне сессии — в сессии карточки оценивает интервьюер, статусы не отображаются.
+  status?: Progress;
+  inSession: boolean;
+  onStatus: (nodeId: string, status: Progress) => void;
   fullscreen: boolean;
   hidden: boolean;
   onToggleHide: (nodeId: string) => void;
@@ -22,14 +27,12 @@ interface Props {
   onClose: () => void;
 }
 
-const DIFF_OPTS: Difficulty[] = ["base", "junior", "middle", "senior"];
-
 // Немодальный drawer: полный текст вопроса/ответа. Закрывается с клавиатуры (Esc).
-export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onToggleHide, onScore, onNote, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
+export function DetailDrawer({ node, pool, score, note, status, inSession, onStatus, fullscreen, hidden, onToggleHide, onScore, onNote, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; difficulty: Difficulty; question: string; answer: string }>(
-    { title: "", difficulty: "middle", question: "", answer: "" },
+  const [draft, setDraft] = useState<{ title: string; difficulty: string; question: string; answer: string }>(
+    { title: "", difficulty: pool.levels[0]?.id ?? "", question: "", answer: "" },
   );
 
   // Сброс режима правки при переключении на другой вопрос.
@@ -75,8 +78,8 @@ export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onTo
         <span className="drawer__badge" style={{ background: color }}>
           {blockLabel(pool, node.block)} · {node.topic}
         </span>
-        <span className="drawer__diff" data-diff={node.difficulty}>
-          {node.kind === "task" ? t("🛠 задача") : t("❓ вопрос")} · {node.difficulty}
+        <span className="drawer__diff">
+          {node.kind === "task" ? t("🛠 задача") : t("❓ вопрос")} · {levelLabel(pool, node.difficulty)}
         </span>
         <div className="drawer__actions">
           <button
@@ -122,10 +125,10 @@ export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onTo
               {t("Сложность")}
               <select
                 value={draft.difficulty}
-                onChange={(e) => setDraft({ ...draft, difficulty: e.target.value as Difficulty })}
+                onChange={(e) => setDraft({ ...draft, difficulty: e.target.value })}
               >
-                {DIFF_OPTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                {levelOrder(pool).map((d) => (
+                  <option key={d} value={d}>{levelLabel(pool, d)}</option>
                 ))}
               </select>
             </label>
@@ -199,20 +202,48 @@ export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onTo
         )}
 
         <section className="drawer__scoring">
-          <h3>{t("Оценка")}</h3>
-          <div className="scorebar">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <button
-                key={i}
-                className={score != null && i <= score ? "scorebtn scorebtn--on" : "scorebtn"}
-                onClick={() => onScore(node.id, i)}
-                aria-label={t("Оценка {n}", { n: i })}
-              >
-                ●
-              </button>
-            ))}
-            {score != null && <span className="scoreval">{score}/5</span>}
-          </div>
+          {inSession ? (
+            <>
+              <h3>{t("Оценка")}</h3>
+              <div className="scorebar">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <button
+                    key={i}
+                    className={score != null && i <= score ? "scorebtn scorebtn--on" : "scorebtn"}
+                    onClick={() => onScore(node.id, i)}
+                    aria-label={t("Оценка {n}", { n: i })}
+                  >
+                    ●
+                  </button>
+                ))}
+                {score != null && <span className="scoreval">{score}/5</span>}
+              </div>
+            </>
+          ) : (
+            <>
+              <h3>{t("Разобрано")}</h3>
+              <div className="statusbar">
+                <button
+                  className={`statusbtn statusbtn--known ${status === "known" ? "statusbtn--on" : ""}`}
+                  onClick={() => onStatus(node.id, "known")}
+                >
+                  {t("Знаю (1)")}
+                </button>
+                <button
+                  className={`statusbtn statusbtn--review ${status === "review" ? "statusbtn--on" : ""}`}
+                  onClick={() => onStatus(node.id, "review")}
+                >
+                  {t("Повторить (2)")}
+                </button>
+                <button
+                  className={`statusbtn statusbtn--unknown ${status === "unknown" ? "statusbtn--on" : ""}`}
+                  onClick={() => onStatus(node.id, "unknown")}
+                >
+                  {t("Не знаю (3)")}
+                </button>
+              </div>
+            </>
+          )}
           <textarea
             className="drawer__note"
             placeholder={t("Заметка интервьюера…")}

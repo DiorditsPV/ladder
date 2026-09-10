@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS pools (
     label       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     blocks      TEXT NOT NULL,                 -- JSON: [{id,label,color,weight,subblocks:[{id,label}]}]
+    levels      TEXT NOT NULL DEFAULT '[]',        -- JSON: [{id,label}]; '[]' → DEFAULT_LEVELS при чтении
     source      TEXT NOT NULL DEFAULT 'seed',  -- seed | user
     deleted_at  TEXT,                          -- tombstone: сид не воскрешает, id остаётся занятым
     created_at  TEXT NOT NULL,
@@ -123,6 +125,14 @@ CREATE TABLE IF NOT EXISTS scores (
     created_at TEXT NOT NULL,
     UNIQUE(session_id, node_id)
 );
+CREATE TABLE IF NOT EXISTS progress (
+    tenant_id  TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
+    user_id    TEXT NOT NULL,
+    node_id    TEXT NOT NULL,
+    status     TEXT NOT NULL,               -- known | review | unknown (чек-лист самоподготовки)
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, user_id, node_id)
+);
 """
 
 # rubric/tags хранятся в БД JSON-строками (паттерн SQLite без доп. таблиц).
@@ -154,9 +164,10 @@ def invite_state(inv: Dict) -> str:
 
 
 def _row_to_pool(row: sqlite3.Row) -> Dict:
-    """Строка pools → dict направления: blocks из JSON в список."""
+    """Строка pools → dict направления: blocks/levels из JSON в список."""
     d = dict(row)
     d["blocks"] = json.loads(d.get("blocks") or "[]")
+    d["levels"] = json.loads(d.get("levels") or "[]")
     return d
 
 
@@ -169,6 +180,18 @@ class Database:
             self._migrate_sessions(conn)
             self._migrate_nodes(conn)
             self._migrate_auth_sessions(conn)
+            self._migrate_pools(conn)
+
+    @staticmethod
+    def _migrate_pools(conn: sqlite3.Connection) -> None:
+        """Уровни как данные направления: столбец pools.levels. Старые строки получают прежнюю
+        четвёрку явно (не '[]'), чтобы ответ API не зависел от того, когда пул создан."""
+        from .pools import DEFAULT_LEVELS, levels_to_json
+
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(pools)").fetchall()}
+        if "levels" not in cols:
+            conn.execute("ALTER TABLE pools ADD COLUMN levels TEXT NOT NULL DEFAULT '[]'")
+        conn.execute("UPDATE pools SET levels = ? WHERE levels = '[]'", (levels_to_json(DEFAULT_LEVELS),))
 
     @staticmethod
     def _migrate_auth_sessions(conn: sqlite3.Connection) -> None:
@@ -405,6 +428,17 @@ class Database:
             rows = conn.execute(sql, args).fetchall()
         return [_row_to_node(r) for r in rows]
 
+    def list_node_ids(self, tenant_id: str, pool: str, source: Optional[str] = None, hidden: Optional[bool] = None) -> List[str]:
+        sql, args = "SELECT id FROM nodes WHERE tenant_id = ? AND pool = ?", [tenant_id, pool]
+        if source is not None:
+            sql += " AND source = ?"
+            args.append(source)
+        if hidden is not None:
+            sql += " AND hidden = ?"
+            args.append(int(hidden))
+        with self._conn() as conn:
+            return [r["id"] for r in conn.execute(sql + " ORDER BY id", args).fetchall()]
+
     def get_node(self, tenant_id: str, node_id: str) -> Optional[Dict]:
         with self._conn() as conn:
             row = conn.execute(
@@ -432,7 +466,9 @@ class Database:
                     topic=excluded.topic, title=excluded.title, difficulty=excluded.difficulty,
                     weight=excluded.weight, question=excluded.question, answer=excluded.answer,
                     starter_code=excluded.starter_code, rubric=excluded.rubric,
-                    tags=excluded.tags, updated_at=excluded.updated_at
+                    tags=excluded.tags, source=excluded.source, updated_at=excluded.updated_at
+                    -- hidden НЕ обновляем: на нём держится «липкость» скрытия (sync/tombstone),
+                    -- обычный upsert (UI-правка, /api/import) не должен её случайно снимать
                 """,
                 (
                     tenant_id, node["id"], node.get("pool", "data-engineer"),
@@ -449,6 +485,16 @@ class Database:
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM nodes WHERE tenant_id = ? AND id = ?", (tenant_id, node_id)
+            )
+        return cur.rowcount > 0
+
+    def tombstone_node(self, tenant_id: str, node_id: str) -> bool:
+        """Спрятать ноду вместо удаления (source='user'): для seed-ноды, файл которой в content/
+        остаётся источником — обычный DELETE её бы воскресил при следующем sync."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE nodes SET hidden = 1, source = 'user', updated_at = ? WHERE tenant_id = ? AND id = ?",
+                (_now(), tenant_id, node_id),
             )
         return cur.rowcount > 0
 
@@ -513,19 +559,20 @@ class Database:
     def upsert_pool_seed(self, tenant_id: str, pool: Dict) -> bool:
         """Сид конфига направления: INSERT OR IGNORE — правки из UI и tombstone переживают рестарт.
 
-        `pool` — {id, label, description, blocks: list}. Возвращает True, если строка вставлена.
+        `pool` — {id, label, description, blocks: list, levels?: list}. Возвращает True, если строка вставлена.
         """
         now = _now()
         with self._conn() as conn:
             cur = conn.execute(
                 """
                 INSERT OR IGNORE INTO pools (
-                    tenant_id, id, label, description, blocks, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'seed', ?, ?)
+                    tenant_id, id, label, description, blocks, levels, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'seed', ?, ?)
                 """,
                 (
                     tenant_id, pool["id"], pool["label"], pool.get("description") or "",
-                    json.dumps(pool["blocks"], ensure_ascii=False), now, now,
+                    json.dumps(pool["blocks"], ensure_ascii=False),
+                    json.dumps(pool.get("levels") or [], ensure_ascii=False), now, now,
                 ),
             )
         return cur.rowcount == 1
@@ -538,40 +585,60 @@ class Database:
         description: str,
         blocks: List[Dict],
         copy_from: Optional[str] = None,
+        levels: Optional[List[Dict]] = None,
     ) -> Dict:
         """Направление из UI (source='user'); с copy_from — ещё и копия его вопросов.
 
         Строка пула и копии нод пишутся одной транзакцией: падение посередине (в том числе
         коллизия id ноды) откатывает всё, «пула-сироты» без вопросов не остаётся.
-        Занятость id пула проверяет вызывающий (get_pool).
+        Занятость id пула проверяет вызывающий (get_pool). Уровни: без copy_from — переданные
+        (или '[]' → DEFAULT_LEVELS при чтении); с copy_from и levels=None — уровни пресета.
         """
         now = _now()
+        if copy_from is not None and levels is None:
+            levels = self.get_pool(tenant_id, copy_from)["levels"]
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO pools (
-                    tenant_id, id, label, description, blocks, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'user', ?, ?)
+                    tenant_id, id, label, description, blocks, levels, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?)
                 """,
-                (tenant_id, pool_id, label, description, json.dumps(blocks, ensure_ascii=False), now, now),
+                (
+                    tenant_id, pool_id, label, description, json.dumps(blocks, ensure_ascii=False),
+                    json.dumps(levels or [], ensure_ascii=False), now, now,
+                ),
             )
             if copy_from is not None:
                 self._copy_nodes(conn, tenant_id, copy_from, pool_id, now)
         return self.get_pool(tenant_id, pool_id)
 
-    def update_pool(self, tenant_id: str, pool_id: str, fields: Dict) -> Optional[Dict]:
-        """Правка названия/описания/колонок (остальные ключи игнорируются). None — нет или удалено.
+    def set_pool_config(self, tenant_id: str, pool_id: str, cfg: Dict) -> None:
+        """Конфиг направления из файлов (sync): label/description/blocks/levels без побочных удалений
+        вопросов — в отличие от update_pool, где смена колонок/уровней из UI режет вопросы."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE pools SET label = ?, description = ?, blocks = ?, levels = ?, updated_at = ? "
+                "WHERE tenant_id = ? AND id = ?",
+                (cfg["label"], cfg.get("description") or "", json.dumps(cfg["blocks"], ensure_ascii=False),
+                 json.dumps(cfg["levels"], ensure_ascii=False), _now(), tenant_id, pool_id),
+            )
 
-        `blocks` — уже валидированный список dict (см. pools.normalize_blocks + parse_blocks).
-        Смена колонок и её последствия для вопросов — одна транзакция: вопросы исчезнувших колонок
-        удаляются, вопросы исчезнувших под-колонок остаются в колонке без под-колонки.
+    def update_pool(self, tenant_id: str, pool_id: str, fields: Dict) -> Optional[Dict]:
+        """Правка названия/описания/колонок/уровней (остальные ключи игнорируются). None — нет или удалено.
+
+        `blocks`/`levels` — уже валидированные списки dict (см. pools.normalize_blocks + parse_blocks,
+        pools.normalize_levels + parse_levels). Смена колонок и её последствия для вопросов — одна
+        транзакция: вопросы исчезнувших колонок удаляются, вопросы исчезнувших под-колонок остаются
+        в колонке без под-колонки; вопросы исчезнувших уровней удаляются.
         """
         current = self.get_pool(tenant_id, pool_id)
         if current is None or current["deleted_at"] is not None:
             return None
         allowed = {k: v for k, v in fields.items() if k in ("label", "description")}
         blocks = fields.get("blocks")
-        if not allowed and blocks is None:
+        levels = fields.get("levels")
+        if not allowed and blocks is None and levels is None:
             return current
         now = _now()
         with self._conn() as conn:
@@ -603,6 +670,19 @@ class Database:
                         f"AND block = ? AND subblock IS NOT NULL {cond}",
                         (now, tenant_id, pool_id, b["id"], *subs),
                     )
+            if levels is not None:
+                kept_l = [l["id"] for l in levels]
+                if not kept_l:
+                    raise ValueError("levels must not be empty")
+                conn.execute(
+                    "UPDATE pools SET levels = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
+                    (json.dumps(levels, ensure_ascii=False), now, tenant_id, pool_id),
+                )
+                marks = ",".join("?" * len(kept_l))
+                conn.execute(
+                    f"DELETE FROM nodes WHERE tenant_id = ? AND pool = ? AND difficulty NOT IN ({marks})",
+                    (tenant_id, pool_id, *kept_l),
+                )
         return self.get_pool(tenant_id, pool_id)
 
     def delete_pool(self, tenant_id: str, pool_id: str) -> Optional[int]:
@@ -877,3 +957,47 @@ class Database:
                 (session_id, node_id, score, note, _now()),
             )
         return self.get_session(session_id, tenant_id)
+
+    # --- progress (чек-лист разбора, per-user) ---
+    PROGRESS_STATUSES = ("known", "review", "unknown")
+
+    def set_progress(self, tenant_id: str, user_id: str, node_id: str, status: str) -> Dict[str, str]:
+        """Статус карточки для пользователя (upsert). Валидность status проверяет вызывающий."""
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO progress (tenant_id, user_id, node_id, status, updated_at) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, user_id, node_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
+                """,
+                (tenant_id, user_id, node_id, status, _now()),
+            )
+        return {"node_id": node_id, "status": status}
+
+    def clear_progress(self, tenant_id: str, user_id: str, node_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM progress WHERE tenant_id = ? AND user_id = ? AND node_id = ?", (tenant_id, user_id, node_id)
+            )
+        return cur.rowcount > 0
+
+    def get_progress(self, tenant_id: str, user_id: str, pool: str) -> Dict[str, str]:
+        """{node_id: status} по видимым нодам пула — статусы спрятанных нод не отдаём, но и не стираем."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.node_id, p.status FROM progress p
+                JOIN nodes n ON n.tenant_id = p.tenant_id AND n.id = p.node_id
+                WHERE p.tenant_id = ? AND p.user_id = ? AND n.pool = ? AND n.hidden = 0
+                """,
+                (tenant_id, user_id, pool),
+            ).fetchall()
+        return {r["node_id"]: r["status"] for r in rows}
+
+    def progress_summary(self, tenant_id: str, user_id: str, pool: str) -> Dict[str, int]:
+        """Сводка для главной: сколько known/review/unknown среди видимых нод пула и total = видимых нод."""
+        counts = Counter(self.get_progress(tenant_id, user_id, pool).values())
+        with self._conn() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE tenant_id = ? AND pool = ? AND hidden = 0", (tenant_id, pool)
+            ).fetchone()[0]
+        return {"known": counts["known"], "review": counts["review"], "unknown": counts["unknown"], "total": total}

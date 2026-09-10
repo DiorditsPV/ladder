@@ -1,9 +1,13 @@
 import { memo } from "react";
-import { DIFF_COLOR, hexA, lighten, type Difficulty } from "../types";
+import { hexA, lighten } from "../types";
 import type { Band } from "../layout";
 
+// Ruling C2: счётчик разобранных/оценённых по ряду — добавляется к Band в BoardPage
+// (layout.ts не знает о прогрессе, поэтому здесь расширение, а не правка Band).
+export type BandWithCount = Band & { done: number; count: number };
+
 export interface BandsNodeData {
-  bands: Band[];
+  bands: BandWithCount[];
   width: number;
   labelW: number;
   dark: boolean;
@@ -18,7 +22,7 @@ function BandsNodeImpl({ data }: { data: BandsNodeData }) {
   return (
     <div className="bands" style={{ width: labelW + width, height }}>
       {bands.map((b) => {
-        const color = DIFF_COLOR[b.difficulty as Difficulty];
+        const color = b.color;
         return (
           <div
             key={b.difficulty}
@@ -33,6 +37,7 @@ function BandsNodeImpl({ data }: { data: BandsNodeData }) {
             }}
           >
             <span>{b.label}</span>
+            <span className="bands__count">{b.done}/{b.count}</span>
           </div>
         );
       })}

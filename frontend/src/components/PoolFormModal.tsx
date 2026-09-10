@@ -1,9 +1,10 @@
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, type BlockDraft } from "../api";
+import { api, type BlockDraft, type LevelDraft } from "../api";
 import { nWord, useT } from "../i18n";
 import type { PoolConfig } from "../types";
 import { BlocksEditor, blocksValid, emptyBlock, newUid } from "./BlocksEditor";
+import { LevelsEditor, levelsValid } from "./LevelsEditor";
 
 type Step = 1 | 2 | 3;
 
@@ -21,6 +22,14 @@ const toPayload = (blocks: BlockDraft[]): BlockDraft[] =>
     color: b.color,
     subblocks: (b.subblocks ?? []).map((s) => ({ id: s.id, label: s.label.trim() })),
   }));
+
+// Уровни направления → черновики и обратно; id сохраняем по той же причине, что у разделов.
+const fromPoolLevels = (levels: PoolConfig["levels"]): LevelDraft[] =>
+  levels.map((l) => ({ uid: newUid(), id: l.id, label: l.label }));
+const toLevelPayload = (levels: LevelDraft[]): LevelDraft[] => levels.map((l) => ({ id: l.id, label: l.label.trim() }));
+// Без пресета уровни начинаются с прежней четвёрки — той же, что сервер ставит пулу без `levels` (DEFAULT_LEVELS).
+const defaultLevels = (): LevelDraft[] =>
+  [["base", "Base"], ["junior", "Junior"], ["middle", "Middle"], ["senior", "Senior"]].map(([id, label]) => ({ uid: newUid(), id, label }));
 
 // Мастер направления в три шага: Основное (название, описание, набор вопросов) → Структура
 // (разделы/подкатегории в BlocksEditor) → Проверка (компактный предпросмотр) → Создать/Сохранить.
@@ -40,11 +49,13 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
   // "" — без пресета (свои разделы); без единого направления пресета и быть не может.
   const [preset, setPreset] = useState(pools[0]?.id ?? "");
   const [blocks, setBlocks] = useState<BlockDraft[]>(() => (pool ? fromPool(pool.blocks) : [emptyBlock()]));
+  const [levels, setLevels] = useState<LevelDraft[]>(() => (pool ? fromPoolLevels(pool.levels) : defaultLevels()));
   // Из какого пресета заполнен редактор: сменили пресет на шаге 1 → редактор перезаполняется,
   // вернулись «Назад» без смены → правки остаются. null — ещё не заполнялся.
   const [blocksSrc, setBlocksSrc] = useState<string | null>(null);
-  // Число вопросов по разделу — для confirm при удалении раздела (его вопросы удалятся).
+  // Число вопросов по разделу и по уровню — для confirm при удалении (их вопросы удалятся).
   const [nodeCounts, setNodeCounts] = useState<Record<string, number>>();
+  const [levelCounts, setLevelCounts] = useState<Record<string, number>>();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -55,8 +66,13 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
       .then((g) => {
         if (!alive) return;
         const counts: Record<string, number> = {};
-        for (const n of g.nodes) counts[n.block] = (counts[n.block] ?? 0) + 1;
+        const byLevel: Record<string, number> = {};
+        for (const n of g.nodes) {
+          counts[n.block] = (counts[n.block] ?? 0) + 1;
+          byLevel[n.difficulty] = (byLevel[n.difficulty] ?? 0) + 1;
+        }
         setNodeCounts(counts);
+        setLevelCounts(byLevel);
       })
       .catch(() => {
         /* без счётчиков удаление разделов остаётся заблокированным (см. BlocksEditor) */
@@ -67,7 +83,7 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
   }, [mode, pool]);
 
   const labelOk = label.trim() !== "";
-  const structureOk = blocksValid(blocks);
+  const structureOk = blocksValid(blocks) && levelsValid(levels);
 
   const next = () => {
     if (step === 1) {
@@ -75,6 +91,7 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
       if (mode === "create" && blocksSrc !== preset) {
         const src = pools.find((p) => p.id === preset);
         setBlocks(src ? fromPool(src.blocks) : [emptyBlock()]);
+        setLevels(src ? fromPoolLevels(src.levels) : defaultLevels());
         setBlocksSrc(preset);
       }
       setStep(2);
@@ -89,20 +106,23 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
     setBusy(true);
     const fields = { label: label.trim(), description: desc.trim() };
     const payload = toPayload(blocks);
+    const levelPayload = toLevelPayload(levels);
     let created: PoolConfig | undefined;
     try {
       if (mode === "create") {
         if (!preset) {
-          await api.createPool({ ...fields, blocks: payload });
+          await api.createPool({ ...fields, blocks: payload, levels: levelPayload });
         } else {
           created = await api.createPool({ ...fields, preset });
-          const src = pools.find((p) => p.id === preset)?.blocks ?? [];
-          if (JSON.stringify(payload) !== JSON.stringify(toPayload(fromPool(src)))) {
-            await api.updatePool(created.id, { blocks: payload });
-          }
+          // Пресет скопировал свои разделы и уровни; досылаем только то, что поправили на шаге 2.
+          const src = pools.find((p) => p.id === preset);
+          const upd: { blocks?: BlockDraft[]; levels?: LevelDraft[] } = {};
+          if (JSON.stringify(payload) !== JSON.stringify(toPayload(fromPool(src?.blocks ?? [])))) upd.blocks = payload;
+          if (JSON.stringify(levelPayload) !== JSON.stringify(toLevelPayload(fromPoolLevels(src?.levels ?? [])))) upd.levels = levelPayload;
+          if (Object.keys(upd).length) await api.updatePool(created.id, upd);
         }
       } else if (pool) {
-        await api.updatePool(pool.id, { ...fields, blocks: payload });
+        await api.updatePool(pool.id, { ...fields, blocks: payload, levels: levelPayload });
       }
       onSaved();
     } catch {
@@ -177,6 +197,9 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
                 {t("Разделы — колонки матрицы вопросов, подкатегории — под-колонки внутри раздела. Порядок меняется перетаскиванием за ⠿.")}
               </p>
               <BlocksEditor blocks={blocks} onChange={setBlocks} nodeCounts={mode === "edit" ? nodeCounts : {}} />
+              <h4 className="wizard__h4">{t("Уровни")}</h4>
+              <p className="wizard__hint wizard__hint--top">{t("Уровни — ряды матрицы снизу вверх: первый в списке самый лёгкий. От 2 до 8.")}</p>
+              <LevelsEditor levels={levels} onChange={setLevels} nodeCounts={mode === "edit" ? levelCounts : {}} />
             </>
           )}
           {step === 3 && (
@@ -202,8 +225,14 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
                   </div>
                 );
               })}
+              <div className="wizard__preview-row wizard__preview-levels">
+                <div className="wizard__preview-text">
+                  <div className="wizard__preview-title">{t("Уровни").toUpperCase()}</div>
+                  <div className="wizard__preview-subs">{levels.map((l) => l.label.trim()).filter(Boolean).join(" → ")}</div>
+                </div>
+              </div>
               <div className="wizard__summary">
-                <strong>{label.trim()}</strong> · {nSections} {nWord(nSections, ["раздел", "раздела", "разделов"], ["section", "sections"])}
+                <strong>{label.trim()}</strong> · {nSections} {nWord(nSections, ["раздел", "раздела", "разделов"], ["section", "sections"])} · {levels.length} {nWord(levels.length, ["уровень", "уровня", "уровней"], ["level", "levels"])}
                 {desc.trim() && <span className="wizard__summary-desc"> · {desc.trim()}</span>}
               </div>
             </div>

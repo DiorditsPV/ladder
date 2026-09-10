@@ -1,12 +1,15 @@
 name: Deploy
 
-# Разворачивает новую версию при вливании в main (merge из любой ветки = push в main).
+# Выкладка на сервер портфолио (ladder.paveldiordits.site) — ТОЛЬКО вручную: Actions → Deploy → Run workflow
+# (или `gh workflow run Deploy --ref main`). Merge в main ничего не выкладывает: сервис живёт локально,
+# сервер — необязательная публичная копия, обновляемая осознанно.
+# Фронт собирается на раннере — node на сервере нет. Всё нужное уезжает одним tar.gz в stdin
+# forced-command-скрипта /usr/local/bin/deploy-ladder.sh: ключ раннера на сервере умеет ровно
+# эту команду (см. deploy/install.sh и DEPLOY.md). Host-key закреплён явно — подмену сервера
+# раннер не примет.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
-# Не запускать два деплоя одновременно (но и не отменять уже идущий).
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -14,6 +17,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,46 +29,41 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
+      - name: Собрать фронт (tsc + vite)
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
-      - name: Setup SSH
+      - name: Упаковать выкладку
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          tar czf ladder.tar.gz \
+            --exclude='backend/.venv' --exclude='__pycache__' --exclude='*.db' --exclude='.pytest_cache' \
+            backend content frontend/dist
+          ls -la ladder.tar.gz
+
+      - name: Разложить ключ и закреплённый host-key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_LADDER_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          printf '%s\n' "${{ vars.DEPLOY_HOST }} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1sEThhqUNxeSWgjUtOOuulxk6EMVNAizFdjoCAPlXY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Rsync sources to server (staging)
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
+      - name: Выложить на сервер
         run: |
-          PORT="${SSH_PORT:-22}"
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude 'frontend/node_modules' \
-            --exclude 'backend/.venv' \
-            --exclude '__pycache__' \
-            --exclude '*.db' \
-            --exclude '.deploy' \
-            -e "ssh -i ~/.ssh/deploy_key -p ${PORT}" \
-            ./ "${SSH_USER}@${SSH_HOST}:~/interview-src/"
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ConnectTimeout=20 \
+              deploy@${{ vars.DEPLOY_HOST }} < ladder.tar.gz
 
-      - name: Bootstrap & restart on server
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
+      - name: Проверить боевой адрес
         run: |
-          PORT="${SSH_PORT:-22}"
-          # base64 — безопасно к спецсимволам пароля в ssh-команде (если секрет пуст — пустой b64).
-          OWNER_PW_B64=$(printf '%s' "$OWNER_PASSWORD" | base64 | tr -d '\n')
-          ssh -i ~/.ssh/deploy_key -p "${PORT}" "${SSH_USER}@${SSH_HOST}" \
-            "sudo INTERVIEW_OWNER_PASSWORD_B64='${OWNER_PW_B64}' bash ~/interview-src/deploy/bootstrap.sh ~/interview-src prod"
+          sleep 2
+          base=https://ladder.paveldiordits.site
+          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/health")
+          [ "$code" = 200 ] || { echo "✗ /api/health → $code"; exit 1; }
+          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph")
+          [ "$code" = 401 ] || { echo "✗ /api/graph без cookie → $code (ожидалось 401: сервис за логином)"; exit 1; }
+          echo "✓ health 200, graph 401 — сервис на месте и за логином"

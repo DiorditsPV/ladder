@@ -1,12 +1,17 @@
 import { type NodeProps } from "@xyflow/react";
 import { memo } from "react";
-import { type QNode } from "../types";
+import { hexA, levelColor, levelLabel, lighten, type PoolConfig, type Progress, type QNode } from "../types";
 import { useT } from "../i18n";
 
 export interface QuestionNodeData {
   node: QNode;
+  pool: PoolConfig;
   color: string;
+  dark?: boolean;
   score?: number;
+  status?: Progress;
+  // Точка статуса чек-листа рисуется только вне сессии (в сессии статусы не показываются).
+  showStatus?: boolean;
   current?: boolean;
   dimmed?: boolean;
   hidden?: boolean;
@@ -17,9 +22,10 @@ export interface QuestionNodeData {
 // полный текст/код живёт в drawer. Теги показываем чипами.
 function QuestionNodeImpl({ data, selected }: NodeProps) {
   const t = useT();
-  const { node, color, score, current, dimmed, hidden } = data as QuestionNodeData;
+  const { node, pool, color, dark, score, status, showStatus, current, dimmed, hidden } = data as QuestionNodeData;
   const isTask = node.kind === "task";
   const heading = node.title || node.question;
+  const diffColor = levelColor(pool, node.difficulty);
 
   return (
     <div
@@ -39,12 +45,24 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
           {hidden ? t("скрыт · ") : ""}
           {isTask ? t("задача") : t("вопрос")}
         </span>
-        <span className="qnode__diff" data-diff={node.difficulty}>
-          {node.difficulty}
+        {/* data-diff нужен design-themes.css (вариант 58): :has() красит левый борт карточки по чипу. */}
+        <span
+          className="qnode__diff"
+          data-diff={node.difficulty}
+          style={
+            dark
+              ? { background: hexA(diffColor, 0.22), color: lighten(diffColor, 0.55) }
+              : { background: hexA(diffColor, 0.15), color: diffColor }
+          }
+        >
+          {levelLabel(pool, node.difficulty)}
         </span>
       </div>
 
-      <div className="qnode__title">{heading}</div>
+      <div className="qnode__title">
+        {showStatus && <span className="qnode__status" data-status={status} />}
+        {heading}
+      </div>
 
       {node.tags.length > 0 && (
         <div className="qnode__tags">

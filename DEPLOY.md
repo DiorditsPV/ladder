@@ -1,109 +1,75 @@
 # Деплой
 
-Автодеплой на **<SERVER_IP>**, порт **8800** (порт 80 занят другим приложением; 8800 — высокий и
-не конфликтует с типичными VPN-портами). Любой merge в `main` (push в `main`) запускает
-GitHub Actions → сборка фронта на раннере → доставка кода по SSH → идемпотентный bootstrap на сервере.
-
-> **Про `<SERVER_IP>`:** репозиторий публичный, поэтому реальный IP сервера здесь не пишется — он лежит в
-> GitHub-секрете `SSH_HOST` (см. §2). Сервис всё равно публично доступен по этому IP; ограничение доступа
-> — в разделе «Безопасность».
+Сервис живёт на сервере портфолио рядом с `paveldiordits.site` и `lexis.paveldiordits.site`:
+**https://ladder.paveldiordits.site**. Выкладка — **только вручную**: *Actions → Deploy → Run workflow* (ветка `main`)
+или `gh workflow run Deploy --ref main`. Merge в `main` ничего не выкладывает: основной режим сервиса — локальный,
+сервер — необязательная публичная копия.
 
 ```
-push в main ─▶ GitHub Actions (.github/workflows/deploy.yml)
-                 ├─ npm ci && npm run build        (фронт собирается на раннере)
-                 ├─ rsync кода → ~/interview-src    (staging в домашней папке)
-                 └─ ssh sudo bootstrap.sh prod      (provision + restart)
-                         └─ /opt/interview (код+контент) · /var/lib/interview (БД) · systemd · ufw
+Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispatch)
+                 ├─ npm ci && npm run build                 фронт собирается на раннере (node на сервере нет)
+                 ├─ tar czf backend content frontend/dist
+                 ├─ ssh deploy@<сервер> < ladder.tar.gz  ключ прибит к одной команде:
+                 │      └─ sudo /usr/local/bin/deploy-ladder.sh
+                 │            распаковка → /opt/ladder · venv (pip только при смене requirements)
+                 │            · systemctl restart ladder · health :8770
+                 └─ curl https://ladder.paveldiordits.site/api/health → 200, /api/graph → 401
 ```
 
-## Dev-окружение (на том же сервере)
+| Путь на сервере                                           | Назначение                                        | Переживает выкладку  |
+| --------------------------------------------------------- | ------------------------------------------------- | -------------------- |
+| `/opt/ladder`                                          | код + контент + `frontend/dist` + `backend/.venv` | нет (кроме venv)     |
+| `/var/lib/ladder/ladder.db`                         | SQLite: сессии, оценки, кандидаты, банк вопросов  | **да**               |
+| `/etc/ladder.env`                                      | owner-креды (600, root)                           | да                   |
+| `/etc/systemd/system/ladder.service`                   | uvicorn на `127.0.0.1:8770`, hardened             | да (ставит install)  |
+| `/etc/nginx/sites-available/ladder.paveldiordits.site` | фронт-дверь, TLS от certbot                       | да                   |
 
-Dev-версия крутится на **том же сервере и IP** и использует **те же GitHub-секреты**
-(SSH-доступ), но полностью изолирована от прода: отдельный порт, свой systemd-юнит,
-свои каталоги кода и данных. Push в ветку `dev` (или ручной запуск *Actions → Deploy (dev)*)
-поднимает её через `.github/workflows/deploy-dev.yml` → `bootstrap.sh … dev`.
+Что лежит в `deploy/`: `ladder.service` (юнит), `nginx-ladder.conf` (server-блок),
+`deploy-ladder.sh` (forced command, принимает архив со stdin), `install.sh` (разовый провижининг),
+`test-deploy-ladder.sh` (локальный тест скрипта выкладки — `bash deploy/test-deploy-ladder.sh`).
 
-```
-push в dev ─▶ GitHub Actions (.github/workflows/deploy-dev.yml)
-                 ├─ npm ci && npm run build         (фронт собирается на раннере)
-                 ├─ rsync кода → ~/interview-src-dev (отдельный staging)
-                 └─ ssh sudo bootstrap.sh dev        (provision + restart)
-                         └─ /opt/interview-dev · /var/lib/interview-dev (БД) · systemd · ufw
-```
+## Разовая настройка сервера
 
-|                    | prod                              | dev                                   |
-| ------------------ | --------------------------------- | ------------------------------------- |
-| URL                | http://<SERVER_IP>:**8800**     | http://<SERVER_IP>:**8801**         |
-| Триггер            | push в `main`                     | push в `dev` / ручной запуск          |
-| systemd-юнит       | `interview.service`               | `interview-dev.service`               |
-| Код + контент      | `/opt/interview`                  | `/opt/interview-dev`                  |
-| БД (SQLite)        | `/var/lib/interview/interview.db` | `/var/lib/interview-dev/interview.db` |
-| Staging на сервере | `~/interview-src`                 | `~/interview-src-dev`                 |
+Сервер: `37.46.132.95`, Ubuntu 24.04, nginx + certbot уже стоят (сайт и lexis). Все команды — с ноутбука
+(SSH к серверу из сети X5 не проходит — только из домашней сети или через VPN).
 
-У dev — **своя БД**, поэтому эксперименты в dev не затрагивают сессии и оценки прода.
-Никаких дополнительных секретов заводить не нужно: dev переиспользует те же
-`SSH_HOST` / `SSH_USER` / `SSH_PRIVATE_KEY` / `SSH_KNOWN_HOSTS` / `SSH_PORT`.
+1. Ключ раннера — пара в `.deploy/` (в git не попадает):
+   `ssh-keygen -t ed25519 -N '' -C 'ladder deploy' -f .deploy/ladder_deploy_key`
+2. GitHub: `gh secret set DEPLOY_LADDER_SSH_KEY < .deploy/ladder_deploy_key` и
+   `gh variable set DEPLOY_HOST --body 37.46.132.95`.
+3. Провижининг (идемпотентен, можно повторять при правке юнита или nginx-блока):
+   ```bash
+   tar czf - -C deploy . | ssh root@37.46.132.95 'rm -rf /root/ladder-deploy && mkdir -p /root/ladder-deploy \
+     && tar xzf - -C /root/ladder-deploy \
+     && DEPLOY_PUBKEY="'"$(cat .deploy/ladder_deploy_key.pub)"'" OWNER_EMAIL=<почта> OWNER_PASSWORD=<пароль> \
+        bash /root/ladder-deploy/install.sh'
+   ```
+   Без `OWNER_PASSWORD` пароль сгенерируется и напечатается **один раз**. Owner сидится в БД при первом
+   старте (`seed.py`); менять потом — в БД, `/etc/ladder.env` для смены уже не читается.
+4. DNS на reg.ru: `A interview → 37.46.132.95`. Проверка: `dig +short ladder.paveldiordits.site`.
+5. TLS: `ssh root@37.46.132.95 certbot --nginx -d ladder.paveldiordits.site --redirect`.
+6. Merge в `main` → выкладка → https://ladder.paveldiordits.site.
 
-**Локально** dev-версию можно поднять на отдельном порту той же командой:
-`./run.sh dev` (порт 8001, отдельная БД `interview-dev.db`, авто-reload); `./run.sh` — как прод на :8000.
+## Что умеет ключ раннера
 
-## Что куда кладётся на сервере
+Строка в `~deploy/.ssh/authorized_keys`: `command="sudo -n /usr/local/bin/deploy-ladder.sh",no-port-forwarding,
+no-X11-forwarding,no-agent-forwarding,no-pty`. Скрипт — `root:root 755`, sudoers разрешает `deploy` ровно его.
+Архив проверяется до любых изменений на диске: не gzip, или нет `backend/app/main.py` / `frontend/dist/index.html` /
+`content` → выход 1, `/opt` не тронут. Юнит скрипт **не ставит** (только `install.sh`) — архив не может подменить `User=`.
 
-| Путь                                    | Назначение                                                      | Переживает деплой?          |
-| --------------------------------------- | --------------------------------------------------------------- | --------------------------- |
-| `/opt/interview`                        | код + контент (`content/<pool>/<block>/*.md`), venv, собранный `frontend/dist` | нет — перезаписывается      |
-| `/var/lib/interview/interview.db`       | SQLite: сессии кандидатов и оценки                              | **да** — данные сохраняются |
-| `/etc/systemd/system/interview.service` | автозапуск/рестарт uvicorn на :8800                             | —                           |
+## Откат
 
-БД вынесена из дерева кода через `INTERVIEW_DB_PATH`, поэтому деплой обновляет код и вопросы,
-но **не затирает** накопленные оценки.
+Предыдущей копии кода на сервере нет — откат = `git revert` в `main` (выкладка идёт автоматически) либо
+*Actions → Deploy → Run workflow* на нужном коммите. БД выкладкой не трогается.
 
-## Разовая настройка (нужно сделать один раз)
-
-### 1. Добавить публичный ключ раннера на сервер
-
-Пара ключей раннера сгенерирована локально в `.deploy/` (в git НЕ попадает): приватный — `deploy_key`,
-публичный — `deploy_key.pub`. Публичную часть нужно добавить в `~/.ssh/authorized_keys` пользователя,
-под которым пойдёт деплой (на сервере, под нужным пользователем):
+## Диагностика
 
 ```bash
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-cat deploy_key.pub >> ~/.ssh/authorized_keys   # содержимое .deploy/deploy_key.pub (строка ssh-ed25519 …)
-chmod 600 ~/.ssh/authorized_keys
+ssh root@37.46.132.95 'systemctl status ladder; journalctl -u ladder -n 50 --no-pager'
+ssh root@37.46.132.95 'curl -s http://127.0.0.1:8770/api/health; nginx -t'
 ```
 
-Деплой-пользователь должен иметь **passwordless sudo** для bootstrap
-(`sudo bash ...` без запроса пароля), т.к. Actions работает неинтерактивно.
-Проверить: `sudo -n true && echo OK`.
+## Локально
 
-### 2. GitHub Secrets (репозиторий → Settings → Secrets and variables → Actions)
-
-| Secret            | Значение                                                  |
-| ----------------- | --------------------------------------------------------- |
-| `SSH_HOST`        | `<SERVER_IP>`                                           |
-| `SSH_USER`        | имя пользователя на сервере (с sudo)                      |
-| `SSH_PRIVATE_KEY` | содержимое `.deploy/deploy_key` (весь приватный ключ)     |
-| `SSH_KNOWN_HOSTS` | host-ключ сервера (фиксирует отпечаток, защищает от MITM) |
-| `SSH_PORT`        | *(опционально)* нестандартный порт SSH; по умолчанию `22` |
-
-Эти секреты проставляются автоматически скриптом `gh secret set` при настройке (см. ниже),
-кроме `SSH_USER`, который нужно указать.
-
-## Запуск деплоя
-
-- **Автоматически:** любой push/merge в `main` (prod) или в `dev` (dev).
-- **Вручную:** вкладка *Actions* → *Deploy* (prod) или *Deploy (dev)* → *Run workflow* (`workflow_dispatch`).
-
-После успешного прогона приложение доступно на **http://<SERVER_IP>:8800** (prod)
-и **http://<SERVER_IP>:8801** (dev).
-
-## Безопасность
-
-Сервис биндится на `0.0.0.0` (prod — `:8800`, dev — `:8801`) и доступен публично по IP, **аутентификации
-в приложении нет** (изначально это локальный однопользовательский инструмент). Раз сервис открыт в интернет
-без авторизации, **рекомендуется ограничить доступ**: закрыть порты фаерволом (`ufw`) и ходить через
-VPN/SSH-туннель, либо поставить reverse-proxy с basic-auth/TLS. Dev-порт (`:8801`) публичен так же, как prod —
-закрывайте оба.
-
-> Замена IP на `<SERVER_IP>` убирает его только из текущего дерева; в **истории git** прежние коммиты IP
-> ещё содержат. Полное удаление из истории — отдельная операция (rewrite), здесь не делается.
+`./run.sh` (:8000), `./run.sh dev` (:8001, своя БД), `docker compose up -d --build` — см. README.
+Dev-контура на сервере нет: проверять перед merge локально.

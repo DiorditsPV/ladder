@@ -19,13 +19,13 @@
 
 **slug** — идентификатор фичи вида `<номер issue>-<краткий-kebab-тайтл>`; детерминирован номером issue.
 
-| Этап | Инструмент | Заметка |
-|------|-----------|---------|
-| Задача | open Issue с меткой `autodev-ready`: `gh issue list --state open --label autodev-ready` | Цикл берёт ТОЛЬКО задачи, человек/груминг пометил `autodev-ready` (см. «Работа с issue»). Эпики и access-gated — не помечены, не берутся. |
-| План | gstack `/autoplan` | Авто-решения по 6 принципам, без вопросов. НЕ интерактивные `/plan-*-review`, `/office-hours` — там STOP с вопросами. |
-| Реализация | ветка `feature/<slug>` от `dev` | Код backend/frontend по issue. Контент (если трогается) — через `python-frontmatter`, при необходимости `interview-refactor`/`interview-balance`. |
-| Гейт | `/review` + `/qa` + `interview-verify` | **Гейт** — обязательная проверка качества. Зелёный = кандидат остаётся на `feature/<slug>`. |
-| Шиппинг | — | merge в `dev`/`main` и deploy делает человек. Инвариант. |
+| Этап       | Инструмент                                                                              | Заметка                                                                                                                                           |
+|------------|-----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| Задача     | open Issue с меткой `autodev-ready`: `gh issue list --state open --label autodev-ready` | Цикл берёт ТОЛЬКО задачи, человек/груминг пометил `autodev-ready` (см. «Работа с issue»). Эпики и access-gated — не помечены, не берутся.         |
+| План       | gstack `/autoplan`                                                                      | Авто-решения по 6 принципам, без вопросов. НЕ интерактивные `/plan-*-review`, `/office-hours` — там STOP с вопросами.                             |
+| Реализация | ветка `feature/<slug>` от `dev`                                                         | Код backend/frontend по issue. Контент (если трогается) — через `python-frontmatter`, при необходимости `interview-refactor`/`interview-balance`. |
+| Гейт       | `/review` + `/qa` + `interview-verify`                                                  | **Гейт** — обязательная проверка качества. Зелёный = кандидат остаётся на `feature/<slug>`.                                                       |
+| Шиппинг    | —                                                                                       | merge в `dev`/`main` и deploy делает человек. Инвариант.                                                                                          |
 
 **Идемпотентность** (повторный запуск не дублирует работу): задача считается взятой, если уже есть ветка `feature/<номер>-*` — следующий цикл её пропускает. Статус пишется **комментарием в issue** (`gh issue comment`), не файлом. Цикл НЕ коммитит в `dev`/`main` и НЕ пушит (обе ветки автодеплоят на push).
 
@@ -61,7 +61,7 @@ npm run smoke                    # node smoke.mjs, playwright headless
 
 ## Деплой (в автономном цикле НЕ выполняется)
 
-GitHub Actions: push/merge в `main` → prod (:8800, `deploy.yml`); push в `dev` → dev (:8801, `deploy-dev.yml`). CI (`ci.yml`) — на PR в dev/main и push в `feature/**`.
+GitHub Actions: `Deploy` — только ручной запуск (`workflow_dispatch`) на https://interview.paveldiordits.site, см. `DEPLOY.md`; merge в `main` ничего не выкладывает; dev-контура на сервере нет — проверка перед merge локально. CI (`ci.yml`) — на PR в dev/main и push в `feature/**`.
 
 ## STOP-условия (любое → остановка)
 

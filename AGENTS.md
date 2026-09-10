@@ -3,9 +3,11 @@
 Точка входа для любого агента, работающего в этом репозитории. Человеку — см. `README.md`.
 
 ## Что это
-Локальный веб-сервис для проведения технических интервью по дата-инженерному стеку команды.
+Локальная доска самоподготовки по темам — **Ladder**: тема → колонки × свои уровни (ступени) → карточки → чек-лист
+«знаю / повторить / не знаю». Проверка кандидата (сессии, оценки, отчёт) на той же доске — второй режим.
 Ядро — **swimlane-доска вопросов**: вертикальные колонки по направлениям (Фреймворки / Базы данных /
-Python / Платформа), внутри — карточки, ранжированные по сложности (base → junior → middle → senior).
+Python / Платформа), внутри — карточки, ранжированные по уровням сложности, которые задаёт сам пул
+(`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
 Каждая карточка = вопрос/задача + ответ + оценка 1–5. Контент импортируется из Markdown/JSON.
 Только локально. Бэкенд: **FastAPI + SQLite**. Фронт: **React + Vite + React Flow**.
 
@@ -18,8 +20,8 @@ frameworks 29, databases 22, python 5, platform 4) — точные числа �
 ./run.sh --build         # форс-пересборка фронта
 ```
 Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, venv) + `npm run dev` (из
-`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на сервер при merge в `main` → порт **8800**
-(см. `DEPLOY.md`); в фиче-ветках НЕ пушить в main.
+`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на https://interview.paveldiordits.site — только ручной запуск `Deploy`
+(см. `DEPLOY.md`); merge в `main` ничего не выкладывает; фичи идут через `dev`.
 
 ## Карта репозитория
 - `backend/app/` — `models.py` (pydantic `Node`, `extra="forbid"`), `importer.py` (.md+.json через
@@ -57,7 +59,7 @@ Frontmatter (ключи алфавитные, `tags` — block-style): `id`, `ki
 (значения — блоки из `content/<pool>/pool.yaml` того пула; data-engineer: frameworks|databases|python|platform,
 system-analyst: requirements|modeling|data|integration, data-engineer-x5: python|sql|spark|airflow|clickhouse|ai),
 `subblock`, `topic`, `title` (короткий заголовок карточки),
-`difficulty` (base|junior|middle|senior), `weight`, `tags` (1–3), для `task` — `starterCode`, `rubric`.
+`difficulty` (один из `levels[].id` пула; по умолчанию base|junior|middle|senior), `weight`, `tags` (1–3), для `task` — `starterCode`, `rubric`.
 Тело: `## Вопрос` / `## Ответ` (для задач — `## Задача` / `## Эталон`). Не начинай строки тела с `#`
 вне блоков кода (это маркеры разбиения). Полный текст — в drawer; на карточке только `title` + теги.
 
@@ -79,6 +81,11 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 - Новый тип ноды на канве = регистрация в `nodeTypes` (BoardPage.tsx).
 - Изменения контента не требуют пересборки фронта (данные грузятся из `/api/graph` в рантайме);
   изменения `frontend/src` — требуют `npm run build`.
+- Чек-лист разбора: статусы `known|review|unknown` в таблице `progress` (per-user), хоткеи `1/2/3` вне сессии;
+  в сессии — оценки `1–5`, как раньше. Счётчики колонок и рядов (уровней) вне сессии — по `known`.
+  Вне сессии HUD и drawer ставят статусы; оценки — только в сессии; черновых оценок без сессии больше нет.
+- Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником;
+  чтобы удалить насовсем, удали файл и сделай sync.
 
 ## Проверка изменений
 Используй скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →
@@ -88,12 +95,13 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 ## Скиллы проекта (`.claude/skills/`)
 Каждый скилл = `SKILL.md` (+ при необходимости sibling-скрипт на stdlib). Вызывай через Skill-инструмент.
 
-| Скилл | Когда | Что делает |
-|---|---|---|
-| **interview-ideas** | «добавь/допиши/реализуй идею» | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр |
-| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк» | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py` |
-| **interview-balance** | «оцени покрытие/где пробелы» | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py` |
-| **interview-verify** | «проверь, что не сломалось» | import + pytest + build + smoke + рестарт. Скрипт `check_import.py` |
+| Скилл                  | Когда                                                | Что делает                                                                                                                                                   |
+|------------------------|------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **interview-topic**    | «разложи тему X / заведи направление / пересобери X» | тема → колонки × свои уровни → карточки в `content/<slug>/` → sync. Скрипт `write_topic.py` (JSON → файлы, матрица покрытия, `--fresh`/дополнение, `--sync`) |
+| **interview-ideas**    | «добавь/допиши/реализуй идею»                        | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр                                            |
+| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк»      | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py`                                                                        |
+| **interview-balance**  | «оцени покрытие/где пробелы»                         | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py`                                                                                          |
+| **interview-verify**   | «проверь, что не сломалось»                          | import + pytest + build + smoke + рестарт. Скрипт `check_import.py`                                                                                          |
 
 ## Учёт фич
 Каталог фич и бэклог ведутся в **GitHub Issues** репозитория (а не в файлах репо). Реализованные
