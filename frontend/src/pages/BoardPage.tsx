@@ -47,6 +47,7 @@ import {
   blockColor,
   blockLabel,
   blockOrder,
+  hexA,
   levelColor,
   levelLabel,
   levelOrder,
@@ -1281,8 +1282,11 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
               {currentNode && (
                 <Panel position="bottom-center">
                   <div className="hud">
-                    <span className="hud__diff" data-diff={currentNode.difficulty}>
-                      {currentNode.difficulty}
+                    <span
+                      className="hud__diff"
+                      style={{ background: hexA(levelColor(pool, currentNode.difficulty), 0.15), color: levelColor(pool, currentNode.difficulty) }}
+                    >
+                      {levelLabel(pool, currentNode.difficulty)}
                     </span>
                     <span className="hud__title" title={currentNode.question}>
                       {currentNode.title || currentNode.question}

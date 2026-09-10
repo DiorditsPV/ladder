@@ -434,10 +434,6 @@ button:disabled:hover { background: var(--surface); }
   font-size: 10px; text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
   font-weight: 700; background: #e5e7eb; color: #374151; white-space: nowrap;
 }
-.hud__diff[data-diff="base"] { background: #dbeafe; color: #1e40af; }
-.hud__diff[data-diff="junior"] { background: #dcfce7; color: #166534; }
-.hud__diff[data-diff="middle"] { background: #fef9c3; color: #854d0e; }
-.hud__diff[data-diff="senior"] { background: #fee2e2; color: #991b1b; }
 .hud__title {
   font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;

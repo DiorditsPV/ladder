@@ -40,8 +40,10 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
           {hidden ? t("скрыт · ") : ""}
           {isTask ? t("задача") : t("вопрос")}
         </span>
+        {/* data-diff нужен design-themes.css (вариант 58): :has() красит левый борт карточки по чипу. */}
         <span
           className="qnode__diff"
+          data-diff={node.difficulty}
           style={{ background: hexA(levelColor(pool, node.difficulty), 0.15), color: levelColor(pool, node.difficulty) }}
         >
           {levelLabel(pool, node.difficulty)}
