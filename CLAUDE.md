@@ -99,5 +99,5 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 При переименовании нод/тегов/классов, на которые опирается smoke, обнови `frontend/smoke.mjs`.
 
 ## Скиллы проекта (`.claude/skills/`)
-`interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
+`interview-topic` (тема → направление со своими уровнями, главный способ завести контент), `interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
 `interview-balance` (покрытие/пробелы), `interview-verify` (полная проверка). Вызывать через Skill.
