@@ -109,6 +109,11 @@ def validate_against_pool(node: Node, pool: PoolCfg) -> None:
         raise ValueError(
             f"subblock '{node.subblock}' is not declared for block '{node.block}' in pool '{pool.id}'"
         )
+    if node.difficulty not in pool.level_ids:
+        raise ValueError(
+            f"difficulty '{node.difficulty}' is not declared in pool '{pool.id}' "
+            f"(allowed: {', '.join(l.id for l in pool.levels)})"
+        )
 
 
 def load_pool_content(pool: PoolCfg) -> Tuple[List[Node], List[ImportError_]]:

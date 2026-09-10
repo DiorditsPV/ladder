@@ -2,9 +2,8 @@ import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type PlanIn } from "../api";
 import { nWord, useT } from "../i18n";
-import { DIFFS } from "../layout";
 import { href, navigate, type SetupInit } from "../router";
-import type { Candidate, Difficulty, PoolConfig, QNode } from "../types";
+import { levelLabel, levelOrder, type Candidate, type PoolConfig, type QNode } from "../types";
 import { PageShell } from "./PageShell";
 
 // Настройка интервью (инкремент 1 закрытия v1): кандидат → разделы и под-колонки → уровни →
@@ -31,8 +30,8 @@ export function SetupPage({ pool, initial }: { pool: PoolConfig; initial: SetupI
       ]),
     ),
   );
-  const [diffs, setDiffs] = useState<Record<Difficulty, boolean>>(
-    () => Object.fromEntries(DIFFS.map((d) => [d, !initial.diffs || initial.diffs.includes(d)])) as Record<Difficulty, boolean>,
+  const [diffs, setDiffs] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(levelOrder(pool).map((d) => [d, !initial.diffs || initial.diffs.includes(d)])),
   );
   const [mode, setMode] = useState<"manual" | "auto">("auto");
   const [count, setCount] = useState(AUTO_DEFAULT);
@@ -70,7 +69,7 @@ export function SetupPage({ pool, initial }: { pool: PoolConfig; initial: SetupI
   const toggleBlock = (id: string) => setBlocks((s) => ({ ...s, [id]: !s[id] }));
   const toggleSub = (block: string, id: string) =>
     setSubs((s) => ({ ...s, [block]: { ...s[block], [id]: !s[block]?.[id] } }));
-  const toggleDiff = (d: Difficulty) => setDiffs((s) => ({ ...s, [d]: !s[d] }));
+  const toggleDiff = (d: string) => setDiffs((s) => ({ ...s, [d]: !s[d] }));
 
   const start = async () => {
     if (!canStart) return;
@@ -97,12 +96,13 @@ export function SetupPage({ pool, initial }: { pool: PoolConfig; initial: SetupI
         const r = restricted(b);
         if (r) subblocks[b] = r;
       }
-      const chosenDiffs = DIFFS.filter((d) => diffs[d]);
+      const levels = levelOrder(pool);
+      const chosenDiffs = levels.filter((d) => diffs[d]);
       const plan: PlanIn = {
         mode,
         blocks: chosenBlocks,
         subblocks: Object.keys(subblocks).length ? subblocks : undefined,
-        difficulties: chosenDiffs.length === DIFFS.length ? undefined : chosenDiffs,
+        difficulties: chosenDiffs.length === levels.length ? undefined : chosenDiffs,
         count: mode === "auto" ? count : undefined,
       };
       const s = await api.createSession(pool.id, candName || "—", candidateId ?? undefined, undefined, plan);
@@ -188,10 +188,10 @@ export function SetupPage({ pool, initial }: { pool: PoolConfig; initial: SetupI
         <section className="setup__section">
           <h3 className="setup__h3">{t("Уровни")}</h3>
           <div className="setup__row">
-            {DIFFS.map((d) => (
+            {levelOrder(pool).map((d) => (
               <label key={d} className="setup__check" data-diff={d}>
                 <input type="checkbox" checked={!!diffs[d]} onChange={() => toggleDiff(d)} />
-                {d}
+                {levelLabel(pool, d)}
               </label>
             ))}
           </div>

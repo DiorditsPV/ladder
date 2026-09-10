@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useT } from "../i18n";
-import { DIFFS } from "../layout";
-import { blockLabel, blockOrder, type PoolConfig } from "../types";
+import { blockLabel, blockOrder, levelLabel, levelOrder, type PoolConfig } from "../types";
 
-const EMPTY = { block: "", topic: "", difficulty: "middle", kind: "question", title: "", question: "", answer: "", tags: "" };
+const EMPTY = { block: "", topic: "", difficulty: "", kind: "question", title: "", question: "", answer: "", tags: "" };
 
 // Модалка «Новый вопрос» (question-management): POST /api/nodes в пул страницы банка.
 export function AddQuestionModal({ pool, onClose, onCreated }: {
   pool: PoolConfig; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const t = useT();
-  const [d, setD] = useState({ ...EMPTY, block: blockOrder(pool)[0] ?? "" });
+  const [d, setD] = useState({ ...EMPTY, block: blockOrder(pool)[0] ?? "", difficulty: levelOrder(pool)[0] ?? "" });
   const create = async () => {
     let res: { id: string };
     try {
@@ -19,7 +18,7 @@ export function AddQuestionModal({ pool, onClose, onCreated }: {
         pool: pool.id,
         block: d.block,
         topic: d.topic.trim(),
-        difficulty: d.difficulty as "base" | "junior" | "middle" | "senior",
+        difficulty: d.difficulty,
         kind: d.kind as "question" | "task",
         title: d.title.trim() || undefined,
         question: d.question,
@@ -52,7 +51,7 @@ export function AddQuestionModal({ pool, onClose, onCreated }: {
           <label className="drawer__field">
             {t("Сложность")}
             <select value={d.difficulty} onChange={(e) => setD({ ...d, difficulty: e.target.value })}>
-              {DIFFS.map((x) => <option key={x} value={x}>{x}</option>)}
+              {levelOrder(pool).map((x) => <option key={x} value={x}>{levelLabel(pool, x)}</option>)}
             </select>
           </label>
           <label className="drawer__field">

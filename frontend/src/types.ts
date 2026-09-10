@@ -2,7 +2,8 @@
 
 // Блок — строка: таксономию задаёт pool.yaml пула (см. PoolConfig), а не union-тип.
 export type Block = string;
-export type Difficulty = "base" | "junior" | "middle" | "senior";
+// Уровень — строка: список уровней и их порядок задаёт pool.levels (см. PoolConfig), а не union-тип.
+export type Difficulty = string;
 export type Kind = "question" | "task";
 
 export interface QNode {
@@ -39,11 +40,17 @@ export interface BlockCfg {
   weight: number;
   subblocks: SubblockCfg[];
 }
+// Уровень сложности пула — зеркало pool.levels (порядок ascending: легче → сложнее).
+export interface LevelCfg {
+  id: string;
+  label: string;
+}
 export interface PoolConfig {
   id: string;
   label: string;
   description: string;
   blocks: BlockCfg[];
+  levels: LevelCfg[];
   counts?: { nodes: number; sessions: number };
 }
 
@@ -60,6 +67,21 @@ export function blockColor(pool: PoolConfig, block: string): string {
 }
 export function subLabel(pool: PoolConfig, block: string, sub: string): string {
   return pool.blocks.find((b) => b.id === block)?.subblocks.find((s) => s.id === sub)?.label ?? sub;
+}
+
+// Палитра уровней по индексу (снизу — легче, сверху — сложнее); первые четыре — прежние цвета
+// base/junior/middle/senior, поэтому пулы на дефолтной четвёрке выглядят как раньше.
+export const LEVEL_PALETTE = ["#1e40af", "#166534", "#854d0e", "#991b1b", "#6d28d9", "#0e7490", "#be185d", "#374151"];
+
+export function levelOrder(pool: PoolConfig): string[] {
+  return pool.levels.map((l) => l.id);
+}
+export function levelLabel(pool: PoolConfig, level: string): string {
+  return pool.levels.find((l) => l.id === level)?.label ?? level;
+}
+export function levelColor(pool: PoolConfig, level: string): string {
+  const i = pool.levels.findIndex((l) => l.id === level);
+  return i >= 0 ? LEVEL_PALETTE[i % LEVEL_PALETTE.length] : FALLBACK_COLOR;
 }
 
 export interface GraphResponse {
@@ -144,20 +166,6 @@ export interface SessionSummary {
   interviewer_id?: number | null;
   created_at: string;
 }
-
-export const DIFF_LABEL: Record<Difficulty, string> = {
-  base: "base",
-  junior: "junior",
-  middle: "middle",
-  senior: "senior",
-};
-
-export const DIFF_COLOR: Record<Difficulty, string> = {
-  base: "#1e40af",
-  junior: "#166534",
-  middle: "#854d0e",
-  senior: "#991b1b",
-};
 
 // rgba из hex-цвета с заданной прозрачностью (для полупрозрачных дорожек).
 // Осветлить цвет блока для тёмной темы: синий/фиолетовый на тёмном фоне иначе
