@@ -1,6 +1,8 @@
-# Interview Graph
+# Ladder
 
-A self-hosted web app for running technical interviews. The heart of it is an interactive
+A self-hosted board for studying a technology topic by rungs: a topic is split into columns and its own difficulty
+levels, every cell holds question cards, and you mark each one as known / review / unknown. Running a technical
+interview on the same board is the second mode. The heart of it is an interactive
 **question matrix** on a canvas: one column per section (Frameworks / Databases / Python /
 Platform), cards inside a column ranked by the pool's own difficulty levels (`levels` in `pool.yaml`, 2–8;
 base → junior → middle → senior by default).

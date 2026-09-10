@@ -1,4 +1,4 @@
-"""Скрипт скилла interview-topic: JSON темы → content/<pool>/ (валидация, формат, покрытие, дополнение, --fresh)."""
+"""Скрипт скилла ladder-topic: JSON темы → content/<pool>/ (валидация, формат, покрытие, дополнение, --fresh)."""
 
 import json
 import subprocess
@@ -9,7 +9,7 @@ import frontmatter
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPT = ROOT / ".claude" / "skills" / "interview-topic" / "write_topic.py"
+SCRIPT = ROOT / ".claude" / "skills" / "ladder-topic" / "write_topic.py"
 
 
 def _spec(cards):

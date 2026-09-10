@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Детерминированная часть скилла interview-topic: JSON темы → content/<pool>/ (+ проверка покрытия, sync).
+"""Детерминированная часть скилла ladder-topic: JSON темы → content/<pool>/ (+ проверка покрытия, sync).
 
-    python3 .claude/skills/interview-topic/write_topic.py topic.json [--fresh] [--per-cell N] [--sync] [--api URL]
+    python3 .claude/skills/ladder-topic/write_topic.py topic.json [--fresh] [--per-cell N] [--sync] [--api URL]
 
 Вход — JSON:
   {"pool": {"id", "label", "description", "blocks": [{"id","label","color","subblocks"?: [{"id","label"}]}],

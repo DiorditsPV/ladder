@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Локальный тест deploy-interview.sh: приём архива со stdin, проверка состава, раскладка, кэш
+# Локальный тест deploy-ladder.sh: приём архива со stdin, проверка состава, раскладка, кэш
 # requirements. Без сервера: DEPLOY_DRY_RUN=1 отключает chown/venv/systemd/health.
-#   bash deploy/test-deploy-interview.sh
+#   bash deploy/test-deploy-ladder.sh
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-SCRIPT="$HERE/deploy-interview.sh"
+SCRIPT="$HERE/deploy-ladder.sh"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 export APP_DIR="$T/opt" DATA_DIR="$T/data" DEPLOY_DRY_RUN=1
 fail() { echo "✗ $*" >&2; exit 1; }
@@ -49,4 +49,4 @@ tar czf "$T/good2.tar.gz" -C "$T/src" backend content frontend/dist
 out=$(bash "$SCRIPT" < "$T/good2.tar.gz")
 grep -q 'requirements изменились' <<<"$out" || fail "смена requirements не замечена: $out"
 
-echo "✓ deploy-interview.sh: 5/5"
+echo "✓ deploy-ladder.sh: 5/5"
