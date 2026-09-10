@@ -347,8 +347,8 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
     return pools[pid]
 
 
-def _pool_out(request: Request, p: PoolCfg) -> dict:
-    """Форма направления для API: конфиг + счётчики вопросов и сессий."""
+def _pool_out(request: Request, p: PoolCfg, user: dict) -> dict:
+    """Форма направления для API: конфиг + счётчики вопросов и сессий + сводка чек-листа юзера."""
     tenant = resolve_tenant(request)
     return {
         **p.to_dict(),
@@ -356,6 +356,7 @@ def _pool_out(request: Request, p: PoolCfg) -> dict:
             "nodes": db.count_nodes(tenant, pool=p.id),
             "sessions": db.count_sessions(tenant, p.id),
         },
+        "progress": db.progress_summary(tenant, user["id"], p.id),
     }
 
 
@@ -376,7 +377,7 @@ def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> 
 
 @app.get("/api/pools")
 def get_pools(request: Request, _user: dict = Depends(current_user)) -> list:
-    return [_pool_out(request, p) for p in _pools(request).values()]
+    return [_pool_out(request, p, _user) for p in _pools(request).values()]
 
 
 @app.post("/api/pools")
@@ -417,7 +418,7 @@ def create_pool(body: PoolCreate, request: Request, _user: dict = Depends(requir
     except sqlite3.IntegrityError as exc:
         # id копии ноды (<pool>-<id>) занят чужой нодой — транзакция откатилась, пул не создан.
         raise HTTPException(status_code=409, detail=f"node id collision while copying preset: {exc}")
-    return _pool_out(request, pool_from_row(row))
+    return _pool_out(request, pool_from_row(row), _user)
 
 
 def _blocks_or_422(raw: list, existing: tuple) -> list:
@@ -461,7 +462,7 @@ def update_pool(
     row = db.update_pool(resolve_tenant(request), pool_id, fields)
     if row is None:
         raise HTTPException(status_code=404, detail=f"pool '{pool_id}' not found")
-    return _pool_out(request, pool_from_row(row))
+    return _pool_out(request, pool_from_row(row), _user)
 
 
 @app.delete("/api/pools/{pool_id}")
@@ -621,6 +622,31 @@ def remove_node(node_id: str, request: Request, _user: dict = Depends(require_me
         return {"deleted": node_id, "tombstoned": True}
     db.delete_node(tenant, node_id)
     return {"deleted": node_id, "tombstoned": False}
+
+
+# ---------- progress (чек-лист разбора) ----------
+class ProgressIn(BaseModel):
+    status: str = Field(pattern="^(known|review|unknown)$")
+
+
+@app.get("/api/progress")
+def get_progress(request: Request, pool: Optional[str] = None, user: dict = Depends(current_user)) -> dict:
+    p = _pool_or_404(request, pool)
+    return db.get_progress(resolve_tenant(request), user["id"], p.id)
+
+
+@app.put("/api/progress/{node_id}")
+def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(require_member)) -> dict:
+    """Статус карточки для текущего пользователя. Гость (по ссылке) статусы не ставит — 403 из require_member."""
+    tenant = resolve_tenant(request)
+    if db.get_node(tenant, node_id) is None:
+        raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
+    return db.set_progress(tenant, user["id"], node_id, body.status)
+
+
+@app.delete("/api/progress/{node_id}")
+def clear_progress(node_id: str, request: Request, user: dict = Depends(require_member)) -> dict:
+    return {"cleared": db.clear_progress(resolve_tenant(request), user["id"], node_id)}
 
 
 @app.post("/api/interview")
