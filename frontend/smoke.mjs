@@ -230,10 +230,13 @@ const hudTitle = await page.locator(".hud__title").innerText();
 if (!hudTitle.includes("ROW_NUMBER")) fail(`HUD shows wrong question: ${hudTitle}`);
 console.log("OK: interviewer HUD shows current question");
 
-// 4. Выставление оценки: клик по 4-й звезде → отображается 4/5.
-await page.locator(".drawer__scoring .scorebtn").nth(3).click();
-await page.waitForSelector(".scoreval", { timeout: 3000 });
-const scoreval = await page.locator(".scoreval").innerText();
+// 4. Выставление оценки: клик по 4-й звезде в HUD → карточка помечена 4/5.
+//    (study-progress, Task 2: вне сессии drawer.__scoring больше не рендерит .scorebtn —
+//    там теперь статусы чек-листа, поэтому оценку ставим через HUD, не drawer.)
+const rowNumberCard = page.locator(".qnode").filter({ has: page.locator(".qnode__title", { hasText: "ROW_NUMBER" }) });
+await page.locator(".hud__score .scorebtn").nth(3).click();
+await page.waitForSelector(".qnode--scored", { timeout: 3000 });
+const scoreval = await rowNumberCard.locator(".qnode__grade").innerText();
 if (!scoreval.includes("4")) fail(`score not applied: ${scoreval}`);
 console.log(`OK: score applied (${scoreval})`);
 
@@ -696,8 +699,8 @@ await page.evaluate(() => {
 await page.waitForSelector(".qnode", { timeout: 10000 });
 await page.keyboard.press("Escape"); // закрыть drawer
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
-await page.waitForSelector(".drawer__scoring .scorebtn", { timeout: 3000 });
-await page.locator(".drawer__scoring .scorebtn").nth(4).click(); // 5/5
+await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
+await page.locator(".hud__score .scorebtn").nth(4).click(); // 5/5
 await page.waitForTimeout(200);
 // page.reload() (не goto) — держит текущий hash (#/board/data-engineer), иначе после «goto на тот же
 // URL» браузер не обязан перезагружать документ и тест не проверит persistence по-настоящему.

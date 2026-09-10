@@ -334,4 +334,12 @@ export const EN: Record<string, string> = {
   "Банк пуст.": "The bank is empty.",
   "Банк вопросов · интервью": "Question bank · interview",
   "кандидат": "candidate",
+
+  // --- study-progress: чек-лист разбора (статусы вне сессии) ---
+  "Знаю (1)": "Know it (1)",
+  "Повторить (2)": "Review (2)",
+  "Не знаю (3)": "Don't know (3)",
+  "Только неразобранное": "Unresolved only",
+  "разобрано {k} из {n}": "{k} of {n} reviewed",
+  "Разобрано": "Reviewed",
 };
