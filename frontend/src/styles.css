@@ -195,6 +195,9 @@ button:disabled:hover { background: var(--surface); }
   border-bottom: 1px solid #fecaca; display: flex; gap: 12px; flex-wrap: wrap;
 }
 [data-theme="dark"] .errbar { background: #3f1d1d; color: #fecaca; border-bottom-color: #7f1d1d; }
+/* Та же полоса для успешного результата (например, сводка «Обновить из файлов») */
+.errbar--ok { background: #f0fdf4; color: #166534; border-bottom-color: #bbf7d0; }
+[data-theme="dark"] .errbar--ok { background: #14291a; color: #bbf7d0; border-bottom-color: #166534; }
 .erritem { background: var(--surface); padding: 1px 6px; border-radius: 4px; }
 
 /* ---- layout ---- */
@@ -839,6 +842,14 @@ a.iconbtn { text-decoration: none; display: inline-block; }
 .struct__subdel:hover { color: #b91c1c; background: rgba(185, 28, 28, .08); }
 .struct__addsub { justify-self: start; margin-top: 2px; padding: 3px 8px; border: 0; background: transparent; color: var(--text-muted); font-size: 12px; }
 .struct__addsub:hover { color: var(--accent); background: transparent; }
+/* Уровни направления (LevelsEditor): нумерованный список, ряд = № · название · ↑ ↓ · × */
+.levels { display: grid; gap: 4px; }
+.levels__row { display: flex; align-items: center; gap: 4px; }
+.levels__n { width: 22px; text-align: center; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.levels__name { flex: 1; font-weight: 600; }
+.levels__btn { font-size: 13px; line-height: 1; }
+.levels__del { opacity: 1; }
+.levels__add { margin-top: 4px; }
 .struct__addsection { justify-self: start; font-size: 13px; }
 @media (max-width: 640px) {
   .struct__subdel { opacity: 1; }

@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarDays, CircleHelp, ClipboardList, Ellipsis, Play, Radio, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type AuthUser } from "../api";
 import { LangSwitch } from "../components/LangSwitch";
 import { PoolFormModal } from "../components/PoolFormModal";
 import { nWord, useT } from "../i18n";
@@ -24,6 +24,13 @@ export function HomePage({
   const t = useT();
   const [modal, setModal] = useState<PoolModal>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // Сводка «Обновить из файлов» — полоской над списком, как notice; пункт меню виден только owner'у
+  // (ручка /api/pools/sync — owner-only).
+  const [note, setNote] = useState<string | null>(null);
+  const [role, setRole] = useState<AuthUser["role"] | null>(null);
+  useEffect(() => {
+    api.me().then((me) => setRole(me.role)).catch(() => setRole(null));
+  }, []);
   // Меню ••• закрывается кликом мимо и Esc — как обычный dropdown.
   useEffect(() => {
     if (!menuFor) return;
@@ -64,6 +71,27 @@ export function HomePage({
     }
   };
 
+  // «Обновить из файлов» — content/ → БД без рестарта: новые направления, правки конфигов и seed-нод.
+  // Пользовательские вопросы (source=user) файлы не трогают; исчезнувшие seed-ноды прячутся.
+  const syncFromFiles = async () => {
+    try {
+      const r = await api.syncPools();
+      let text = t("Обновлено из файлов: направлений {p}, вопросов {n}, скрыто {h}, конфликтов {c}", {
+        p: r.created.length + r.updated.length,
+        n: r.nodes_upserted,
+        h: r.hidden.length,
+        c: r.conflicts.length,
+      });
+      if (r.errors.length) {
+        text += ". " + t("Ошибок импорта: {n}; первая — {file}: {error}", { n: r.errors.length, file: r.errors[0].file, error: r.errors[0].error });
+      }
+      setNote(text);
+      onChanged();
+    } catch {
+      alert(t("Не удалось обновить из файлов"));
+    }
+  };
+
   // Статистика направления с правильными формами числа: «61 вопрос», «25 сессий».
   const questions = (n: number) => `${n} ${nWord(n, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
   const sessions = (n: number) => `${n} ${nWord(n, ["сессия", "сессии", "сессий"], ["session", "sessions"])}`;
@@ -80,6 +108,7 @@ export function HomePage({
       </header>
       <main className="page__body">
         {notice && <div className="errbar">{notice}</div>}
+        {note && <div className="errbar errbar--ok">{note}</div>}
 
         <div className="home__head">
           <h2 className="home__h2">{t("Направления")}</h2>
@@ -118,6 +147,11 @@ export function HomePage({
                   <button className="poolcard__dup" role="menuitem" onClick={() => { setMenuFor(null); duplicate(p); }}>
                     {t("Дублировать")}
                   </button>
+                  {role === "owner" && (
+                    <button className="poolcard__sync" role="menuitem" onClick={() => { setMenuFor(null); syncFromFiles(); }}>
+                      {t("Обновить из файлов")}
+                    </button>
+                  )}
                   <div className="poolcard__dropdown-sep" role="separator" />
                   <button className="poolcard__delete" role="menuitem" onClick={() => { setMenuFor(null); remove(p); }}>
                     {t("Удалить")}
