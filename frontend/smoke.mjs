@@ -461,26 +461,16 @@ await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
 await page.locator(".hud__score .scorebtn").nth(2).click(); // 3/5 → персист в сессию
 await page.waitForTimeout(400);
 
-// 9b. В сессии drawer по-прежнему оценивает (не статусы): открыть ЕЩЁ НЕ оценённую карточку из
-// плана (не nth(1) — та могла случайно совпасть с уже оценённой HUD'ом выше и словить флак), клик по 2-й звезде.
-// filtersOpen персистится с шага «board-toolbar» — панель справа канвы иногда перекрывает
-// карточку под .first(); закрываем на время клика и открываем обратно (10b ниже ждёт её открытой).
-const panelWasOpen = (await page.locator(".filterpanel").count()) > 0;
-if (panelWasOpen) {
-  await page.locator(".fp__close").click();
-  await page.waitForSelector(".filterpanel", { state: "detached", timeout: 3000 });
-}
-const planCard = page.locator(".qnode:not(.qnode--dimmed):not(.qnode--scored)").first();
-await planCard.locator(".qnode__title").click();
+// 9b. В сессии drawer по-прежнему оценивает (не статусы). Карточку берём клавиатурой, а не по DOM:
+//     первая .qnode плана может лежать вне вьюпорта канвы (план случайный), и клик по ней — флак.
+//     «n» — следующий неоценённый вопрос плана, «Enter» — открыть его drawer.
+await page.keyboard.press("n");
+await page.keyboard.press("Enter");
 await page.waitForSelector(".drawer .drawer__scoring .scorebtn", { timeout: 3000 });
 if ((await page.locator(".drawer .statusbtn").count()) !== 0) fail("session drawer shows checklist statuses instead of scoring");
 await page.locator(".drawer .drawer__scoring .scorebtn").nth(1).click();
 await page.waitForFunction(() => document.querySelectorAll(".qnode--scored").length >= 2, null, { timeout: 3000 });
 await page.keyboard.press("Escape");
-if (panelWasOpen) {
-  await page.locator(".topbar .filtersbtn").click();
-  await page.waitForSelector(".filterpanel", { timeout: 3000 });
-}
 console.log("OK: session drawer scores via stars (no checklist statuses)");
 
 // 10a. Прогресс интервью — только в сессии: подпись с дробью, заполнение > 0 после оценки.
