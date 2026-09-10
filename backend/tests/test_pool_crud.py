@@ -198,7 +198,7 @@ def test_api_create_pool_without_preset_and_edit_blocks():
     assert [b["id"] for b in p["blocks"]] == ["peregovory", "produkt"]
     assert p["blocks"][0]["subblocks"] == [{"id": "holodnye-zvonki", "label": "Холодные звонки"}]
     # вопрос в колонку «Продукт», затем колонку удаляем → вопрос удалён; под-колонку убираем → вопрос остаётся
-    n1 = c.post("/api/nodes", json={"pool": pid, "block": "produkt", "topic": "t", "question": "Q", "answer": "A", "tags": []}).json()["id"]
+    n1 = c.post("/api/nodes", json={"pool": pid, "block": "produkt", "topic": "t", "difficulty": "middle", "question": "Q", "answer": "A", "tags": []}).json()["id"]
     r = c.put(f"/api/pools/{pid}", json={"blocks": [
         {"id": "peregovory", "label": "Переговоры", "color": "#2563eb", "subblocks": []},
         {"label": "Возражения", "color": "#9333ea"},
@@ -227,7 +227,7 @@ def test_api_removed_column_questions_do_not_survive_same_name_readd():
     c = _client()
     pid = c.post("/api/pools", json={"label": "Recycle", "blocks": [
         {"label": "Альфа", "color": "#111111"}, {"label": "Переговоры", "color": "#222222"}]}).json()["id"]
-    c.post("/api/nodes", json={"pool": pid, "block": "peregovory", "topic": "t", "question": "Q", "answer": "A", "tags": []})
+    c.post("/api/nodes", json={"pool": pid, "block": "peregovory", "topic": "t", "difficulty": "middle", "question": "Q", "answer": "A", "tags": []})
     r = c.put(f"/api/pools/{pid}", json={"blocks": [
         {"id": "alfa", "label": "Альфа", "color": "#111111"}, {"label": "Переговоры", "color": "#333333"}]})
     assert r.status_code == 200

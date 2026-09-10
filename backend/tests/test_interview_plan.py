@@ -38,6 +38,7 @@ def test_matrix_order_follows_pool_taxonomy():
         NODES,
         block_order=["python", "databases", "frameworks"],
         sub_order={"frameworks": ["pyspark", "airflow", "dbt"], "databases": ["sql"], "python": []},
+        level_order=["base", "junior", "middle", "senior"],
     )
     assert order == ["p1", "q1", "s1", "a1", "a2", "d1"]  # блок → под-колонка → уровень → id
 

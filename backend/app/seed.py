@@ -13,11 +13,15 @@ from typing import Tuple
 from .auth import hash_password
 from .db import Database
 from .importer import load_pool_content
-from .pools import PoolCfg, blocks_to_json
+from .pools import PoolCfg, blocks_to_json, levels_to_json
 
 
 def seed_pool_if_empty(db: Database, tenant_id: str, pool: PoolCfg) -> Tuple[int, list]:
     """Сид направления: конфиг (pool.yaml → таблица pools) и, если нод пула нет, его ноды.
+
+    Старт сервера использует sync.sync_pools (перечитывает content/ при каждом запуске,
+    обновляет конфиг и upsert-ит seed-ноды без пересидки). Эта функция остаётся ради тестов,
+    которым нужен разовый сид одного пула без полной синхронизации.
 
     Конфиг — INSERT OR IGNORE: правки названия/описания из UI и tombstone удалённого
     направления переживают рестарт; удалённое направление не воскрешается и не пересеивается.
@@ -29,7 +33,8 @@ def seed_pool_if_empty(db: Database, tenant_id: str, pool: PoolCfg) -> Tuple[int
     db.upsert_pool_seed(
         tenant_id,
         {"id": pool.id, "label": pool.label, "description": pool.description,
-         "blocks": json.loads(blocks_to_json(pool.blocks))},
+         "blocks": json.loads(blocks_to_json(pool.blocks)),
+         "levels": json.loads(levels_to_json(pool.levels))},
     )
     existing = db.get_pool(tenant_id, pool.id)
     if existing is not None and existing["deleted_at"] is not None:

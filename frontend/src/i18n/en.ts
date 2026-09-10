@@ -5,6 +5,17 @@
 // один ключ может быть только один раз).
 export const EN: Record<string, string> = {
   // --- Общие (несколько файлов) ---
+  // --- LevelsEditor / PoolFormModal: уровни направления ---
+  "Уровни — ряды матрицы снизу вверх: первый в списке самый лёгкий. От 2 до 8.": "Levels are the matrix rows, bottom to top: the first one is the easiest. From 2 to 8.",
+  "Название уровня": "Level name",
+  "Удалить уровень «{label}» и его вопросы ({n})?": "Delete level “{label}” and its questions ({n})?",
+  "Убрать уровень": "Remove level",
+  "+ Добавить уровень": "+ Add level",
+  // --- HomePage: «Обновить из файлов» ---
+  "Обновить из файлов": "Reload from files",
+  "Обновлено из файлов: направлений {p}, вопросов {n}, скрыто {h}, конфликтов {c}": "Reloaded from files: {p} pools, {n} questions, {h} hidden, {c} conflicts",
+  "Ошибок импорта: {n}; первая — {file}: {error}": "Import errors: {n}; first — {file}: {error}",
+  "Не удалось обновить из файлов": "Could not reload from files",
   "Отмена": "Cancel",
   "Сохранить": "Save",
   "Создать": "Create",

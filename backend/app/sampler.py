@@ -22,9 +22,6 @@ DEFAULT_BLOCK_WEIGHTS: Dict[str, int] = {
 }
 
 
-LEVELS = ["base", "junior", "middle", "senior"]
-
-
 def filter_nodes(
     nodes: List[Node],
     blocks: Optional[List[str]] = None,
@@ -46,14 +43,16 @@ def filter_nodes(
     return out
 
 
-def matrix_order(nodes: List[Node], block_order: List[str], sub_order: Dict[str, List[str]]) -> List[str]:
-    """Порядок матрицы: раздел (как в pool.yaml) → под-колонка → уровень → id. Для ручного плана."""
+def matrix_order(
+    nodes: List[Node], block_order: List[str], sub_order: Dict[str, List[str]], level_order: List[str]
+) -> List[str]:
+    """Порядок матрицы: раздел → под-колонка → уровень (порядок из pool.levels) → id. Для ручного плана."""
 
     def key(n: Node):
         b = block_order.index(n.block) if n.block in block_order else len(block_order)
         subs = sub_order.get(n.block) or []
         s = subs.index(n.subblock) if n.subblock in subs else len(subs)
-        d = LEVELS.index(n.difficulty) if n.difficulty in LEVELS else len(LEVELS)
+        d = level_order.index(n.difficulty) if n.difficulty in level_order else len(level_order)
         return (b, s, d, n.id)
 
     return [n.id for n in sorted(nodes, key=key)]

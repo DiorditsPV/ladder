@@ -1,9 +1,9 @@
 // Генерация самодостаточного HTML-отчёта по результатам интервью.
 // Открывается в браузере, печатается в PDF. Светлый (документ для шаринга/печати).
 
-import { DIFFS, subOf } from "./layout";
+import { subOf } from "./layout";
 import { getLang, t } from "./i18n";
-import { blockColor, blockLabel, blockOrder, subLabel, DIFF_COLOR, type PoolConfig, type QNode, type Session } from "./types";
+import { blockColor, blockLabel, blockOrder, subLabel, levelColor, levelLabel, levelOrder, type PoolConfig, type QNode, type Session } from "./types";
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -64,7 +64,7 @@ export function buildReportHtml(
     })
     .filter((s) => s.total > 0);
 
-  const drank = (d: string) => DIFFS.indexOf(d as any);
+  const drank = (d: string) => levelOrder(pool).indexOf(d);
 
   const sections = blocks
     .map((b) => {
@@ -88,7 +88,7 @@ export function buildReportHtml(
           const nText = notes?.[n.id]?.trim();
           const noteHtml = nText ? `<div class="qnote">📝 ${esc(nText)}</div>` : "";
           return `<tr>
-  <td class="c-diff"><span class="diff" style="color:${DIFF_COLOR[n.difficulty]}">${esc(n.difficulty)}</span></td>
+  <td class="c-diff"><span class="diff" style="color:${levelColor(pool, n.difficulty)}">${esc(levelLabel(pool, n.difficulty))}</span></td>
   <td class="c-q">${sub}<span class="qt">${esc(n.title || n.question)}</span> ${kind}
     <div class="topic">${esc(n.topic)}</div>${tags}${noteHtml}</td>
   <td class="c-score"><span class="dots">${dots(s)}</span> <b style="color:${scoreColor(s)}">${s}/5</b></td>
@@ -223,7 +223,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
   const blocks: string[] = [...blockOrder(pool)];
   for (const n of nodes) if (!blocks.includes(n.block)) blocks.push(n.block);
 
-  const drank = (d: string) => DIFFS.indexOf(d as any);
+  const drank = (d: string) => levelOrder(pool).indexOf(d);
 
   const summaryChips = blocks
     .map((b) => ({ b, total: nodes.filter((n) => n.block === b).length }))
@@ -264,7 +264,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
               : "";
           return `<article class="card">
   <div class="card__head">
-    <span class="diff" style="color:${DIFF_COLOR[n.difficulty]}">${esc(n.difficulty)}</span>
+    <span class="diff" style="color:${levelColor(pool, n.difficulty)}">${esc(levelLabel(pool, n.difficulty))}</span>
     ${sub}${kind}
   </div>
   <div class="qt">${esc(n.title || n.question)}</div>

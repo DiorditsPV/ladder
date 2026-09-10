@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.db import Database
 from app.main import OWNER_EMAIL, OWNER_PASSWORD, _resolve_owner_password, app
 
-_VALID_NODE = {"block": "python", "topic": "auth-test", "question": "q?"}
+_VALID_NODE = {"block": "python", "topic": "auth-test", "difficulty": "middle", "question": "q?"}
 
 
 def _anon() -> TestClient:

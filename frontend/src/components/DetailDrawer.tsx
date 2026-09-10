@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { blockColor, blockLabel, type Difficulty, type PoolConfig, type QNode } from "../types";
+import { blockColor, blockLabel, levelLabel, levelOrder, type PoolConfig, type QNode } from "../types";
 import type { NodeUpdate } from "../api";
 import { useT } from "../i18n";
 
@@ -22,14 +22,12 @@ interface Props {
   onClose: () => void;
 }
 
-const DIFF_OPTS: Difficulty[] = ["base", "junior", "middle", "senior"];
-
 // Немодальный drawer: полный текст вопроса/ответа. Закрывается с клавиатуры (Esc).
 export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onToggleHide, onScore, onNote, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<{ title: string; difficulty: Difficulty; question: string; answer: string }>(
-    { title: "", difficulty: "middle", question: "", answer: "" },
+  const [draft, setDraft] = useState<{ title: string; difficulty: string; question: string; answer: string }>(
+    { title: "", difficulty: pool.levels[0]?.id ?? "", question: "", answer: "" },
   );
 
   // Сброс режима правки при переключении на другой вопрос.
@@ -75,8 +73,8 @@ export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onTo
         <span className="drawer__badge" style={{ background: color }}>
           {blockLabel(pool, node.block)} · {node.topic}
         </span>
-        <span className="drawer__diff" data-diff={node.difficulty}>
-          {node.kind === "task" ? t("🛠 задача") : t("❓ вопрос")} · {node.difficulty}
+        <span className="drawer__diff">
+          {node.kind === "task" ? t("🛠 задача") : t("❓ вопрос")} · {levelLabel(pool, node.difficulty)}
         </span>
         <div className="drawer__actions">
           <button
@@ -122,10 +120,10 @@ export function DetailDrawer({ node, pool, score, note, fullscreen, hidden, onTo
               {t("Сложность")}
               <select
                 value={draft.difficulty}
-                onChange={(e) => setDraft({ ...draft, difficulty: e.target.value as Difficulty })}
+                onChange={(e) => setDraft({ ...draft, difficulty: e.target.value })}
               >
-                {DIFF_OPTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                {levelOrder(pool).map((d) => (
+                  <option key={d} value={d}>{levelLabel(pool, d)}</option>
                 ))}
               </select>
             </label>

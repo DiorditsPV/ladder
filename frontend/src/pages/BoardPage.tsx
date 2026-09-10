@@ -38,7 +38,6 @@ import { downloadBank, downloadReport } from "../report";
 import {
   CARD_H,
   CARD_W,
-  DIFFS,
   LABEL_W,
   subOf,
   swimlaneLayout,
@@ -48,8 +47,11 @@ import {
   blockColor,
   blockLabel,
   blockOrder,
-  DIFF_COLOR,
-  type Difficulty,
+  hexA,
+  levelColor,
+  levelLabel,
+  levelOrder,
+  lighten,
   type ImportErr,
   type PoolConfig,
   type QNode,
@@ -214,7 +216,7 @@ function buildNodes(
     const dimmed =
       (planIds != null && !planIds.has(n.id)) ||
       activeBlocks[n.block] === false ||
-      !activeDiffs[n.difficulty] ||
+      activeDiffs[n.difficulty] === false ||
       !activeKinds[n.kind] ||
       !tagOk ||
       !matchesQuery(n, query) ||
@@ -229,7 +231,9 @@ function buildNodes(
       height: CARD_H,
       data: {
         node: n,
+        pool,
         color: blockColor(pool, n.block),
+        dark,
         score: scores[n.id],
         current: n.id === currentId,
         dimmed,
@@ -284,7 +288,6 @@ function readDraftScores(pool: string): Record<string, number> {
   }
 }
 
-const ALL_DIFFS: Record<string, boolean> = Object.fromEntries(DIFFS.map((d) => [d, true]));
 const KINDS = ["question", "task"] as const;
 const KIND_LABEL: Record<string, string> = { question: "вопрос", task: "задача" };
 const KIND_COLOR: Record<string, string> = { question: "#2563eb", task: "#9333ea" };
@@ -347,7 +350,12 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
   );
-  const [activeDiffs, setActiveDiffs] = useState<Record<string, boolean>>(ALL_DIFFS);
+  // Уровни пула — задаются pool.levels; набор пересчитывается при смене пула (см. эффект ниже).
+  const allDiffs = useMemo(() => Object.fromEntries(levelOrder(pool).map((d) => [d, true])), [pool]);
+  const [activeDiffs, setActiveDiffs] = useState<Record<string, boolean>>(allDiffs);
+  // BoardPage перемонтируется по key={pool.id} (см. Router.tsx), но фильтр уровней подстраховываем
+  // явным сбросом — набор уровней у нового пула не совпадает со старым.
+  useEffect(() => setActiveDiffs(allDiffs), [pool.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeTags, setActiveTags] = useState<Record<string, boolean>>({});
   const [activeKinds, setActiveKinds] = useState<Record<string, boolean>>(ALL_KINDS);
   const [query, setQuery] = useState("");
@@ -482,7 +490,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     for (const n of graph) {
       const tagOk = !anyTag || n.tags.some((t) => activeTags[t]);
       const inPlan = planIds == null || planIds.has(n.id);
-      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         s.add(n.id);
       }
     }
@@ -512,17 +520,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     return rows;
   }, [placement, nodeMap, walkOrder]);
 
+  // Режим сессии (открыта по ?session=<id>, включая гостя по приглашению) грузит граф со
+  // скрытыми: иначе завершённая сессия теряет из отчёта/доски оценённую ноду, которую позже
+  // скрыл sync или tombstone (Ruling 8). Обычная доска — без скрытых, как раньше.
   const loadGraph = useCallback(
     () =>
       api
-        .graph(pool.id)
+        .graph(pool.id, { includeHidden: sessionFromUrl != null })
         .then((g) => {
           setGraph(g.nodes);
           setErrors(g.errors);
           setPlacement(swimlaneLayout(g.nodes, pool));
         })
         .catch((err) => setErrors([{ file: "API", error: String(err) }])),
-    [pool],
+    [pool, sessionFromUrl],
   );
 
   useEffect(() => {
@@ -764,7 +775,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   }, [session]);
 
   const toggleBlock = (b: string) => setActiveBlocks((s) => ({ ...s, [b]: !s[b] }));
-  const toggleDiff = (d: Difficulty) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
+  const toggleDiff = (d: string) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
   const toggleTag = (t: string) => setActiveTags((s) => ({ ...s, [t]: !s[t] }));
   const clearTags = () => setActiveTags({});
   const toggleKind = (k: string) => setActiveKinds((s) => ({ ...s, [k]: !s[k] }));
@@ -808,7 +819,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     query.trim() !== "" ||
     unscoredOnly ||
     blockOrder(pool).some((b) => !activeBlocks[b]) ||
-    DIFFS.some((d) => !activeDiffs[d]) ||
+    levelOrder(pool).some((d) => !activeDiffs[d]) ||
     KINDS.some((k) => !activeKinds[k]);
   // Прогресс по ТЕКУЩЕМУ отфильтрованному набору. Условие "проходит фильтры" держать в
   // синхроне с предикатом `dimmed` в buildNodes (block/diff/kind/tag).
@@ -825,7 +836,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     }
     for (const n of graph) {
       const tagOk = !anyTagActive || n.tags.some((t) => activeTags[t]);
-      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] && activeKinds[n.kind] && tagOk) {
+      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         total++;
         if (scores[n.id] != null) done++;
       }
@@ -924,7 +935,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                 // Настройка интервью получает текущие фильтры доски: выбранная область → набор вопросов.
                 href={href.setup(pool.id, {
                   blocks: blockOrder(pool).filter((b) => activeBlocks[b] !== false),
-                  diffs: DIFFS.filter((d) => activeDiffs[d]),
+                  diffs: levelOrder(pool).filter((d) => activeDiffs[d]),
                 })}
               >
                 <Play size={15} strokeWidth={2} aria-hidden="true" />
@@ -1201,18 +1212,18 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                     </div>
                     <div className="fp__group">
                       <h2 className="fp__title">{t("Сложность")}</h2>
-                      {DIFFS.map((d) => (
+                      {levelOrder(pool).map((d) => (
                         <button
                           key={d}
                           className={`fp__chip ${activeDiffs[d] ? "" : "fp__chip--off"}`}
                           style={{
-                            borderColor: DIFF_COLOR[d],
-                            color: activeDiffs[d] ? "#fff" : DIFF_COLOR[d],
-                            background: activeDiffs[d] ? DIFF_COLOR[d] : "transparent",
+                            borderColor: levelColor(pool, d),
+                            color: activeDiffs[d] ? "#fff" : levelColor(pool, d),
+                            background: activeDiffs[d] ? levelColor(pool, d) : "transparent",
                           }}
                           onClick={() => toggleDiff(d)}
                         >
-                          {d}
+                          {levelLabel(pool, d)}
                         </button>
                       ))}
                     </div>
@@ -1276,8 +1287,21 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
               {currentNode && (
                 <Panel position="bottom-center">
                   <div className="hud">
-                    <span className="hud__diff" data-diff={currentNode.difficulty}>
-                      {currentNode.difficulty}
+                    <span
+                      className="hud__diff"
+                      style={
+                        theme === "dark"
+                          ? {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.22),
+                              color: lighten(levelColor(pool, currentNode.difficulty), 0.55),
+                            }
+                          : {
+                              background: hexA(levelColor(pool, currentNode.difficulty), 0.15),
+                              color: levelColor(pool, currentNode.difficulty),
+                            }
+                      }
+                    >
+                      {levelLabel(pool, currentNode.difficulty)}
                     </span>
                     <span className="hud__title" title={currentNode.question}>
                       {currentNode.title || currentNode.question}
