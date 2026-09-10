@@ -25,7 +25,7 @@ def _spec(cards):
 
 
 def _card(i, block="ops", level="concepts", **extra):
-    c = {"id": f"kafka-{block}-{i:02d}", "block": block, "difficulty": level, "title": f"T{i}", "topic": "t",
+    c = {"id": f"kafka-{block}-{i:02d}", "block": block, "difficulty": level, "title": f"Тема номер {i}", "topic": "t",
          "tags": ["streaming"], "question": f"Q{i}?", "answer": f"A{i} строка."}
     c.update(extra)
     return c
