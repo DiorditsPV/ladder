@@ -65,7 +65,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - `pages/` — `HomePage`, `BankPage`, `CandidatesPage`, `SessionsPage`, `ConnectPage`.
 - `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков, под-колонок и уровней из `pool.yaml` (`levelOrder`), `subOf`.
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
-  `Block = string`, перечисления `Difficulty/Kind`, `DIFF_COLOR`.
+  `Block = string`, перечисления `Difficulty/Kind`, `levelOrder/levelLabel/levelColor`.
 - `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer.
 - `report.ts` — клиентская генерация самодостаточного HTML-отчёта по сессии («📥 Скачать»).
 
@@ -90,6 +90,8 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   interview.paveldiordits.site (см. `DEPLOY.md`).
 - **Новый пул** = каталог `content/<id>/` с `pool.yaml` (id = имя каталога); id нод уникальны в пределах
   тенанта — используйте префикс пула.
+- **Удаление seed-карточки из UI** прячет её (`hidden`, `source=user`) — файл остаётся источником;
+  чтобы удалить насовсем, удали файл и сделай sync.
 
 ## Проверка изменений
 Скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →

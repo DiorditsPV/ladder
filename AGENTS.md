@@ -80,6 +80,8 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 - Новый тип ноды на канве = регистрация в `nodeTypes` (BoardPage.tsx).
 - Изменения контента не требуют пересборки фронта (данные грузятся из `/api/graph` в рантайме);
   изменения `frontend/src` — требуют `npm run build`.
+- Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником;
+  чтобы удалить насовсем, удали файл и сделай sync.
 
 ## Проверка изменений
 Используй скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →
