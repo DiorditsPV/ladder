@@ -5,7 +5,8 @@
 ## Что это
 Локальный веб-сервис для проведения технических интервью по дата-инженерному стеку команды.
 Ядро — **swimlane-доска вопросов**: вертикальные колонки по направлениям (Фреймворки / Базы данных /
-Python / Платформа), внутри — карточки, ранжированные по сложности (base → junior → middle → senior).
+Python / Платформа), внутри — карточки, ранжированные по уровням сложности, которые задаёт сам пул
+(`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
 Каждая карточка = вопрос/задача + ответ + оценка 1–5. Контент импортируется из Markdown/JSON.
 Только локально. Бэкенд: **FastAPI + SQLite**. Фронт: **React + Vite + React Flow**.
 
@@ -57,7 +58,7 @@ Frontmatter (ключи алфавитные, `tags` — block-style): `id`, `ki
 (значения — блоки из `content/<pool>/pool.yaml` того пула; data-engineer: frameworks|databases|python|platform,
 system-analyst: requirements|modeling|data|integration, data-engineer-x5: python|sql|spark|airflow|clickhouse|ai),
 `subblock`, `topic`, `title` (короткий заголовок карточки),
-`difficulty` (base|junior|middle|senior), `weight`, `tags` (1–3), для `task` — `starterCode`, `rubric`.
+`difficulty` (один из `levels[].id` пула; по умолчанию base|junior|middle|senior), `weight`, `tags` (1–3), для `task` — `starterCode`, `rubric`.
 Тело: `## Вопрос` / `## Ответ` (для задач — `## Задача` / `## Эталон`). Не начинай строки тела с `#`
 вне блоков кода (это маркеры разбиения). Полный текст — в drawer; на карточке только `title` + теги.
 

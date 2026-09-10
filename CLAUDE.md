@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Что это
 Локальный веб-сервис для технических интервью по дата-инженерному стеку. Ядро —
 **swimlane-доска вопросов**: вертикальные колонки по направлениям (frameworks / databases /
-python / platform), внутри карточки ранжированы по сложности (base → junior → middle → senior).
+python / platform), внутри карточки ранжированы по уровням сложности — рядам, которые задаёт сам пул
+(`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
 Карточка = вопрос/задача + ответ + оценка 1–5. Рёбер/ветвления между вопросами нет — это доска,
 а не граф зависимостей. Контент импортируется из Markdown/JSON. Только локально.
 Бэкенд **FastAPI + SQLite**, фронт **React + Vite + React Flow (@xyflow)**.
@@ -39,14 +40,18 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 ## Архитектура
 
 **Бэкенд** (`backend/app/`) — поток данных «контент-файлы → импорт → in-memory граф → API → SQLite-сессии»:
-- `pools.py` — читает `content/<pool>/pool.yaml` (блоки, под-колонки, цвета, веса) — таксономия пула.
+- `pools.py` — читает `content/<pool>/pool.yaml` (блоки, под-колонки, цвета, веса, уровни `levels`) — таксономия пула.
   `pool.yaml` — сид таблицы `pools` (как контент для `nodes`); в рантайме направления читаются из БД
   (`db.list_pools`), создаются/правятся/удаляются через `POST/PUT/DELETE /api/pools`. Колонки —
   данные направления: `POST` принимает ровно одно из `preset` / `blocks`, `PUT` — `blocks`
   (`[{id?, label, color, subblocks?}]`; колонка вне списка удаляется с вопросами, исчезнувшая
   под-колонка оставляет вопросы в колонке). Редактор — `frontend/src/components/BlocksEditor.tsx`.
 - `importer.py` — парсит `content/<pool>/<block>/*.md|*.json` через `python-frontmatter` в `Node`,
-  проверяя block/subblock по `pool.yaml`; `pool` ноды ставится по каталогу, не во frontmatter.
+  проверяя block/subblock/difficulty по `pool.yaml`; `pool` ноды ставится по каталогу, не во frontmatter.
+- `sync.py` — `content/ → БД` без рестарта: при старте и по `POST /api/pools/sync` (owner) создаёт новые
+  направления, обновляет конфиги, upsert-ит seed-ноды по id; ноды с `source='user'` (созданные или правленные
+  в UI) не трогает — конфликт id идёт в отчёт; исчезнувшие из файлов seed-ноды прячет (`hidden`), вернувшиеся
+  разворачивает; при ошибках импорта в пуле скрытие пропускает. `/api/graph` скрытые не отдаёт.
 - `models.py` — pydantic `Node` с `extra="forbid"`: добавление поля ноды = правка `models.py`
   **И** `frontend/src/types.ts` **И** миграция всех контент-файлов, иначе импорт падает.
 - `sampler.py` — собирает набор вопросов пропорционально весам блоков пула.
@@ -58,11 +63,14 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   `#/sessions`, `#/connect`.
 - `pages/BoardPage.tsx` — доска пула: состояние, `buildNodes`, шапка, панель ⚙.
 - `pages/` — `HomePage`, `BankPage`, `CandidatesPage`, `SessionsPage`, `ConnectPage`.
-- `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков и под-колонок из `pool.yaml`, `DIFFS`, `subOf`.
+- `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков, под-колонок и уровней из `pool.yaml` (`levelOrder`), `subOf`.
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
   `Block = string`, перечисления `Difficulty/Kind`, `DIFF_COLOR`.
 - `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer.
 - `report.ts` — клиентская генерация самодостаточного HTML-отчёта по сессии («📥 Скачать»).
+
+**Уровни** — `levels` в `pool.yaml` (`[{id, label}]`, порядок = по возрастанию); `difficulty` карточки должна быть
+одним из их `id`, иначе импорт падает. Хелперы фронта — `levelOrder/levelLabel/levelColor` рядом с `blockOrder`.
 
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →

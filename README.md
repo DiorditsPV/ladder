@@ -2,7 +2,8 @@
 
 A self-hosted web app for running technical interviews. The heart of it is an interactive
 **question matrix** on a canvas: one column per section (Frameworks / Databases / Python /
-Platform), cards inside a column ranked by difficulty (base → junior → middle → senior).
+Platform), cards inside a column ranked by the pool's own difficulty levels (`levels` in `pool.yaml`, 2–8;
+base → junior → middle → senior by default).
 A card is a question or a hands-on task plus a reference answer, a 1–5 score and the
 interviewer's note. Content lives in Markdown/JSON and is imported into the question bank.
 
@@ -123,7 +124,7 @@ status, and "Export" produces the HTML report described above.
 ## Content
 
 Questions live in track pools: `content/<pool>/pool.yaml` describes the sections (column order,
-labels, colours, sub-columns, weights) and `content/<pool>/<block>/*.md|*.json` holds the questions
+labels, colours, sub-columns, weights) and the difficulty levels (`levels`, the matrix rows) and `content/<pool>/<block>/*.md|*.json` holds the questions
 themselves. `pool.yaml` is the seed: at runtime tracks are read from the database, so they can be
 created, edited and deleted from the UI (`POST/PUT/DELETE /api/pools`). A new track is either a copy
 of an existing one (structure and questions included) or a structure you build yourself in the
@@ -139,6 +140,7 @@ The repository ships two Russian-language pools used in real interviews plus a
 id: spark-shuffle-01
 kind: question            # question | task
 block: frameworks         # one of blocks[].id in pool.yaml
+difficulty: middle        # one of levels[].id in pool.yaml (base/junior/middle/senior when levels is omitted)
 subblock: pyspark         # (optional) sub-column inside the section
 title: Shuffle in Spark   # short heading shown on the card
 topic: distributed-batch
