@@ -64,6 +64,10 @@ def validate(spec: dict) -> None:
     extra = pool.get("tags") or []
     if not all(isinstance(t, str) and ID_RE.match(t) for t in extra):
         die("pool.tags — список slug'ов (латиница, дефисы)")
+    topics = Counter((c.get("block"), c.get("topic")) for c in cards)
+    dup_topics = [f"{b}/{t}" for (b, t), n in topics.items() if n > 1]
+    if dup_topics:
+        print(f"  ! повторяющийся topic внутри колонки (не ошибка, но проверь на дубли): {', '.join(dup_topics)}")
     allowed = TAGS | set(extra)
     seen = set()
     for c in cards:
@@ -87,6 +91,8 @@ def validate(spec: dict) -> None:
         for key in ("title", "topic", "question", "answer"):
             if not (c.get(key) or "").strip():
                 die(f"{cid}: поле '{key}' пустое")
+        if not 2 <= len(c["title"].split()) <= 8:
+            die(f"{cid}: title — 2–8 слов, получено «{c['title']}»")
         if c["question"].lstrip().startswith("#") or any(line.startswith("#") for line in c["answer"].splitlines()):
             die(f"{cid}: строки вопроса/ответа не должны начинаться с '#' (маркеры разбиения тела)")
 
@@ -146,10 +152,10 @@ def coverage(pool: dict, cards: list, per_cell: int) -> int:
 
 
 def warn_lengths(cards: list) -> None:
-    """Мягкая проверка: ответ короче 400 знаков — почти наверняка пустой, длиннее 2000 — лекция."""
+    """Мягкая проверка: ответ короче 400 знаков — почти наверняка пустой, длиннее 1500 — лекция (ориентир SKILL.md)."""
     for c in cards:
         n = len((c.get("answer") or "").strip())
-        if n < 400 or n > 2000:
+        if n < 400 or n > 1500:
             print(f"  ! {c['id']}: ответ {n} знаков (ориентир 400–1500)")
 
 
@@ -182,7 +188,7 @@ def main() -> None:
     ap.add_argument("--per-cell", type=int, default=2, help="минимум карточек в ячейке колонка × уровень")
     ap.add_argument("--sync", action="store_true", help="после записи: POST /api/pools/sync и проверка /api/graph")
     ap.add_argument("--api", default=os.environ.get("API_URL", "http://localhost:8000"))
-    ap.add_argument("--check", action="store_true", help="только валидация и матрица, ничего не писать")
+    ap.add_argument("--check", action="store_true", help="только валидация и матрица; ничего не пишет и не сносит даже с --fresh")
     a = ap.parse_args()
 
     spec = json.loads(Path(a.spec).read_text(encoding="utf-8"))
