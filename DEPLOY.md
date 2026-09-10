@@ -1,10 +1,12 @@
 # Деплой
 
 Сервис живёт на сервере портфолио рядом с `paveldiordits.site` и `lexis.paveldiordits.site`:
-**https://interview.paveldiordits.site**. Любой merge в `main` запускает выкладку.
+**https://interview.paveldiordits.site**. Выкладка — **только вручную**: *Actions → Deploy → Run workflow* (ветка `main`)
+или `gh workflow run Deploy --ref main`. Merge в `main` ничего не выкладывает: основной режим сервиса — локальный,
+сервер — необязательная публичная копия.
 
 ```
-push в main ─▶ GitHub Actions (.github/workflows/deploy.yml)
+Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispatch)
                  ├─ npm ci && npm run build                 фронт собирается на раннере (node на сервере нет)
                  ├─ tar czf backend content frontend/dist
                  ├─ ssh deploy@<сервер> < interview.tar.gz  ключ прибит к одной команде:

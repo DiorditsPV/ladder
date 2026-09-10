@@ -1,13 +1,13 @@
 name: Deploy
 
-# Выкладка на сервер портфолио (interview.paveldiordits.site) при любом попадании коммита в main.
+# Выкладка на сервер портфолио (interview.paveldiordits.site) — ТОЛЬКО вручную: Actions → Deploy → Run workflow
+# (или `gh workflow run Deploy --ref main`). Merge в main ничего не выкладывает: сервис живёт локально,
+# сервер — необязательная публичная копия, обновляемая осознанно.
 # Фронт собирается на раннере — node на сервере нет. Всё нужное уезжает одним tar.gz в stdin
 # forced-command-скрипта /usr/local/bin/deploy-interview.sh: ключ раннера на сервере умеет ровно
 # эту команду (см. deploy/install.sh и DEPLOY.md). Host-key закреплён явно — подмену сервера
 # раннер не примет.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
