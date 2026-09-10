@@ -25,7 +25,7 @@ def _db():
 
 
 def _make_node(c: TestClient, **overrides) -> str:
-    payload = {"block": "python", "topic": "Progress topic", "question": "q?"}
+    payload = {"block": "python", "topic": "Progress topic", "difficulty": "middle", "question": "q?"}
     payload.update(overrides)
     r = c.post("/api/nodes", json=payload)
     assert r.status_code == 200, r.text
