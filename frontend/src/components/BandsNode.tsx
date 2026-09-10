@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { DIFF_COLOR, hexA, lighten, type Difficulty } from "../types";
+import { hexA, lighten } from "../types";
 import type { Band } from "../layout";
 
 export interface BandsNodeData {
@@ -18,7 +18,7 @@ function BandsNodeImpl({ data }: { data: BandsNodeData }) {
   return (
     <div className="bands" style={{ width: labelW + width, height }}>
       {bands.map((b) => {
-        const color = DIFF_COLOR[b.difficulty as Difficulty];
+        const color = b.color;
         return (
           <div
             key={b.difficulty}

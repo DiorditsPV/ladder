@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { blockColor, blockLabel, blockOrder, subLabel, DIFF_COLOR, type Difficulty, type Kind, type PoolConfig, type QNode } from "../types";
-import { DIFFS, subOf } from "../layout";
+import { blockColor, blockLabel, blockOrder, subLabel, levelColor, levelLabel, levelOrder, type Kind, type PoolConfig, type QNode } from "../types";
+import { subOf } from "../layout";
 import { useT } from "../i18n";
 
 const KIND_LABEL: Record<Kind, string> = { question: "вопрос", task: "задача" };
@@ -24,7 +24,7 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
   );
   const [diffs, setDiffs] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(DIFFS.map((d) => [d, true])),
+    Object.fromEntries(levelOrder(pool).map((d) => [d, true])),
   );
   const [kinds, setKinds] = useState<Record<string, boolean>>({ question: true, task: true });
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -55,7 +55,7 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
     [nodes, blocks, diffs, kinds, needle],
   );
 
-  const drank = (d: Difficulty) => DIFFS.indexOf(d);
+  const drank = (d: string) => levelOrder(pool).indexOf(d);
   const grouped = useMemo(() => {
     const order: string[] = [...blockOrder(pool)];
     for (const n of filtered) if (!order.includes(n.block)) order.push(n.block);
@@ -129,18 +129,18 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
           ))}
         </div>
         <div className="bankbrowser__chips">
-          {DIFFS.map((d) => (
+          {levelOrder(pool).map((d) => (
             <button
               key={d}
               className={`fp__chip ${diffs[d] ? "" : "fp__chip--off"}`}
               style={{
-                borderColor: DIFF_COLOR[d],
-                color: diffs[d] ? "#fff" : DIFF_COLOR[d],
-                background: diffs[d] ? DIFF_COLOR[d] : "transparent",
+                borderColor: levelColor(pool, d),
+                color: diffs[d] ? "#fff" : levelColor(pool, d),
+                background: diffs[d] ? levelColor(pool, d) : "transparent",
               }}
               onClick={() => setDiffs((s) => ({ ...s, [d]: !s[d] }))}
             >
-              {d}
+              {levelLabel(pool, d)}
             </button>
           ))}
         </div>
@@ -176,8 +176,8 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
                         onClick={() => toggleOpen(n.id)}
                         aria-expanded={isOpen}
                       >
-                        <span className="bankrow__diff" style={{ background: DIFF_COLOR[n.difficulty] }}>
-                          {n.difficulty}
+                        <span className="bankrow__diff" style={{ background: levelColor(pool, n.difficulty) }}>
+                          {levelLabel(pool, n.difficulty)}
                         </span>
                         <span className="bankrow__kind">{t(KIND_LABEL[n.kind])}</span>
                         <span className="bankrow__title">{n.title || n.question}</span>

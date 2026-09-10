@@ -1,4 +1,4 @@
-import { blockOrder, subLabel, type Difficulty, type PoolConfig, type QNode } from "./types";
+import { blockOrder, levelLabel, levelColor, levelOrder, subLabel, type PoolConfig, type QNode } from "./types";
 
 // Детерминированная swimlane-раскладка с под-блоками.
 // Горизонталь: блоки (Фреймворки/Базы данных/Python/Платформа), причём блок может
@@ -16,14 +16,6 @@ export const SUPER_H = 40; // полоса заголовка блока
 export const HEADER_H = 46; // полоса заголовка под-колонки (технологии)
 export const LABEL_W = 120;
 export const TOP_H = SUPER_H + HEADER_H;
-
-export const DIFFS: Difficulty[] = ["base", "junior", "middle", "senior"];
-export const DIFF_LABEL_FULL: Record<Difficulty, string> = {
-  base: "BASE",
-  junior: "JUNIOR",
-  middle: "MIDDLE",
-  senior: "SENIOR",
-};
 
 export const subOf = (n: QNode): string => n.subblock || n.block;
 
@@ -45,10 +37,11 @@ export interface BlockGroup {
   split: boolean; // делится ли на под-колонки
 }
 export interface Band {
-  difficulty: Difficulty;
+  difficulty: string;
   y: number;
   height: number;
   label: string;
+  color: string;
 }
 export interface Placement {
   positions: Record<string, { x: number; y: number }>;
@@ -69,6 +62,12 @@ export function swimlaneLayout(nodes: QNode[], pool: PoolConfig): Placement {
   for (const n of [...nodes].sort((a, c) => a.block.localeCompare(c.block)))
     if (!blocks.includes(n.block)) blocks.push(n.block);
 
+  // Порядок полос сложности — из pool.levels; уровни вне списка (старый контент после
+  // смены таксономии уровней) идут следом по алфавиту, чтобы ничего не потерять.
+  const levels: string[] = [...levelOrder(pool)];
+  for (const n of [...nodes].sort((a, c) => a.difficulty.localeCompare(c.difficulty)))
+    if (!levels.includes(n.difficulty)) levels.push(n.difficulty);
+
   // Под-блоки каждого блока: сначала объявленные в направлении (в их порядке, даже пустые —
   // добавленная в форме под-колонка должна быть видна на доске), потом прочие из нод.
   const subsByBlock: Record<string, string[]> = {};
@@ -87,7 +86,7 @@ export function swimlaneLayout(nodes: QNode[], pool: PoolConfig): Placement {
 
   // Высота полос сложности — по самой плотной (block×sub×difficulty) ячейке.
   const bandRows: Record<string, number> = {};
-  for (const d of DIFFS) {
+  for (const d of levels) {
     let mx = 1;
     for (const b of blocks) for (const s of subsByBlock[b]) mx = Math.max(mx, cellNodes(b, s, d).length);
     bandRows[d] = mx;
@@ -95,7 +94,7 @@ export function swimlaneLayout(nodes: QNode[], pool: PoolConfig): Placement {
   const bandHeight: Record<string, number> = {};
   const bandTop: Record<string, number> = {};
   let yCur = TOP_H;
-  for (const d of DIFFS) {
+  for (const d of levels) {
     bandHeight[d] = bandRows[d] * (CARD_H + VGAP) - VGAP + 2 * BAND_PAD;
     bandTop[d] = yCur;
     yCur += bandHeight[d];
@@ -119,7 +118,7 @@ export function swimlaneLayout(nodes: QNode[], pool: PoolConfig): Placement {
       const colX = xCur;
       const cardX = colX + (COL_W - CARD_W) / 2;
       const ordered: string[] = [];
-      for (const d of DIFFS) {
+      for (const d of levels) {
         cellNodes(block, sub, d).forEach((n, row) => {
           positions[n.id] = { x: cardX, y: bandTop[d] + BAND_PAD + row * (CARD_H + VGAP) };
           ordered.push(n.id);
@@ -156,11 +155,12 @@ export function swimlaneLayout(nodes: QNode[], pool: PoolConfig): Placement {
   });
 
   const totalWidth = xCur;
-  const bands: Band[] = DIFFS.map((d) => ({
+  const bands: Band[] = levels.map((d) => ({
     difficulty: d,
     y: bandTop[d],
     height: bandHeight[d],
-    label: DIFF_LABEL_FULL[d],
+    label: levelLabel(pool, d).toUpperCase(),
+    color: levelColor(pool, d),
   }));
 
   return { positions, columns, blockGroups, bands, width: totalWidth, height: totalHeight, order, colOf, rowOf };

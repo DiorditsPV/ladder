@@ -90,23 +90,43 @@ export interface BlockDraft {
   subblocks?: { id?: string; label: string }[];
 }
 
+// pool-levels: уровень сложности из формы. id — только у существующих (сервер сохраняет как есть),
+// у новых id генерится из label.
+export interface LevelDraft {
+  uid?: string; // клиентский ключ ряда в редакторе; в запрос не попадает
+  id?: string;
+  label: string;
+}
+
+// sync-pools: результат POST /api/pools/sync — content/ → БД без рестарта.
+export interface SyncReport {
+  created: string[];
+  updated: string[];
+  nodes_upserted: number;
+  hidden: string[];
+  conflicts: string[];
+  errors: { file: string; error: string }[];
+}
+
 export const api = {
   pools: () => fetch(`${BASE}/pools`).then(json<PoolConfig[]>),
   // pool-crud: направления живут в БД; ровно одно из preset (существующее направление: колонки +
   // вопросы копируются) / blocks (свои колонки, без вопросов).
-  createPool: (data: { label: string; description?: string; preset?: string; blocks?: BlockDraft[] }) =>
+  createPool: (data: { label: string; description?: string; preset?: string; blocks?: BlockDraft[]; levels?: LevelDraft[] }) =>
     fetch(`${BASE}/pools`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(json<PoolConfig>),
   // blocks: колонка вне списка удаляется вместе с вопросами, под-колонка — вопросы остаются в колонке.
-  updatePool: (id: string, fields: { label?: string; description?: string; blocks?: BlockDraft[] }) =>
+  updatePool: (id: string, fields: { label?: string; description?: string; blocks?: BlockDraft[]; levels?: LevelDraft[] }) =>
     fetch(`${BASE}/pools/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     }).then(json<PoolConfig>),
+  // sync-pools: content/ → БД без рестарта (новые пулы + upsert файловых нод + скрытие исчезнувших).
+  syncPools: () => fetch(`${BASE}/pools/sync`, { method: "POST" }).then(json<SyncReport>),
   deletePool: (id: string) =>
     fetch(`${BASE}/pools/${encodeURIComponent(id)}`, { method: "DELETE" }).then(
       json<{ deleted: string; nodes_removed: number; sessions_kept: number }>,
