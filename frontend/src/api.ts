@@ -7,6 +7,7 @@ import type {
   ImportResult,
   Interviewer,
   PoolConfig,
+  Progress,
   Session,
   SessionMeta,
 } from "./types";
@@ -245,5 +246,18 @@ export const api = {
   join: (token: string) =>
     fetch(`${BASE}/join/${encodeURIComponent(token)}`, { method: "POST", credentials: "include" }).then((res) =>
       json<{ session_id: number; pool: string; role: string }>(res, { skipAuthReload: true }),
+    ),
+  // Чек-лист разбора (вне сессии, per-user): статус карточки known|review|unknown.
+  progress: (pool: string) =>
+    fetch(`${BASE}/progress?pool=${encodeURIComponent(pool)}`).then(json<Record<string, Progress>>),
+  setProgress: (nodeId: string, status: Progress) =>
+    fetch(`${BASE}/progress/${encodeURIComponent(nodeId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).then(json<{ node_id: string; status: Progress }>),
+  clearProgress: (nodeId: string) =>
+    fetch(`${BASE}/progress/${encodeURIComponent(nodeId)}`, { method: "DELETE" }).then(
+      json<{ cleared: boolean }>,
     ),
 };

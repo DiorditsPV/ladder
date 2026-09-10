@@ -284,7 +284,8 @@ export const EN: Record<string, string> = {
   "Справка": "Help",
 
   // --- ShortcutsHelp ---
-  "оценить текущий вопрос": "score the current question",
+  "оценить текущий вопрос (в сессии)": "score the current question (in a session)",
+  "знаю · повторить · не знаю (вне сессии)": "known · review · unknown (outside a session)",
   "открыть карточку текущего вопроса": "open the current question's card",
   "перейти к следующему неоценённому": "go to the next unscored question",
   "навигация по сетке вопросов": "navigate the question grid",
@@ -334,4 +335,12 @@ export const EN: Record<string, string> = {
   "Банк пуст.": "The bank is empty.",
   "Банк вопросов · интервью": "Question bank · interview",
   "кандидат": "candidate",
+
+  // --- study-progress: чек-лист разбора (статусы вне сессии) ---
+  "Знаю (1)": "Know it (1)",
+  "Повторить (2)": "Review (2)",
+  "Не знаю (3)": "Don't know (3)",
+  "Только неразобранное": "Unresolved only",
+  "разобрано {k} из {n}": "{k} of {n} reviewed",
+  "Разобрано": "Reviewed",
 };

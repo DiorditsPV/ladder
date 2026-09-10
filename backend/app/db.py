@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -123,6 +124,14 @@ CREATE TABLE IF NOT EXISTS scores (
     note       TEXT,
     created_at TEXT NOT NULL,
     UNIQUE(session_id, node_id)
+);
+CREATE TABLE IF NOT EXISTS progress (
+    tenant_id  TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
+    user_id    TEXT NOT NULL,
+    node_id    TEXT NOT NULL,
+    status     TEXT NOT NULL,               -- known | review | unknown (чек-лист самоподготовки)
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, user_id, node_id)
 );
 """
 
@@ -948,3 +957,47 @@ class Database:
                 (session_id, node_id, score, note, _now()),
             )
         return self.get_session(session_id, tenant_id)
+
+    # --- progress (чек-лист разбора, per-user) ---
+    PROGRESS_STATUSES = ("known", "review", "unknown")
+
+    def set_progress(self, tenant_id: str, user_id: str, node_id: str, status: str) -> Dict[str, str]:
+        """Статус карточки для пользователя (upsert). Валидность status проверяет вызывающий."""
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO progress (tenant_id, user_id, node_id, status, updated_at) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, user_id, node_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
+                """,
+                (tenant_id, user_id, node_id, status, _now()),
+            )
+        return {"node_id": node_id, "status": status}
+
+    def clear_progress(self, tenant_id: str, user_id: str, node_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM progress WHERE tenant_id = ? AND user_id = ? AND node_id = ?", (tenant_id, user_id, node_id)
+            )
+        return cur.rowcount > 0
+
+    def get_progress(self, tenant_id: str, user_id: str, pool: str) -> Dict[str, str]:
+        """{node_id: status} по видимым нодам пула — статусы спрятанных нод не отдаём, но и не стираем."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.node_id, p.status FROM progress p
+                JOIN nodes n ON n.tenant_id = p.tenant_id AND n.id = p.node_id
+                WHERE p.tenant_id = ? AND p.user_id = ? AND n.pool = ? AND n.hidden = 0
+                """,
+                (tenant_id, user_id, pool),
+            ).fetchall()
+        return {r["node_id"]: r["status"] for r in rows}
+
+    def progress_summary(self, tenant_id: str, user_id: str, pool: str) -> Dict[str, int]:
+        """Сводка для главной: сколько known/review/unknown среди видимых нод пула и total = видимых нод."""
+        counts = Counter(self.get_progress(tenant_id, user_id, pool).values())
+        with self._conn() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE tenant_id = ? AND pool = ? AND hidden = 0", (tenant_id, pool)
+            ).fetchone()[0]
+        return {"known": counts["known"], "review": counts["review"], "unknown": counts["unknown"], "total": total}

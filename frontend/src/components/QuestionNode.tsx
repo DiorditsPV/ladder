@@ -1,6 +1,6 @@
 import { type NodeProps } from "@xyflow/react";
 import { memo } from "react";
-import { hexA, levelColor, levelLabel, lighten, type PoolConfig, type QNode } from "../types";
+import { hexA, levelColor, levelLabel, lighten, type PoolConfig, type Progress, type QNode } from "../types";
 import { useT } from "../i18n";
 
 export interface QuestionNodeData {
@@ -9,6 +9,9 @@ export interface QuestionNodeData {
   color: string;
   dark?: boolean;
   score?: number;
+  status?: Progress;
+  // Точка статуса чек-листа рисуется только вне сессии (в сессии статусы не показываются).
+  showStatus?: boolean;
   current?: boolean;
   dimmed?: boolean;
   hidden?: boolean;
@@ -19,7 +22,7 @@ export interface QuestionNodeData {
 // полный текст/код живёт в drawer. Теги показываем чипами.
 function QuestionNodeImpl({ data, selected }: NodeProps) {
   const t = useT();
-  const { node, pool, color, dark, score, current, dimmed, hidden } = data as QuestionNodeData;
+  const { node, pool, color, dark, score, status, showStatus, current, dimmed, hidden } = data as QuestionNodeData;
   const isTask = node.kind === "task";
   const heading = node.title || node.question;
   const diffColor = levelColor(pool, node.difficulty);
@@ -56,7 +59,10 @@ function QuestionNodeImpl({ data, selected }: NodeProps) {
         </span>
       </div>
 
-      <div className="qnode__title">{heading}</div>
+      <div className="qnode__title">
+        {showStatus && <span className="qnode__status" data-status={status} />}
+        {heading}
+      </div>
 
       {node.tags.length > 0 && (
         <div className="qnode__tags">

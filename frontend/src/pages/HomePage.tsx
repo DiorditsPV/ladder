@@ -172,6 +172,20 @@ export function HomePage({
                 <span className="poolcard__stat"><CircleHelp size={16} strokeWidth={2} aria-hidden="true" />{questions(p.counts?.nodes ?? 0)}</span>
                 <span className="poolcard__stat"><CalendarDays size={16} strokeWidth={2} aria-hidden="true" />{sessions(p.counts?.sessions ?? 0)}</span>
               </div>
+              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user, вне сессии). */}
+              {p.progress && p.progress.total > 0 && (
+                <div className="poolcard__progress">
+                  <div className="poolcard__progress-track">
+                    <div
+                      className="poolcard__progress-fill"
+                      style={{ width: `${Math.round((p.progress.known / p.progress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="poolcard__progress-label">
+                    {t("разобрано {k} из {n}", { k: p.progress.known, n: p.progress.total })}
+                  </span>
+                </div>
+              )}
               <div className="poolcard__blocks">
                 {p.blocks.map((b) => (
                   <span key={b.id} className="poolcard__block">{b.label}</span>

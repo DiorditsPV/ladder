@@ -108,7 +108,9 @@ it is a board of cards grouped by section and difficulty, not a dependency graph
 - **HUD at the bottom** — current question, position in the plan, 1–5 score, "Next →", timer.
 - **Filters** — sections, difficulty, kind and tags, plus full-text search; "unscored only" appears
   inside a session.
-- **Keyboard:** `1–5` score the current card, `↑↓` move by difficulty, `←→` between columns,
+- **Checklist (outside a session):** each card gets a status — `1` known, `2` review, `3` unknown — kept per user;
+  column counters and the home page show how much of a track is covered.
+- **Keyboard:** `1–5` score the current card (in a session), `↑↓` move by difficulty, `←→` between columns,
   `Enter` opens the drawer, `n` goes to the next unscored question, `Esc` clears the current one,
   `?` shows the shortcut cheat sheet.
 
