@@ -798,6 +798,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
         const s = await api.getSession(id);
         setSession(s);
         setInSession(true);
+        setUnresolvedOnly(false); // чип «Только неразобранное» есть только вне сессии — иначе индикатор фильтров залипнет
         setScores(scoresOf(s));
         setNotes(notesOf(s));
         setSessionParam(id);

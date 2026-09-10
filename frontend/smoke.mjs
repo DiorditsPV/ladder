@@ -397,6 +397,24 @@ const tagsAgain = await page.locator(".fp__tag").count();
 if (tagsAgain !== tagsBefore) fail(`filter panel did not restore tags (${tagsAgain} vs ${tagsBefore})`);
 console.log(`OK: filter panel close/reopen keeps ${tagsBefore} tags`);
 
+// 9c. Чек-лист (study-progress): вне сессии «1» ставит статус «знаю» текущей карточке и уводит к
+//     следующей; в drawer вместо звёзд — кнопки статусов, повторный клик той же кнопки снимает статус.
+//     Проверка относительная: после клика число «знаю» меняется на ±1 и возвращается вторым кликом.
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await page.waitForSelector(".drawer", { timeout: 3000 });
+await page.keyboard.press("1");
+await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 3000 });
+if ((await rowNumberCard.locator('.qnode__status[data-status="known"]').count()) !== 1) fail("checklist: known status not on the current card");
+const knownAfterKey = await page.locator('.qnode__status[data-status="known"]').count();
+await page.waitForSelector(".drawer .statusbtn--known", { timeout: 3000 });
+if ((await page.locator(".drawer .drawer__scoring .scorebtn").count()) !== 0) fail("drawer shows scoring stars outside a session");
+await page.locator(".drawer .statusbtn--known").click();
+await page.waitForFunction((n) => Math.abs(document.querySelectorAll('.qnode__status[data-status="known"]').length - n) === 1, knownAfterKey, { timeout: 3000 });
+await page.locator(".drawer .statusbtn--known").click();
+await page.waitForFunction((n) => document.querySelectorAll('.qnode__status[data-status="known"]').length === n, knownAfterKey, { timeout: 3000 });
+console.log(`OK: checklist — «1» sets status, drawer button toggles it (${knownAfterKey} known)`);
+// (после «1» вьюпорт сдвинут к следующей карточке — дальше идёт переход на экран настройки, это не мешает)
+
 // 10. Старт сессии (v1-closure): «Начать интервью» на карточке DE → экран настройки интервью
 //     (кандидат, разделы, уровни, набор) → автоподбор 5 вопросов → доска с ?session=<id>: план ведёт
 //     (HUD «1/5», вопросы вне плана затемнены), затем оценка текущего в HUD.
@@ -433,6 +451,16 @@ console.log(`OK: session plan drives the board (HUD ${hudPlan.split(" ")[0]}, ${
 await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
 await page.locator(".hud__score .scorebtn").nth(2).click(); // 3/5 → персист в сессию
 await page.waitForTimeout(400);
+
+// 9b. В сессии drawer по-прежнему оценивает (не статусы): открыть карточку из плана, клик по 2-й звезде.
+const planCard = page.locator(".qnode:not(.qnode--dimmed)").nth(1);
+await planCard.locator(".qnode__title").click();
+await page.waitForSelector(".drawer .drawer__scoring .scorebtn", { timeout: 3000 });
+if ((await page.locator(".drawer .statusbtn").count()) !== 0) fail("session drawer shows checklist statuses instead of scoring");
+await page.locator(".drawer .drawer__scoring .scorebtn").nth(1).click();
+await page.waitForFunction(() => document.querySelectorAll(".qnode--scored").length >= 2, null, { timeout: 3000 });
+await page.keyboard.press("Escape");
+console.log("OK: session drawer scores via stars (no checklist statuses)");
 
 // 10a. Прогресс интервью — только в сессии: подпись с дробью, заполнение > 0 после оценки.
 await page.waitForSelector(".topbar .progress", { timeout: 3000 });

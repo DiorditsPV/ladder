@@ -284,7 +284,8 @@ export const EN: Record<string, string> = {
   "Справка": "Help",
 
   // --- ShortcutsHelp ---
-  "оценить текущий вопрос": "score the current question",
+  "оценить текущий вопрос (в сессии)": "score the current question (in a session)",
+  "знаю · повторить · не знаю (вне сессии)": "known · review · unknown (outside a session)",
   "открыть карточку текущего вопроса": "open the current question's card",
   "перейти к следующему неоценённому": "go to the next unscored question",
   "навигация по сетке вопросов": "navigate the question grid",

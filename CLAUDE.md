@@ -72,6 +72,10 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 **Уровни** — `levels` в `pool.yaml` (`[{id, label}]`, порядок = по возрастанию); `difficulty` карточки должна быть
 одним из их `id`, иначе импорт падает. Хелперы фронта — `levelOrder/levelLabel/levelColor` рядом с `blockOrder`.
 
+**Чек-лист разбора** — вне сессии карточка имеет статус `known | review | unknown` (таблица `progress`, своя у
+каждого пользователя; `PUT/DELETE /api/progress/{node_id}`, `GET /api/progress?pool=`, сводка `progress` в `/api/pools`).
+Хоткеи `1/2/3` ставят статус и ведут к следующей карточке; в сессии `1–5` — оценка, статусы не показываются.
+
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →
 `sql|dbms|storage|formats`; data-engineer-x5 — sql → `queries|indexes`; system-analyst — см. его `pool.yaml`.
