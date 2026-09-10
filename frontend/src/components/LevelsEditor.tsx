@@ -5,6 +5,7 @@ import { newUid } from "./BlocksEditor";
 
 // Уровни сложности направления — ряды матрицы снизу вверх: первый в списке самый лёгкий.
 // Простой список без drag & drop: порядок — стрелками ↑ ↓, как в меню раздела BlocksEditor.
+// Классы свои (levels__*), не struct__*: smoke ищет поля разделов по .struct__name, уровни в них попадать не должны.
 export const LEVELS_MIN = 2;
 export const LEVELS_MAX = 8;
 
@@ -54,7 +55,7 @@ export function LevelsEditor({ levels, onChange, nodeCounts }: {
           <div key={uid} className="levels__row">
             <span className="levels__n" aria-hidden="true">{i + 1}</span>
             <input
-              className="struct__name levels__name"
+              className="levels__name"
               placeholder={t("Название уровня")}
               aria-label={t("Название уровня")}
               value={l.label}
@@ -68,12 +69,12 @@ export function LevelsEditor({ levels, onChange, nodeCounts }: {
                 }
               }}
             />
-            <button type="button" className="struct__menu levels__btn" title={t("Вверх")} aria-label={t("Вверх")} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
-            <button type="button" className="struct__menu levels__btn" title={t("Вниз")} aria-label={t("Вниз")} disabled={i === levels.length - 1} onClick={() => move(i, i + 1)}>↓</button>
+            <button type="button" className="levels__btn" title={t("Вверх")} aria-label={t("Вверх")} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
+            <button type="button" className="levels__btn" title={t("Вниз")} aria-label={t("Вниз")} disabled={i === levels.length - 1} onClick={() => move(i, i + 1)}>↓</button>
             {/* Пока число вопросов не загружено, удалять уровень с id нельзя — иначе confirm не спросится. */}
             <button
               type="button"
-              className="struct__subdel levels__del"
+              className="levels__del"
               title={t("Убрать уровень")}
               aria-label={t("Убрать уровень")}
               disabled={levels.length <= LEVELS_MIN || (!!l.id && !nodeCounts)}
@@ -84,7 +85,7 @@ export function LevelsEditor({ levels, onChange, nodeCounts }: {
           </div>
         );
       })}
-      <button type="button" className="struct__addsub levels__add" onClick={add} disabled={levels.length >= LEVELS_MAX}>
+      <button type="button" className="levels__add" onClick={add} disabled={levels.length >= LEVELS_MAX}>
         {t("+ Добавить уровень")}
       </button>
     </div>

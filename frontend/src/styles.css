@@ -846,10 +846,19 @@ a.iconbtn { text-decoration: none; display: inline-block; }
 .levels { display: grid; gap: 4px; }
 .levels__row { display: flex; align-items: center; gap: 4px; }
 .levels__n { width: 22px; text-align: center; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.levels__name { flex: 1; font-weight: 600; }
-.levels__btn { font-size: 13px; line-height: 1; }
-.levels__del { opacity: 1; }
-.levels__add { margin-top: 4px; }
+.levels__name {
+  flex: 1; font-size: 14px; font-weight: 600; color: var(--heading); padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+}
+.levels__name:hover { border-color: var(--border); }
+.levels__name:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.levels__name::placeholder { color: var(--text-faint); font-weight: 400; }
+.levels__btn { display: inline-flex; padding: 3px 7px; border-color: transparent; background: transparent; color: var(--text-muted); font-size: 13px; line-height: 1; }
+.levels__btn:hover:not(:disabled) { background: var(--hover); border-color: var(--border); color: var(--text); }
+.levels__del { padding: 2px 7px; border: 0; background: transparent; color: var(--text-muted); font-size: 15px; line-height: 1; }
+.levels__del:hover:not(:disabled) { color: #b91c1c; background: rgba(185, 28, 28, .08); }
+.levels__add { justify-self: start; margin-top: 4px; padding: 3px 8px; border: 0; background: transparent; color: var(--text-muted); font-size: 12px; }
+.levels__add:hover:not(:disabled) { color: var(--accent); background: transparent; }
 .struct__addsection { justify-self: start; font-size: 13px; }
 @media (max-width: 640px) {
   .struct__subdel { opacity: 1; }
