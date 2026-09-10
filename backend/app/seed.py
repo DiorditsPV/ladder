@@ -19,6 +19,10 @@ from .pools import PoolCfg, blocks_to_json, levels_to_json
 def seed_pool_if_empty(db: Database, tenant_id: str, pool: PoolCfg) -> Tuple[int, list]:
     """Сид направления: конфиг (pool.yaml → таблица pools) и, если нод пула нет, его ноды.
 
+    Старт сервера использует sync.sync_pools (перечитывает content/ при каждом запуске,
+    обновляет конфиг и upsert-ит seed-ноды без пересидки). Эта функция остаётся ради тестов,
+    которым нужен разовый сид одного пула без полной синхронизации.
+
     Конфиг — INSERT OR IGNORE: правки названия/описания из UI и tombstone удалённого
     направления переживают рестарт; удалённое направление не воскрешается и не пересеивается.
     Ноды — по count_nodes(tenant, pool): полный пул не трогается, пустой — засеивается.

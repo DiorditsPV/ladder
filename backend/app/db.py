@@ -419,6 +419,17 @@ class Database:
             rows = conn.execute(sql, args).fetchall()
         return [_row_to_node(r) for r in rows]
 
+    def list_node_ids(self, tenant_id: str, pool: str, source: Optional[str] = None, hidden: Optional[bool] = None) -> List[str]:
+        sql, args = "SELECT id FROM nodes WHERE tenant_id = ? AND pool = ?", [tenant_id, pool]
+        if source is not None:
+            sql += " AND source = ?"
+            args.append(source)
+        if hidden is not None:
+            sql += " AND hidden = ?"
+            args.append(int(hidden))
+        with self._conn() as conn:
+            return [r["id"] for r in conn.execute(sql + " ORDER BY id", args).fetchall()]
+
     def get_node(self, tenant_id: str, node_id: str) -> Optional[Dict]:
         with self._conn() as conn:
             row = conn.execute(
@@ -580,6 +591,17 @@ class Database:
             if copy_from is not None:
                 self._copy_nodes(conn, tenant_id, copy_from, pool_id, now)
         return self.get_pool(tenant_id, pool_id)
+
+    def set_pool_config(self, tenant_id: str, pool_id: str, cfg: Dict) -> None:
+        """Конфиг направления из файлов (sync): label/description/blocks/levels без побочных удалений
+        вопросов — в отличие от update_pool, где смена колонок/уровней из UI режет вопросы."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE pools SET label = ?, description = ?, blocks = ?, levels = ?, updated_at = ? "
+                "WHERE tenant_id = ? AND id = ?",
+                (cfg["label"], cfg.get("description") or "", json.dumps(cfg["blocks"], ensure_ascii=False),
+                 json.dumps(cfg["levels"], ensure_ascii=False), _now(), tenant_id, pool_id),
+            )
 
     def update_pool(self, tenant_id: str, pool_id: str, fields: Dict) -> Optional[Dict]:
         """Правка названия/описания/колонок/уровней (остальные ключи игнорируются). None — нет или удалено.

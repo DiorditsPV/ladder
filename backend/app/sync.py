@@ -1,0 +1,68 @@
+"""Синхронизация content/ → БД: направления и seed-ноды из файлов.
+
+Источник правды для вопросов — БД (UI их правит), но файлы content/ — способ массово завозить
+и перегенерировать темы (скилл interview-topic). Поэтому: seed-ноды upsert-ятся из файлов по id,
+пользовательские (source='user') — не трогаются (конфликт id — в отчёт), исчезнувшие из файлов
+seed-ноды прячутся (на них могут ссылаться оценки), скрытые вручную не разворачиваются.
+Конфиг направления обновляется без каскадных удалений (см. db.set_pool_config).
+Вызывается при старте сервера и по POST /api/pools/sync.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Dict, List
+
+from .db import Database
+from .importer import load_pool_content
+from .pools import PoolCfg, blocks_to_json, levels_to_json, load_pools
+
+
+def _cfg(pool: PoolCfg) -> Dict:
+    return {
+        "id": pool.id,
+        "label": pool.label,
+        "description": pool.description,
+        "blocks": json.loads(blocks_to_json(pool.blocks)),
+        "levels": json.loads(levels_to_json(pool.levels)),
+    }
+
+
+def sync_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None:
+    """Одно направление: конфиг, ноды, скрытие исчезнувших. Tombstone — пропуск целиком."""
+    existing = db.get_pool(tenant_id, pool.id)
+    if existing is not None and existing["deleted_at"] is not None:
+        return
+    if existing is None:
+        db.upsert_pool_seed(tenant_id, _cfg(pool))
+        report["created"].append(pool.id)
+    else:
+        db.set_pool_config(tenant_id, pool.id, _cfg(pool))
+        report["updated"].append(pool.id)
+
+    nodes, errors = load_pool_content(pool)
+    report["errors"].extend({"file": e.file, "error": e.error} for e in errors)
+    user_ids = set(db.list_node_ids(tenant_id, pool.id, source="user"))
+    file_ids: List[str] = []
+    for node in nodes:
+        if node.id in user_ids:
+            report["conflicts"].append(node.id)
+            continue
+        db.upsert_node(tenant_id, node.model_dump(), source="seed")
+        report["nodes_upserted"] += 1
+        file_ids.append(node.id)
+    # seed-ноды, которых больше нет в файлах, — спрятать (один раз: уже скрытые не считаем)
+    for nid in db.list_node_ids(tenant_id, pool.id, source="seed", hidden=False):
+        if nid not in file_ids and nid not in user_ids:
+            db.set_node_hidden(tenant_id, nid, True)
+            report["hidden"].append(nid)
+
+
+def sync_pools(db: Database, tenant_id: str, content_dir: Path) -> Dict:
+    """Все каталоги с pool.yaml в content_dir. Возвращает сводку для лога/ответа API."""
+    report: Dict = {"created": [], "updated": [], "nodes_upserted": 0, "hidden": [], "conflicts": [], "errors": []}
+    db.ensure_tenant(tenant_id)
+    for pool in load_pools(content_dir).values():
+        sync_pool(db, tenant_id, pool, report)
+    return report

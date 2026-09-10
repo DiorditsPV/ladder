@@ -56,7 +56,8 @@ from .pools import (
     slug_from_label,
 )
 from .sampler import build_interview, filter_nodes, matrix_order
-from .seed import seed_interviewer_if_empty, seed_owner_if_empty, seed_pool_if_empty
+from .seed import seed_interviewer_if_empty, seed_owner_if_empty
+from .sync import sync_pools
 from .tenancy import resolve_tenant
 
 log = logging.getLogger("interview")
@@ -101,18 +102,18 @@ db = Database(DB_PATH)
 app.state.db = db  # auth-зависимости берут db отсюда (request.app.state.db)
 hub = SessionHub()
 
-# Пулы направлений: content/<pool>/pool.yaml — сид таблицы pools (источник правды в рантайме —
-# БД, см. _pools: направления создаются/правятся/удаляются из UI). Сид — на каждый пул отдельно:
-# конфиг INSERT OR IGNORE, ноды — только в пустой пул.
+# Пулы направлений: content/<pool>/pool.yaml — источник конфига и seed-нод (источник правды
+# в рантайме — БД, см. _pools: направления создаются/правятся/удаляются из UI). На старте —
+# та же синхронизация, что и по POST /api/pools/sync: новые направления создаются, существующие
+# обновляются конфигом без каскадных удалений, seed-ноды upsert-ятся, user-ноды не трогаются.
 _CONTENT_POOLS: Dict[str, PoolCfg] = load_pools(CONTENT_DIR)
 if not _CONTENT_POOLS:
     log.warning("no pools found in %s — /api/pools will be empty until a pool is created", CONTENT_DIR)
-for _pool in _CONTENT_POOLS.values():
-    _seeded, _seed_errors = seed_pool_if_empty(db, resolve_tenant(), _pool)
-    if _seeded:
-        log.info("seeded %d nodes into pool %s", _seeded, _pool.id)
-    if _seed_errors:
-        log.warning("content import errors in pool %s: %s", _pool.id, _seed_errors)
+_sync = sync_pools(db, resolve_tenant(), CONTENT_DIR)
+log.info("content sync: created=%s updated=%s nodes=%d hidden=%d conflicts=%d errors=%d",
+         _sync["created"], _sync["updated"], _sync["nodes_upserted"], len(_sync["hidden"]), len(_sync["conflicts"]), len(_sync["errors"]))
+if _sync["errors"]:
+    log.warning("content import errors: %s", _sync["errors"])
 # Сид интервьюера по умолчанию («Я») для тенанта default — у сессии всегда есть проводивший.
 if seed_interviewer_if_empty(db, resolve_tenant()):
     log.info("seeded default interviewer")
@@ -466,6 +467,12 @@ def delete_pool(pool_id: str, request: Request, _user: dict = Depends(require_me
     if removed is None:
         raise HTTPException(status_code=404, detail=f"pool '{pool_id}' not found")
     return {"deleted": pool_id, "nodes_removed": removed, "sessions_kept": kept}
+
+
+@app.post("/api/pools/sync")
+def sync_content(request: Request, _owner: dict = Depends(require_owner)) -> dict:
+    """Перечитать content/: новые направления, обновлённые конфиги и seed-ноды; user-ноды не трогаются."""
+    return sync_pools(db, resolve_tenant(request), CONTENT_DIR)
 
 
 @app.get("/api/graph", response_model=GraphResponse)
