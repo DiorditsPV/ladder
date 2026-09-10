@@ -38,7 +38,8 @@ chown "$SVC_USER":"$SVC_USER" "$APP" "$DATA"
 # 3) owner-креды — один раз; смена потом только руками (owner сидится в БД при первом старте) ----
 if [ ! -f /etc/ladder.env ]; then
   EMAIL="${OWNER_EMAIL:-owner@interview.local}"
-  PW="${OWNER_PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)}"
+  # openssl, а не tr</dev/urandom | head: под pipefail head закрывает трубу раньше tr → 141 → set -e роняет скрипт
+  PW="${OWNER_PASSWORD:-$(openssl rand -hex 12)}"
   printf 'INTERVIEW_OWNER_EMAIL=%s\nINTERVIEW_OWNER_PASSWORD=%s\n' "$EMAIL" "$PW" > /etc/ladder.env
   chmod 600 /etc/ladder.env
   echo "→ /etc/ladder.env создан. Вход owner: $EMAIL / $PW  — сохрани, второй раз не покажется"
