@@ -8,7 +8,7 @@ blocks:
 - id: core
   label: Ядро
   color: '#2563eb'
-  weight: 19
+  weight: 18
   subblocks:
   - id: log
     label: Лог и партиции
@@ -17,7 +17,7 @@ blocks:
 - id: clients
   label: Продюсеры и консьюмеры
   color: '#16a34a'
-  weight: 23
+  weight: 24
   subblocks:
   - id: producer
     label: Продюсер
@@ -28,7 +28,7 @@ blocks:
 - id: ops
   label: Эксплуатация
   color: '#d97706'
-  weight: 21
+  weight: 25
   subblocks:
   - id: config
     label: Конфигурация
@@ -39,7 +39,7 @@ blocks:
 - id: streaming
   label: Потоковая обработка
   color: '#9333ea'
-  weight: 18
+  weight: 16
   subblocks:
   - id: streams
     label: Kafka Streams и ksqlDB
@@ -48,7 +48,7 @@ blocks:
 - id: design
   label: Проектирование
   color: '#dc2626'
-  weight: 19
+  weight: 18
   subblocks:
   - id: guarantees
     label: Гарантии доставки

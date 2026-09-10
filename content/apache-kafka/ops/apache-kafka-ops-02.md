@@ -1,19 +1,19 @@
 ---
 block: ops
-difficulty: concepts
+difficulty: ops
 id: apache-kafka-ops-02
 kind: question
 subblock: failures
 tags:
 - distributed
 - monitoring
-title: Что будет при отказе одного брокера
-topic: broker-failure-basics
+title: Разбор отказа одного брокера
+topic: broker-failure-runbook
 weight: 1
 ---
 
 ## Вопрос
-Кластер из трёх брокеров, топики с replication.factor=3 и min.insync.replicas=2. Что произойдёт с данными и с клиентами, если один брокер выключится?
+На кластере из трёх брокеров (replication.factor=3, min.insync.replicas=2) выключился один брокер. Разберите, что видно в кластере и в приложениях по шагам и когда можно продолжать работы.
 
 ## Ответ
 Данные не теряются и сервис не останавливается — но не автоматически, а именно из-за этой пары настроек.
