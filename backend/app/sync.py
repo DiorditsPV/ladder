@@ -5,10 +5,13 @@
 пользовательские (source='user') — не трогаются (конфликт id — в отчёт), исчезнувшие из файлов
 seed-ноды прячутся (на них могут ссылаться оценки) — но только если пул распарсился без ошибок:
 битые файлы неотличимы от удалённых вопросов, поэтому при непустом errors скрытие для пула
-пропускается целиком (упавшие файлы не должны прятать весь банк). Флаг hidden пишет только sync
-(ручного «скрыть» в UI нет) — поэтому seed-нода, спрятанная ранее и снова появившаяся в файлах,
-автоматически разворачивается при upsert (учитывается в nodes_upserted, отдельного ключа отчёта
-для этого нет).
+пропускается целиком (упавшие файлы не должны прятать весь банк). Флаг hidden у seed-нод пишет
+только sync — поэтому такая нода, спрятанная ранее и снова появившаяся в файлах, автоматически
+разворачивается при upsert (учитывается в nodes_upserted, отдельного ключа отчёта для этого нет).
+Удаление seed-карточки из UI (DELETE /api/nodes/{id}) — это tombstone (hidden=1, source='user'),
+а не DELETE (см. main.remove_node): файл остаётся источником, поэтому sync её не трогает как
+любую user-ноду, но такая скрытая tombstone-нода не считается конфликтом id — иначе она сыпала
+бы шумом в отчёт при каждом sync (см. user_ids_all/user_visible ниже).
 Конфиг направления обновляется без каскадных удалений (см. db.set_pool_config).
 Вызывается при старте сервера и по POST /api/pools/sync.
 """
@@ -48,12 +51,17 @@ def sync_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None
 
     nodes, errors = load_pool_content(pool)
     report["errors"].extend({"file": e.file, "error": e.error} for e in errors)
-    user_ids = set(db.list_node_ids(tenant_id, pool.id, source="user"))
+    # Два множества user-нод: user_ids_all — вся защита от upsert (включая tombstone —
+    # скрытую, но всё ещё source='user'); user_visible — только видимые, по ним репортим
+    # конфликт id (иначе tombstone сыпал бы шумом в conflicts на каждый sync).
+    user_ids_all = set(db.list_node_ids(tenant_id, pool.id, source="user"))
+    user_visible = set(db.list_node_ids(tenant_id, pool.id, source="user", hidden=False))
     hidden_ids = set(db.list_node_ids(tenant_id, pool.id, source="seed", hidden=True))
     file_ids: List[str] = []
     for node in nodes:
-        if node.id in user_ids:
-            report["conflicts"].append(node.id)
+        if node.id in user_ids_all:
+            if node.id in user_visible:
+                report["conflicts"].append(node.id)
             continue
         db.upsert_node(tenant_id, node.model_dump(), source="seed")
         if node.id in hidden_ids:
@@ -66,7 +74,7 @@ def sync_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None
         return
     # seed-ноды, которых больше нет в файлах, — спрятать (один раз: уже скрытые не считаем)
     for nid in db.list_node_ids(tenant_id, pool.id, source="seed", hidden=False):
-        if nid not in file_ids and nid not in user_ids:
+        if nid not in file_ids and nid not in user_ids_all:
             db.set_node_hidden(tenant_id, nid, True)
             report["hidden"].append(nid)
 

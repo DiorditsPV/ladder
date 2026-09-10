@@ -151,3 +151,96 @@ def test_api_sync_requires_owner_and_returns_report():
     body = r.json()
     assert set(body) >= {"created", "updated", "nodes_upserted", "hidden", "conflicts", "errors"}
     assert body["errors"] == []
+
+
+def test_api_graph_include_hidden_shows_hidden_nodes():
+    """Ruling 8: доска в режиме сессии/отчёт грузят граф с include_hidden=1, обычная доска — без."""
+    from fastapi.testclient import TestClient
+
+    from app.main import OWNER_EMAIL, OWNER_PASSWORD, app
+    from app.main import db as main_db
+
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD})
+    r = c.post(
+        "/api/nodes",
+        json={
+            "block": "python",
+            "topic": "Hidden include_hidden",
+            "difficulty": "middle",
+            "question": "Q?",
+            "answer": "A",
+        },
+    )
+    assert r.status_code == 200
+    node_id = r.json()["id"]
+    try:
+        main_db.set_node_hidden("default", node_id, True)
+        ids = {n["id"] for n in c.get("/api/graph?pool=data-engineer").json()["nodes"]}
+        assert node_id not in ids
+        ids_hidden = {n["id"] for n in c.get("/api/graph?pool=data-engineer&include_hidden=1").json()["nodes"]}
+        assert node_id in ids_hidden
+    finally:
+        c.delete(f"/api/nodes/{node_id}")
+
+
+def test_edit_node_marks_source_user_and_sync_respects_it():
+    """Регрессия блокера: upsert_node не писал source → UI-правка seed-ноды оставалась 'seed'
+    и следующий sync откатывал бы её файлом. Теперь source=excluded.source в ON CONFLICT."""
+    from fastapi.testclient import TestClient
+
+    from app.main import CONTENT_DIR, OWNER_EMAIL, OWNER_PASSWORD, app
+    from app.main import db as main_db
+    from app.models import Node
+    from app.sync import sync_pools
+
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD})
+    node_id = "acid-01"
+    original = main_db.get_node("default", node_id)
+    assert original is not None and original["source"] == "seed"
+    try:
+        r = c.put(f"/api/nodes/{node_id}", json={"title": "ПРАВКА ИЗ UI"})
+        assert r.status_code == 200
+        assert main_db.get_node("default", node_id)["source"] == "user"
+        rep = sync_pools(main_db, "default", CONTENT_DIR)
+        assert main_db.get_node("default", node_id)["title"] == "ПРАВКА ИЗ UI"
+        assert node_id in rep["conflicts"]
+    finally:
+        restore = {k: v for k, v in original.items() if k in Node.model_fields}
+        main_db.upsert_node("default", restore, source="seed")
+
+
+def test_delete_seed_node_tombstones_and_sync_keeps_it_hidden():
+    """Ruling 7: DELETE seed-ноды из UI — tombstone (hidden=1, source='user'), не воскресает
+    следующим sync и не считается конфликтом id."""
+    from fastapi.testclient import TestClient
+
+    from app.main import CONTENT_DIR, OWNER_EMAIL, OWNER_PASSWORD, app
+    from app.main import db as main_db
+    from app.models import Node
+    from app.sync import sync_pools
+
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD})
+    node_id = "acid-01"
+    original = main_db.get_node("default", node_id)
+    assert original is not None and original["source"] == "seed"
+    try:
+        r = c.delete(f"/api/nodes/{node_id}")
+        assert r.status_code == 200
+        assert r.json() == {"deleted": node_id, "tombstoned": True}
+        after = main_db.get_node("default", node_id)
+        assert after["hidden"] is True and after["source"] == "user"
+        ids = {n["id"] for n in c.get("/api/graph?pool=data-engineer").json()["nodes"]}
+        assert node_id not in ids
+
+        rep = sync_pools(main_db, "default", CONTENT_DIR)
+        again = main_db.get_node("default", node_id)
+        assert again["hidden"] is True
+        assert again["title"] == original["title"]  # sync не перезаписала tombstone файлом
+        assert rep["conflicts"] == []
+    finally:
+        restore = {k: v for k, v in original.items() if k in Node.model_fields}
+        main_db.upsert_node("default", restore, source="seed")
+        main_db.set_node_hidden("default", node_id, False)

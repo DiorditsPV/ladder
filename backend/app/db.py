@@ -457,7 +457,9 @@ class Database:
                     topic=excluded.topic, title=excluded.title, difficulty=excluded.difficulty,
                     weight=excluded.weight, question=excluded.question, answer=excluded.answer,
                     starter_code=excluded.starter_code, rubric=excluded.rubric,
-                    tags=excluded.tags, updated_at=excluded.updated_at
+                    tags=excluded.tags, source=excluded.source, updated_at=excluded.updated_at
+                    -- hidden НЕ обновляем: на нём держится «липкость» скрытия (sync/tombstone),
+                    -- обычный upsert (UI-правка, /api/import) не должен её случайно снимать
                 """,
                 (
                     tenant_id, node["id"], node.get("pool", "data-engineer"),
@@ -474,6 +476,16 @@ class Database:
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM nodes WHERE tenant_id = ? AND id = ?", (tenant_id, node_id)
+            )
+        return cur.rowcount > 0
+
+    def tombstone_node(self, tenant_id: str, node_id: str) -> bool:
+        """Спрятать ноду вместо удаления (source='user'): для seed-ноды, файл которой в content/
+        остаётся источником — обычный DELETE её бы воскресил при следующем sync."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE nodes SET hidden = 1, source = 'user', updated_at = ? WHERE tenant_id = ? AND id = ?",
+                (_now(), tenant_id, node_id),
             )
         return cur.rowcount > 0
 

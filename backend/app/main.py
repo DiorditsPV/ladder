@@ -359,14 +359,18 @@ def _pool_out(request: Request, p: PoolCfg) -> dict:
     }
 
 
-def _db_nodes(request: Request, pool: PoolCfg) -> List[Node]:
-    """Ноды пула из БД (источник правды) как объекты Node для текущего тенанта."""
+def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> List[Node]:
+    """Ноды пула из БД (источник правды) как объекты Node для текущего тенанта.
+
+    По умолчанию скрытые (sync — пропавшая из файлов seed-нода, или tombstone удалённой из UI)
+    не попадают ни на доску, ни в выборку интервью (sampler/планы зовут без include_hidden).
+    Доска в режиме сессии и отчёт зовут с include_hidden=True: завершённая сессия не должна
+    терять оценённые ноды из-за более позднего скрытия/tombstone.
+    """
     tenant = resolve_tenant(request)
     return [
         Node.model_validate({k: v for k, v in row.items() if k in _NODE_FIELDS})
-        # hidden (ставит только sync — пропавшая из файлов seed-нода) не должна попадать
-        # ни на доску, ни в выборку интервью
-        for row in db.list_nodes(tenant, pool=pool.id, include_hidden=False)
+        for row in db.list_nodes(tenant, pool=pool.id, include_hidden=include_hidden)
     ]
 
 
@@ -479,10 +483,16 @@ def sync_content(request: Request, _owner: dict = Depends(require_owner)) -> dic
 
 @app.get("/api/graph", response_model=GraphResponse)
 def get_graph(
-    request: Request, pool: Optional[str] = None, _user: dict = Depends(current_user)
+    request: Request,
+    pool: Optional[str] = None,
+    include_hidden: bool = False,
+    _user: dict = Depends(current_user),
 ) -> GraphResponse:
     # Вопросы читаются из БД (а не с диска) — рантайм-правки переживают деплой.
-    return GraphResponse(nodes=_db_nodes(request, _pool_or_404(request, pool)), errors=[])
+    # include_hidden — доска сессии и отчёт (см. _db_nodes); обычная доска и сэмплер без него.
+    return GraphResponse(
+        nodes=_db_nodes(request, _pool_or_404(request, pool), include_hidden=include_hidden), errors=[]
+    )
 
 
 @app.post("/api/import")
@@ -596,11 +606,21 @@ def edit_node(
 
 @app.delete("/api/nodes/{node_id}")
 def remove_node(node_id: str, request: Request, _user: dict = Depends(require_member)) -> dict:
-    """Безвозвратно удалить вопрос из банка (БД). 404, если нет."""
+    """Удалить вопрос из банка. 404, если нет.
+
+    Seed-нода (source='seed') — не DELETE, а tombstone (hidden=1, source='user'): файл в content/
+    остаётся источником этой ноды, и обычный DELETE её воскресил бы при следующем sync (sync
+    пропускает только user-ноды). Пользовательская нода (source='user') удаляется как раньше.
+    """
     tenant = resolve_tenant(request)
-    if not db.delete_node(tenant, node_id):
+    existing = db.get_node(tenant, node_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
-    return {"deleted": node_id}
+    if existing["source"] == "seed":
+        db.tombstone_node(tenant, node_id)
+        return {"deleted": node_id, "tombstoned": True}
+    db.delete_node(tenant, node_id)
+    return {"deleted": node_id, "tombstoned": False}
 
 
 @app.post("/api/interview")
