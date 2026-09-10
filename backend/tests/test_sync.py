@@ -239,7 +239,7 @@ def test_delete_seed_node_tombstones_and_sync_keeps_it_hidden():
         again = main_db.get_node("default", node_id)
         assert again["hidden"] is True
         assert again["title"] == original["title"]  # sync не перезаписала tombstone файлом
-        assert rep["conflicts"] == []
+        assert node_id not in rep["conflicts"]  # не глобальное равенство: БД общая на прогон, порядок тестов случайный
     finally:
         restore = {k: v for k, v in original.items() if k in Node.model_fields}
         main_db.upsert_node("default", restore, source="seed")
