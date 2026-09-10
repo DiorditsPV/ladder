@@ -3,7 +3,12 @@
 Источник правды для вопросов — БД (UI их правит), но файлы content/ — способ массово завозить
 и перегенерировать темы (скилл interview-topic). Поэтому: seed-ноды upsert-ятся из файлов по id,
 пользовательские (source='user') — не трогаются (конфликт id — в отчёт), исчезнувшие из файлов
-seed-ноды прячутся (на них могут ссылаться оценки), скрытые вручную не разворачиваются.
+seed-ноды прячутся (на них могут ссылаться оценки) — но только если пул распарсился без ошибок:
+битые файлы неотличимы от удалённых вопросов, поэтому при непустом errors скрытие для пула
+пропускается целиком (упавшие файлы не должны прятать весь банк). Флаг hidden пишет только sync
+(ручного «скрыть» в UI нет) — поэтому seed-нода, спрятанная ранее и снова появившаяся в файлах,
+автоматически разворачивается при upsert (учитывается в nodes_upserted, отдельного ключа отчёта
+для этого нет).
 Конфиг направления обновляется без каскадных удалений (см. db.set_pool_config).
 Вызывается при старте сервера и по POST /api/pools/sync.
 """
@@ -44,14 +49,21 @@ def sync_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None
     nodes, errors = load_pool_content(pool)
     report["errors"].extend({"file": e.file, "error": e.error} for e in errors)
     user_ids = set(db.list_node_ids(tenant_id, pool.id, source="user"))
+    hidden_ids = set(db.list_node_ids(tenant_id, pool.id, source="seed", hidden=True))
     file_ids: List[str] = []
     for node in nodes:
         if node.id in user_ids:
             report["conflicts"].append(node.id)
             continue
         db.upsert_node(tenant_id, node.model_dump(), source="seed")
+        if node.id in hidden_ids:
+            # вернулась в файлы — флаг hidden пишет только sync, снимаем его здесь же
+            db.set_node_hidden(tenant_id, node.id, False)
         report["nodes_upserted"] += 1
         file_ids.append(node.id)
+    if errors:
+        # хотя бы один файл пула не распарсился — не прячем весь банк из-за неполного file_ids
+        return
     # seed-ноды, которых больше нет в файлах, — спрятать (один раз: уже скрытые не считаем)
     for nid in db.list_node_ids(tenant_id, pool.id, source="seed", hidden=False):
         if nid not in file_ids and nid not in user_ids:

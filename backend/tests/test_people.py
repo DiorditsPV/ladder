@@ -244,8 +244,8 @@ def test_migration_adds_pool_to_old_nodes_and_sessions(tmp_path):
 
 def test_seed_over_migrated_db_does_not_reseed_existing_pool(tmp_path):
     """Сид поверх мигрированной БД: старый пул (уже с нодами после миграции) не пересеивается,
-    новый пул засеивается штатной функцией старта seed_pool_if_empty — той же, что main.py
-    вызывает для каждого пула из load_pools(CONTENT_DIR)."""
+    новый пул засеивается той же функцией разового сида одного пула, которую раньше вызывал
+    main.py; старт сервера теперь — sync.sync_pools."""
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path)
     conn.executescript(

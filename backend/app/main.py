@@ -364,7 +364,9 @@ def _db_nodes(request: Request, pool: PoolCfg) -> List[Node]:
     tenant = resolve_tenant(request)
     return [
         Node.model_validate({k: v for k, v in row.items() if k in _NODE_FIELDS})
-        for row in db.list_nodes(tenant, pool=pool.id)
+        # hidden (ставит только sync — пропавшая из файлов seed-нода) не должна попадать
+        # ни на доску, ни в выборку интервью
+        for row in db.list_nodes(tenant, pool=pool.id, include_hidden=False)
     ]
 
 
