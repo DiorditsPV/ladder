@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Database
 from app.pools import load_pools
+from app.importer import load_pool_content
 from app.seed import seed_pool_if_empty
 
 CONTENT_ROOT = Path(__file__).resolve().parent.parent.parent / "content"
@@ -286,7 +287,7 @@ def test_seed_over_migrated_db_does_not_reseed_existing_pool(tmp_path):
         if pool.id == "data-engineer":
             assert inserted == 0, "мигрированный пул не должен пересеиваться"
         elif pool.id == "system-analyst":
-            assert inserted == 15
+            assert inserted == len(load_pool_content(pool)[0])  # размер SA задаёт content/, не константа
 
     # На ветке feature/pools-frontend SA-пула в content/ ещё нет — проверка выше просто
     # не сработает для него; отдельно фиксируем это явно, а не через try/except.
