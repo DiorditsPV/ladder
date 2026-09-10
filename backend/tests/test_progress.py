@@ -107,7 +107,9 @@ def test_progress_summary_counts_visible_nodes():
     node_id = _make_node(c)
     try:
         before = db.progress_summary(tenant, "u1", "data-engineer")
-        expected_total = db.count_nodes(tenant, pool="data-engineer")
+        # count_nodes считает и скрытые ноды — progress_summary.total их не видит, поэтому сверяем
+        # с тем же источником, что и он (видимые ноды пула).
+        expected_total = len(db.list_nodes(tenant, pool="data-engineer", include_hidden=False))
         assert before["total"] == expected_total  # свежесозданная нода уже видима, но без статуса
         db.set_progress(tenant, "u1", node_id, "known")
         after = db.progress_summary(tenant, "u1", "data-engineer")
@@ -159,7 +161,10 @@ def test_get_pools_includes_progress_summary():
         pools = {p["id"]: p for p in c.get("/api/pools").json()}
         de = pools["data-engineer"]
         assert "progress" in de
-        assert de["progress"]["total"] == de["counts"]["nodes"]
+        # counts.nodes считает и скрытые ноды — сверяем total с видимыми нодами графа,
+        # как их видит progress_summary.
+        visible = len(c.get("/api/graph?pool=data-engineer").json()["nodes"])
+        assert de["progress"]["total"] == visible
         assert de["progress"]["known"] >= 1
     finally:
         c.delete(f"/api/progress/{node_id}")

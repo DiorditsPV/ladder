@@ -75,6 +75,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 **Чек-лист разбора** — вне сессии карточка имеет статус `known | review | unknown` (таблица `progress`, своя у
 каждого пользователя; `PUT/DELETE /api/progress/{node_id}`, `GET /api/progress?pool=`, сводка `progress` в `/api/pools`).
 Хоткеи `1/2/3` ставят статус и ведут к следующей карточке; в сессии `1–5` — оценка, статусы не показываются.
+Вне сессии HUD и drawer ставят статусы; оценки — только в сессии; черновых оценок без сессии больше нет.
 
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →

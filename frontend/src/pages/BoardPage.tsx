@@ -119,6 +119,7 @@ function buildNodes(
   graph: QNode[],
   pool: PoolConfig,
   p: Placement,
+  bandCounts: Record<string, { done: number; count: number }>,
   scores: Record<string, number>,
   statuses: Record<string, Progress>,
   inSession: boolean,
@@ -145,7 +146,13 @@ function buildNodes(
     id: "bg-bands",
     type: "bands",
     position: { x: -LABEL_W, y: 0 },
-    data: { bands: p.bands, width: p.width, labelW: LABEL_W, height: p.height, dark },
+    data: {
+      bands: p.bands.map((b) => ({ ...b, ...(bandCounts[b.difficulty] ?? { done: 0, count: 0 }) })),
+      width: p.width,
+      labelW: LABEL_W,
+      height: p.height,
+      dark,
+    },
     draggable: false,
     selectable: false,
     zIndex: -5,
@@ -287,19 +294,6 @@ function readHiddenIds(pool: string): Set<string> {
   }
 }
 
-// draft-autosave: черновик оценок (без активной сессии) — устойчивость к refresh/крашу.
-function readDraftScores(pool: string): Record<string, number> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(legacyKey("draftScores", pool)) || "{}");
-    if (!raw || typeof raw !== "object") return {};
-    const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(raw)) if (typeof v === "number") out[k] = v;
-    return out;
-  } catch {
-    return {};
-  }
-}
-
 // Чек-лист разбора: клавиша → статус (1=знаю, 2=повторить, 3=не знаю), вне сессии.
 const STATUS_BY_KEY: Record<string, Progress> = { "1": "known", "2": "review", "3": "unknown" };
 
@@ -314,7 +308,8 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [graph, setGraph] = useState<QNode[]>([]);
   const [errors, setErrors] = useState<ImportErr[]>([]);
   const [placement, setPlacement] = useState<Placement | null>(null);
-  const [scores, setScores] = useState<Record<string, number>>(() => readDraftScores(pool.id));
+  // Ruling C3: оценки — только в сессии (из БД через joinSession); вне сессии черновиков нет.
+  const [scores, setScores] = useState<Record<string, number>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -429,15 +424,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     () => localStorage.setItem(`hiddenIds:${pool.id}`, JSON.stringify([...hiddenIds])),
     [hiddenIds, pool.id],
   );
-  // draft-autosave: persist черновика оценок, пока нет активной сессии (в сессии — БД источник правды).
-  useEffect(() => {
-    if (session) return;
-    try {
-      localStorage.setItem(`draftScores:${pool.id}`, JSON.stringify(scores));
-    } catch {
-      /* ignore quota errors */
-    }
-  }, [scores, session, pool.id]);
 
   // hide-local: скрыть/вернуть вопрос на доску (клиентски, не трогает банк/БД).
   const toggleHide = useCallback((id: string) => {
@@ -524,6 +510,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [planOrder, placement],
   );
 
+  // Ruling C2: счётчики по рядам (уровням сложности) для BandsNode — по видимому срезу
+  // (см. visibleIds): вне сессии done = «знаю», в сессии — оценённые.
+  const bandCounts = useMemo(() => {
+    const out: Record<string, { done: number; count: number }> = {};
+    for (const n of graph) {
+      if (!visibleIds.has(n.id)) continue;
+      const b = (out[n.difficulty] ??= { done: 0, count: 0 });
+      b.count++;
+      const isDone = inSession ? scores[n.id] != null : statuses[n.id] === "known";
+      if (isDone) b.done++;
+    }
+    return out;
+  }, [graph, visibleIds, scores, statuses, inSession]);
+
   // Строки агенды в порядке обхода, с заголовком при смене блока.
   const agendaRows = useMemo(() => {
     if (!placement) return [] as ({ kind: "head"; block: string } | { kind: "item"; node: QNode })[];
@@ -606,9 +606,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const rfNodes = useMemo(
     () =>
       placement
-        ? buildNodes(graph, pool, placement, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark", planIds)
+        ? buildNodes(graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark", planIds)
         : [],
-    [graph, pool, placement, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme, planIds],
+    [graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme, planIds],
   );
 
   const centerOn = useCallback(
@@ -621,10 +621,12 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [placement],
   );
 
+  // Ruling C3: оценки — только в сессии; вне сессии — no-op (черновиков без сессии больше нет).
   const applyScore = useCallback(
     (nodeId: string, score: number) => {
+      if (!session) return;
       setScores((s) => ({ ...s, [nodeId]: score }));
-      if (session) api.setScore(session.id, nodeId, score, notes[nodeId]).catch(() => void 0);
+      api.setScore(session.id, nodeId, score, notes[nodeId]).catch(() => void 0);
     },
     [session, notes],
   );
@@ -696,16 +698,19 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     moveCurrent(flat[(start + 1 + flat.length) % flat.length]);
   }, [placement, currentId, scores, moveCurrent, visibleIds, walkOrder]);
 
-  // Хоткеи чек-листа (1-3, вне сессии): следующая карточка в порядке матрицы — следующая
-  // в колонке, затем первая следующей колонки (placement.order — уже в этом порядке).
-  const nextInMatrix = useCallback(() => {
-    if (!placement) return;
-    const flat = placement.order.flat();
-    if (!flat.length) return;
+  // Хоткеи чек-листа (1-3, вне сессии): следующая ВИДИМАЯ карточка в порядке матрицы —
+  // следующая в колонке, затем первая следующей колонки; те же фильтры и «только
+  // неразобранное», что у nextQuestion. Пусто после фильтра — остаёмся на месте.
+  // Возвращает id новой текущей карточки (для drawer, п.2) или null.
+  const nextInMatrix = useCallback((): string | null => {
+    if (!placement) return null;
+    const flat = walkOrder.filter((id) => visibleIds.has(id) && (!unresolvedOnly || statuses[id] !== "known"));
+    if (!flat.length) return null;
     const idx = currentId ? flat.indexOf(currentId) : -1;
     const next = flat[(idx + 1 + flat.length) % flat.length];
     if (next) moveCurrent(next);
-  }, [placement, currentId, moveCurrent]);
+    return next ?? null;
+  }, [placement, currentId, moveCurrent, walkOrder, visibleIds, unresolvedOnly, statuses]);
 
   // Сессия с планом: стартуем с первого неоценённого вопроса плана, как только доска готова.
   useEffect(() => {
@@ -733,7 +738,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
           applyScore(currentId, Number(e.key));
         } else if (e.key in STATUS_BY_KEY) {
           setStatus(currentId, STATUS_BY_KEY[e.key]);
-          nextInMatrix();
+          // Drawer открыт — курсор оценки должен идти вместе с ним (иначе drawer «отстаёт»).
+          const nextId = nextInMatrix();
+          if (nextId != null && selectedId != null) setSelectedId(nextId);
         }
         return;
       }
@@ -816,6 +823,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     setLive(false);
     setUnscoredOnly(false); // чип «Только неоценённые» есть только в сессии — фильтр не должен остаться висеть
     setUnresolvedOnly(false); // симметрично: «Только неразобранное» — только вне сессии
+    setScores({}); // Ruling C3: черновиков вне сессии нет — не тащим оценки покинутой сессии на доску
     setSessionParam(null);
   }, [setSessionParam]);
 
@@ -1417,20 +1425,44 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                       {" · "}
                       {currentNode.topic}
                     </span>
+                    {/* Ruling C3: вне сессии HUD ставит статусы чек-листа, не оценки; звёзды — только в сессии. */}
                     <span className="hud__score">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <button
-                          key={i}
-                          className={
-                            scores[currentId!] != null && i <= scores[currentId!]
-                              ? "scorebtn scorebtn--on"
-                              : "scorebtn"
-                          }
-                          onClick={() => applyScore(currentId!, i)}
-                        >
-                          ●
-                        </button>
-                      ))}
+                      {inSession ? (
+                        [1, 2, 3, 4, 5].map((i) => (
+                          <button
+                            key={i}
+                            className={
+                              scores[currentId!] != null && i <= scores[currentId!]
+                                ? "scorebtn scorebtn--on"
+                                : "scorebtn"
+                            }
+                            onClick={() => applyScore(currentId!, i)}
+                          >
+                            ●
+                          </button>
+                        ))
+                      ) : (
+                        <>
+                          <button
+                            className={`statusbtn statusbtn--known ${statuses[currentId!] === "known" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "known")}
+                          >
+                            {t("Знаю (1)")}
+                          </button>
+                          <button
+                            className={`statusbtn statusbtn--review ${statuses[currentId!] === "review" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "review")}
+                          >
+                            {t("Повторить (2)")}
+                          </button>
+                          <button
+                            className={`statusbtn statusbtn--unknown ${statuses[currentId!] === "unknown" ? "statusbtn--on" : ""}`}
+                            onClick={() => setStatus(currentId!, "unknown")}
+                          >
+                            {t("Не знаю (3)")}
+                          </button>
+                        </>
+                      )}
                     </span>
                     <button onClick={() => setSelectedId(currentId)}>{t("Открыть")}</button>
                     <button className="btn--primary" onClick={nextQuestion}>

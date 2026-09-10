@@ -2,8 +2,12 @@ import { memo } from "react";
 import { hexA, lighten } from "../types";
 import type { Band } from "../layout";
 
+// Ruling C2: счётчик разобранных/оценённых по ряду — добавляется к Band в BoardPage
+// (layout.ts не знает о прогрессе, поэтому здесь расширение, а не правка Band).
+export type BandWithCount = Band & { done: number; count: number };
+
 export interface BandsNodeData {
-  bands: Band[];
+  bands: BandWithCount[];
   width: number;
   labelW: number;
   dark: boolean;
@@ -33,6 +37,7 @@ function BandsNodeImpl({ data }: { data: BandsNodeData }) {
             }}
           >
             <span>{b.label}</span>
+            <span className="bands__count">{b.done}/{b.count}</span>
           </div>
         );
       })}

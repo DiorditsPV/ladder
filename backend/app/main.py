@@ -625,8 +625,9 @@ def remove_node(node_id: str, request: Request, _user: dict = Depends(require_me
 
 
 # ---------- progress (чек-лист разбора) ----------
+# Ruling C4: значения статуса — один источник (Database.PROGRESS_STATUSES), а не дублирующийся паттерн.
 class ProgressIn(BaseModel):
-    status: str = Field(pattern="^(known|review|unknown)$")
+    status: str = Field(pattern="^(" + "|".join(Database.PROGRESS_STATUSES) + ")$")
 
 
 @app.get("/api/progress")

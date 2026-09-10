@@ -28,6 +28,14 @@ async function toggleSetting(label) {
   await page.keyboard.press("Escape");
   await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
 }
+// filtersOpen персистится в localStorage между маунтами доски: панель фильтров (справа канвы)
+// иногда перекрывает карточку, по которой кликает следующий шаг. Закрыть, если открыта.
+async function closeFiltersIfOpen() {
+  if ((await page.locator(".filterpanel").count()) > 0) {
+    await page.locator(".fp__close").click();
+    await page.waitForSelector(".filterpanel", { state: "detached", timeout: 3000 });
+  }
+}
 
 await page.goto(URL, { waitUntil: "networkidle" });
 
@@ -230,15 +238,20 @@ const hudTitle = await page.locator(".hud__title").innerText();
 if (!hudTitle.includes("ROW_NUMBER")) fail(`HUD shows wrong question: ${hudTitle}`);
 console.log("OK: interviewer HUD shows current question");
 
-// 4. Выставление оценки: клик по 4-й звезде в HUD → карточка помечена 4/5.
-//    (study-progress, Task 2: вне сессии drawer.__scoring больше не рендерит .scorebtn —
-//    там теперь статусы чек-листа, поэтому оценку ставим через HUD, не drawer.)
+// 4. Чек-лист разбора вне сессии: клик по кнопке «Знаю» в HUD → карточка помечена статусом
+//    «знаю» (Ruling C3: вне сессии HUD ставит статусы чек-листа, не оценки — звёзды/черновые
+//    оценки без сессии убраны совсем). Повторный клик по той же кнопке снимает статус.
 const rowNumberCard = page.locator(".qnode").filter({ has: page.locator(".qnode__title", { hasText: "ROW_NUMBER" }) });
-await page.locator(".hud__score .scorebtn").nth(3).click();
-await page.waitForSelector(".qnode--scored", { timeout: 3000 });
-const scoreval = await rowNumberCard.locator(".qnode__grade").innerText();
-if (!scoreval.includes("4")) fail(`score not applied: ${scoreval}`);
-console.log(`OK: score applied (${scoreval})`);
+await page.locator(".hud__score .statusbtn--known").click();
+await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 3000 });
+if ((await rowNumberCard.locator('.qnode__status[data-status="known"]').count()) !== 1) fail("HUD status button did not mark ROW_NUMBER as known");
+console.log("OK: status applied via HUD (known)");
+await page.locator(".hud__score .statusbtn--known").click(); // повтор — снимает
+await rowNumberCard
+  .locator('.qnode__status[data-status="known"]')
+  .waitFor({ state: "detached", timeout: 3000 })
+  .catch(() => fail("repeat click on HUD status button did not clear the status"));
+console.log("OK: repeat click on HUD status clears it");
 
 // 5. Карточка показывает короткий заголовок (title), а не полный текст вопроса.
 const cardText = await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().innerText();
@@ -293,19 +306,15 @@ const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
 
-// 7. Скачивание результатов: «Экспорт» → «Отчёт по сессии (HTML)» отдаёт .html-файл
-//    (черновик оценок без сессии — оценка выставлена на шаге 4, пункт активен).
+// 7. Ruling C3: черновых оценок вне сессии больше нет (шаг 4 ставит статус чек-листа, не оценку) —
+//    экспортировать вне сессии нечего, пункт остаётся выключен. Реальное скачивание .html
+//    проверяется в сессии, где есть настоящие оценки (см. шаг «Возобновление сессии»).
 await page.locator(".topbar .exportbtn").click();
 await page.waitForSelector(".exportmenu", { timeout: 3000 });
-if (await page.locator(".exportmenu .dlbtn").isDisabled()) fail("report export must be enabled once a score exists");
-const [dl] = await Promise.all([
-  page.waitForEvent("download"),
-  page.locator(".exportmenu .dlbtn").click(),
-]);
+if (!(await page.locator(".exportmenu .dlbtn").isDisabled())) fail("report export must stay disabled without a session (no scores to report)");
+await page.keyboard.press("Escape");
 await page.waitForSelector(".exportmenu", { state: "detached", timeout: 3000 });
-const fn = dl.suggestedFilename();
-if (!fn.endsWith(".html")) fail(`download is not .html: ${fn}`);
-console.log(`OK: results download (${fn})`);
+console.log("OK: report export stays disabled outside a session");
 
 // 8. Тёмная тема: переключатель в настройках меняет data-theme и тёмный фон.
 const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
@@ -452,14 +461,26 @@ await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
 await page.locator(".hud__score .scorebtn").nth(2).click(); // 3/5 → персист в сессию
 await page.waitForTimeout(400);
 
-// 9b. В сессии drawer по-прежнему оценивает (не статусы): открыть карточку из плана, клик по 2-й звезде.
-const planCard = page.locator(".qnode:not(.qnode--dimmed)").nth(1);
+// 9b. В сессии drawer по-прежнему оценивает (не статусы): открыть ЕЩЁ НЕ оценённую карточку из
+// плана (не nth(1) — та могла случайно совпасть с уже оценённой HUD'ом выше и словить флак), клик по 2-й звезде.
+// filtersOpen персистится с шага «board-toolbar» — панель справа канвы иногда перекрывает
+// карточку под .first(); закрываем на время клика и открываем обратно (10b ниже ждёт её открытой).
+const panelWasOpen = (await page.locator(".filterpanel").count()) > 0;
+if (panelWasOpen) {
+  await page.locator(".fp__close").click();
+  await page.waitForSelector(".filterpanel", { state: "detached", timeout: 3000 });
+}
+const planCard = page.locator(".qnode:not(.qnode--dimmed):not(.qnode--scored)").first();
 await planCard.locator(".qnode__title").click();
 await page.waitForSelector(".drawer .drawer__scoring .scorebtn", { timeout: 3000 });
 if ((await page.locator(".drawer .statusbtn").count()) !== 0) fail("session drawer shows checklist statuses instead of scoring");
 await page.locator(".drawer .drawer__scoring .scorebtn").nth(1).click();
 await page.waitForFunction(() => document.querySelectorAll(".qnode--scored").length >= 2, null, { timeout: 3000 });
 await page.keyboard.press("Escape");
+if (panelWasOpen) {
+  await page.locator(".topbar .filtersbtn").click();
+  await page.waitForSelector(".filterpanel", { timeout: 3000 });
+}
 console.log("OK: session drawer scores via stars (no checklist statuses)");
 
 // 10a. Прогресс интервью — только в сессии: подпись с дробью, заполнение > 0 после оценки.
@@ -551,13 +572,20 @@ if ((await page.locator(".topbar .exportbtn").count()) !== 1) fail("export butto
 await page.locator(".topbar .exportbtn").click();
 await page.waitForSelector(".exportmenu", { timeout: 3000 });
 if (await page.locator(".exportmenu .dlbtn").isDisabled()) fail("report export must be enabled in a session with scores");
-await page.keyboard.press("Escape");
+// Ruling C3: черновых оценок вне сессии больше нет, поэтому реальную загрузку .html (раньше
+// проверялась вне сессии на шаге 7) гоняем здесь, где оценки настоящие (из сессии).
+const [dl] = await Promise.all([
+  page.waitForEvent("download"),
+  page.locator(".exportmenu .dlbtn").click(),
+]);
 await page.waitForSelector(".exportmenu", { state: "detached", timeout: 3000 });
+const reportFn = dl.suggestedFilename();
+if (!reportFn.endsWith(".html")) fail(`download is not .html: ${reportFn}`);
 await page.locator(".session button", { hasText: "Выйти" }).click();
 await page.waitForSelector(".topbar .session__start", { timeout: 3000 });
 const startHref = await page.locator(".topbar .session__start").getAttribute("href");
 if (!startHref?.startsWith("#/setup/data-engineer")) fail(`board without session must link to interview setup, got ${startHref}`);
-console.log(`OK: session resume restores scores (${scoredCount} scored), no-session board links to start form`);
+console.log(`OK: session resume restores scores (${scoredCount} scored), report downloads (${reportFn}), no-session board links to start form`);
 
 // --- pools-main-menu: 13/15/17 остаются на доске (banks/help-модалка/агенда работают только там);
 // 12/14/16/18 (банк) выполняются после перехода на страницу #/bank/<pool> — см. ниже.
@@ -718,7 +746,9 @@ if (!confirmFired) fail("delete did not raise a confirm dialog");
 if ((await page.locator(".qnode").count()) !== qBeforeDel) fail("dismissed delete changed bank");
 console.log(`OK: delete confirms + dismiss non-destructive (${qBeforeDel} nodes)`);
 
-// 21. draft-autosave: оценка без активной сессии переживает перезагрузку (ПОСЛЕДНЕЙ — делает reload).
+// 21. Ruling C3: черновых оценок вне сессии больше нет — вместо них персистентность проверяем
+// у статуса чек-листа (он живёт в БД через /api/progress, не в localStorage): поставить «повторить»
+// через HUD, пережить page.reload() (ПОСЛЕДНЕЙ), затем снять тем же кликом.
 // Снимаем возможный ?session из URL (resume-шаг мог его выставить), чтобы сессии точно не было.
 // id сессии живёт в hash (#/board/data-engineer?session=N), а не в location.search — пишем hash напрямую.
 await page.evaluate(() => {
@@ -726,18 +756,29 @@ await page.evaluate(() => {
 });
 await page.waitForSelector(".qnode", { timeout: 10000 });
 await page.keyboard.press("Escape"); // закрыть drawer
+await closeFiltersIfOpen();
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
-await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
-await page.locator(".hud__score .scorebtn").nth(4).click(); // 5/5
-await page.waitForTimeout(200);
+await page.waitForSelector(".hud__score .statusbtn--review", { timeout: 3000 });
+await page.locator(".hud__score .statusbtn--review").click(); // «повторить»
+await page.waitForSelector('.qnode__status[data-status="review"]', { timeout: 3000 });
+if ((await rowNumberCard.locator('.qnode__status[data-status="review"]').count()) !== 1) fail("HUD review status not applied to ROW_NUMBER");
 // page.reload() (не goto) — держит текущий hash (#/board/data-engineer), иначе после «goto на тот же
 // URL» браузер не обязан перезагружать документ и тест не проверит persistence по-настоящему.
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForSelector(".qnode", { timeout: 10000 });
-await page.waitForTimeout(400);
-const restoredScored = await page.locator(".qnode--scored").count();
-if (restoredScored < 1) fail("draft autosave did not restore scores after reload");
-console.log(`OK: draft autosave restores ${restoredScored} scored node(s) after reload`);
+await page.waitForSelector('.qnode__status[data-status="review"]', { timeout: 10000 }).catch(() => fail("checklist status did not survive reload"));
+if ((await rowNumberCard.locator('.qnode__status[data-status="review"]').count()) !== 1) fail("checklist status not on ROW_NUMBER after reload");
+console.log("OK: checklist status survives reload (review)");
+// снять статус обратно (повтор той же кнопки) — не портим финальное состояние стенда.
+await closeFiltersIfOpen();
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await page.waitForSelector(".hud__score .statusbtn--review", { timeout: 3000 });
+await page.locator(".hud__score .statusbtn--review").click();
+await rowNumberCard
+  .locator('.qnode__status[data-status="review"]')
+  .waitFor({ state: "detached", timeout: 3000 })
+  .catch(() => fail("repeat click on HUD status button did not clear the checklist status"));
+console.log("OK: checklist status cleared");
 
 // 22. Сессии: созданная ранее сессия «Cmp Bot» видна на странице сессий с направлением.
 await page.goto(URL + "#/sessions", { waitUntil: "load" });
