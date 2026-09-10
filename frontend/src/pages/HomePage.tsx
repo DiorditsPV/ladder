@@ -12,7 +12,7 @@ type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
 
 // Главное меню: направления как входы на доски + разделы проведения интервью (кандидаты, сессии,
 // подключение). Карточка направления: название, описание, статистика, нейтральные чипы колонок,
-// primary «Начать интервью →», secondary «Открыть вопросы →», меню ••• (редактировать/дублировать/удалить).
+// primary «Открыть доску →» (разбор темы), secondary «Начать интервью» (проверка кандидата), меню ••• (редактировать/дублировать/удалить).
 // Пулов может не быть вовсе (content/ без pool.yaml) — говорим об этом, а не рисуем пустоту.
 // «Начать интервью» ведёт на экран настройки интервью (#/setup/<pool>): кандидат, разделы, уровни, набор.
 // onChanged — направления создаются/правятся/удаляются здесь же (pool-crud); список живёт в Router.
@@ -101,7 +101,7 @@ export function HomePage({
   return (
     <div className="page home">
       <header className="pageshell">
-        <h1 className="pageshell__title">{t("Интервью · доска вопросов")}</h1>
+        <h1 className="pageshell__title">{t("Ladder · разбор тем по ступеням")}</h1>
         <div className="pageshell__actions">
           <LangSwitch />
         </div>
@@ -193,13 +193,13 @@ export function HomePage({
               </div>
               {/* Действия лежат над «растяжкой»; margin-top:auto прижимает их к низу — карточки в ряду одной высоты. */}
               <div className="poolcard__actions">
-                <a className="poolcard__start btn--primary" href={href.setup(p.id)}>
+                <a className="poolcard__open btn--primary" href={href.board(p.id)}>
+                  {t("Открыть доску")}
+                  <ArrowRight size={16} {...ICON} aria-hidden="true" />
+                </a>
+                <a className="poolcard__start" href={href.setup(p.id)}>
                   <Play size={15} strokeWidth={2} aria-hidden="true" />
                   {t("Начать интервью")}
-                </a>
-                <a className="poolcard__open" href={href.bank(p.id)}>
-                  {t("Открыть вопросы")}
-                  <ArrowRight size={16} {...ICON} aria-hidden="true" />
                 </a>
               </div>
             </div>

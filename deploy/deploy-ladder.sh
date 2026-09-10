@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Forced command деплой-ключа: принимает tar.gz со stdin, раскладывает код, обновляет venv,
+# Forced command деплой-ключа (ladder): принимает tar.gz со stdin, раскладывает код, обновляет venv,
 # рестартует юнит, ждёт health. Ставится deploy/install.sh в /usr/local/bin (root:root 755);
 # в authorized_keys пользователя deploy ключ раннера прибит к
-#   command="sudo -n /usr/local/bin/deploy-interview.sh" — другого доступа у ключа нет.
+#   command="sudo -n /usr/local/bin/deploy-ladder.sh" — другого доступа у ключа нет.
 # Состав архива (собирает .github/workflows/deploy.yml): backend/ content/ frontend/dist/
 # Юнит НЕ трогает — он ставится только install.sh, чтобы архив не мог подменить User=.
 #
-# Локальный тест (deploy/test-deploy-interview.sh): APP_DIR, DATA_DIR, DEPLOY_DRY_RUN=1 —
+# Локальный тест (deploy/test-deploy-ladder.sh): APP_DIR, DATA_DIR, DEPLOY_DRY_RUN=1 —
 # только приём, проверка и раскладка архива, без chown/venv/systemd/health.
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/opt/interview}"
-DATA_DIR="${DATA_DIR:-/var/lib/interview}"
-SVC="${SVC:-interview}"
-SVC_USER="${SVC_USER:-interview}"
+APP_DIR="${APP_DIR:-/opt/ladder}"
+DATA_DIR="${DATA_DIR:-/var/lib/ladder}"
+SVC="${SVC:-ladder}"
+SVC_USER="${SVC_USER:-ladder}"
 PORT="${PORT:-8770}"
 DRY="${DEPLOY_DRY_RUN:-0}"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-ARCHIVE="$TMP/interview.tar.gz"
+ARCHIVE="$TMP/ladder.tar.gz"
 
 # 1) архив со stdin — сначала проверка, потом любые изменения на диске -----------
 cat > "$ARCHIVE"

@@ -5,10 +5,10 @@
 #   docker compose down -v                        → снести вместе с данными
 
 services:
-  interview:
+  ladder:
     build: .
-    image: interview-graph:local
-    container_name: interview-graph
+    image: ladder:local
+    container_name: ladder
     ports:
       - "${INTERVIEW_PORT:-8000}:8000"
     environment:

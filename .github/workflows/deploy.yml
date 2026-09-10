@@ -1,10 +1,10 @@
 name: Deploy
 
-# Выкладка на сервер портфолио (interview.paveldiordits.site) — ТОЛЬКО вручную: Actions → Deploy → Run workflow
+# Выкладка на сервер портфолио (ladder.paveldiordits.site) — ТОЛЬКО вручную: Actions → Deploy → Run workflow
 # (или `gh workflow run Deploy --ref main`). Merge в main ничего не выкладывает: сервис живёт локально,
 # сервер — необязательная публичная копия, обновляемая осознанно.
 # Фронт собирается на раннере — node на сервере нет. Всё нужное уезжает одним tar.gz в stdin
-# forced-command-скрипта /usr/local/bin/deploy-interview.sh: ключ раннера на сервере умеет ровно
+# forced-command-скрипта /usr/local/bin/deploy-ladder.sh: ключ раннера на сервере умеет ровно
 # эту команду (см. deploy/install.sh и DEPLOY.md). Host-key закреплён явно — подмену сервера
 # раннер не примет.
 on:
@@ -37,15 +37,15 @@ jobs:
 
       - name: Упаковать выкладку
         run: |
-          tar czf interview.tar.gz \
+          tar czf ladder.tar.gz \
             --exclude='backend/.venv' --exclude='__pycache__' --exclude='*.db' --exclude='.pytest_cache' \
             backend content frontend/dist
-          ls -la interview.tar.gz
+          ls -la ladder.tar.gz
 
       - name: Разложить ключ и закреплённый host-key
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_INTERVIEW_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_LADDER_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "${{ vars.DEPLOY_HOST }} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF1sEThhqUNxeSWgjUtOOuulxk6EMVNAizFdjoCAPlXY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
@@ -56,12 +56,12 @@ jobs:
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
               -o ConnectTimeout=20 \
-              deploy@${{ vars.DEPLOY_HOST }} < interview.tar.gz
+              deploy@${{ vars.DEPLOY_HOST }} < ladder.tar.gz
 
       - name: Проверить боевой адрес
         run: |
           sleep 2
-          base=https://interview.paveldiordits.site
+          base=https://ladder.paveldiordits.site
           code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/health")
           [ "$code" = 200 ] || { echo "✗ /api/health → $code"; exit 1; }
           code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph")
