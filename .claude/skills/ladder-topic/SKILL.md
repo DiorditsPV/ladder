@@ -1,14 +1,14 @@
 ---
-name: interview-topic
+name: ladder-topic
 description: >-
   Используй, когда нужно завести в сервисе новое направление по теме — «разложи Kafka/dbt/Terraform на
   колонки и уровни и напиши вопросы», «сделай тему для самоподготовки», «пересобери направление X»,
-  «/interview-topic <тема>». Раскладывает тему на колонки × собственные уровни сложности, пишет карточки
+  «/ladder-topic <тема>». Раскладывает тему на колонки × собственные уровни сложности, пишет карточки
   в content/<slug>/ и публикует их в сервис через sync. В отличие от interview-ideas (точечные вопросы
   в существующий пул по Q_IDEAS.txt) — строит направление целиком, с каркасом и покрытием матрицы.
 ---
 
-# interview-topic
+# ladder-topic
 
 Тема → каркас (колонки × уровни под саму тему) → карточки с покрытием каждой ячейки → `content/<slug>/` → sync → доска.
 
@@ -18,7 +18,7 @@ description: >-
 - НЕ применять для одного-двух вопросов в существующий пул — это `interview-ideas`.
 
 ## Вызов
-`/interview-topic <тема> [--lang ru|en] [--per-cell N] [--fresh] [--pool <slug>] [--yes]`
+`/ladder-topic <тема> [--lang ru|en] [--per-cell N] [--fresh] [--pool <slug>] [--yes]`
 По умолчанию `ru`, `N=2`, slug — транслит темы (`Apache Kafka` → `apache-kafka`), без `--fresh` — дополнение.
 `--yes` — не ждать подтверждения каркаса (только когда владелец явно сказал не спрашивать).
 
@@ -63,8 +63,8 @@ description: >-
 (список dict'ов на колонку → `json.dump`), а не печатать JSON руками. Сначала `--check` (валидация и матрица; ничего не пишет и не сносит даже с `--fresh`), потом запись; из корня репозитория:
 ```bash
 . backend/.venv/bin/activate
-python3 .claude/skills/interview-topic/write_topic.py /tmp/topic.json --per-cell N --check
-python3 .claude/skills/interview-topic/write_topic.py /tmp/topic.json --per-cell N [--fresh] --sync --api http://localhost:8000
+python3 .claude/skills/ladder-topic/write_topic.py /tmp/topic.json --per-cell N --check
+python3 .claude/skills/ladder-topic/write_topic.py /tmp/topic.json --per-cell N [--fresh] --sync --api http://localhost:8000
 ```
 Скрипт валидирует (теги, уровни, префикс id, subblock), пишет `pool.yaml` (веса блоков ∝ числу карточек) и карточки
 в нормализованном формате, печатает матрицу, покрытие под-колонок и ячейки с `!` (тоньше N), делает `POST /api/pools/sync` и проверяет

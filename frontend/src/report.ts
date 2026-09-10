@@ -210,7 +210,7 @@ export function buildReportHtml(
     </div>
     ${verdictHtml}
     ${body}
-    <div class="foot">${t("Сгенерировано локальным сервисом «Интервью · граф вопросов»")} · ${dateStr}</div>
+    <div class="foot">${t("Сгенерировано локальным сервисом «Ladder»")} · ${dateStr}</div>
   </div>
 </body></html>`;
 }
@@ -327,7 +327,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
     </div>
     <div class="summary">${summaryChips}</div>
     ${body}
-    <div class="foot">${t("Сгенерировано локальным сервисом «Интервью · граф вопросов»")} · ${dateStr}</div>
+    <div class="foot">${t("Сгенерировано локальным сервисом «Ladder»")} · ${dateStr}</div>
   </div>
 </body></html>`;
 }
