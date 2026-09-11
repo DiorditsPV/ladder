@@ -1,5 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { LangSwitch } from "../components/LangSwitch";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { useT } from "../i18n";
 import { href } from "../router";
 
@@ -9,6 +10,7 @@ export function Landing() {
   return (
     <div className="landing">
       <header className="landing__top">
+        <ThemeToggle />
         <LangSwitch />
       </header>
       <main className="landing__main">

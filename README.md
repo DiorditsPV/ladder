@@ -26,10 +26,10 @@ sections, and the two things you actually do — open the board or open the ques
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **The matrix.** A column per section, sub-columns inside it, cards ranked by the track's own levels; the filter panel dims every card that does not match the tag, level or search.<br><br>[![Question matrix](docs/screenshots/03-board.png)](docs/screenshots/03-board.png)                          | **The checklist from the keyboard.** `1 / 2 / 3` mark the current card known / review / unknown and move on, `n` jumps to the next unreviewed one; the HUD keeps the current card, its level and the running count, a dot on every card shows its status.<br><br>[![Checklist](docs/screenshots/04-checklist.png)](docs/screenshots/04-checklist.png) |
 | **Full text next to the board.** A non-modal drawer: question, reference answer with syntax highlighting and the three status buttons, while the board stays interactive.<br><br>[![Answer drawer](docs/screenshots/05-drawer.png)](docs/screenshots/05-drawer.png) | **Hands-on tasks.** Besides questions the bank holds tasks: a statement, starter code, a reference solution and criteria to check yourself against.<br><br>[![Task](docs/screenshots/06-task.png)](docs/screenshots/06-task.png)          |
-| **Question bank.** Full-text search and filters over the whole bank, any row expands to the full question and answer; questions are added and edited straight from the UI, and "Download HTML" saves the bank as one self-contained file.<br><br>[![Question bank](docs/screenshots/07-bank.png)](docs/screenshots/07-bank.png) | **Track editor.** Sections, sub-columns and levels are data: rename, reorder by drag and drop, pick a colour from a fixed palette, preview the structure before saving.<br><br>[![Track editor](docs/screenshots/10-structure.png)](docs/screenshots/10-structure.png) |
+| **Question bank.** Full-text search and filters over the whole bank, any row expands to the full question and answer; questions are added and edited straight from the UI.<br><br>[![Question bank](docs/screenshots/07-bank.png)](docs/screenshots/07-bank.png) | **Track editor.** Sections, sub-columns and levels are data: rename, reorder by drag and drop, pick a colour from a fixed palette, preview the structure before saving.<br><br>[![Track editor](docs/screenshots/10-structure.png)](docs/screenshots/10-structure.png) |
 
-Dark theme is a toggle in the settings panel and is remembered per browser; the system preference
-is the default.
+The colour theme is one for the whole site: light by default, switched by the sun/moon button in every
+header and remembered per browser.
 
 ![Dark theme](docs/screenshots/11-board-dark.png)
 
@@ -106,7 +106,7 @@ the `known` ones.
 
 **Keep the bank fresh.** New questions are uploaded as `.md` / `.json`, written straight in the UI,
 or added to `content/` and pulled in with "Update from files" (`POST /api/pools/sync`) without a
-restart. "Export" on the bank page saves the whole bank as one self-contained HTML file.
+restart.
 
 ## Modes: demo and full access
 
@@ -116,7 +116,7 @@ The mode follows the session: no session — the demo, signed in — the full mo
   (`#/demo`) lists only the tracks marked `demo: true` — Data Engineer and System Analyst — in the
   language of the interface. Boards, filters, search and hotkeys work as usual; the checklist is kept in
   this browser's `localStorage` and nothing is written to the server. Editing is hidden (new track, the
-  track menu, card edit and delete, adding and uploading questions); exporting the bank to HTML stays.
+  track menu, card edit and delete, adding and uploading questions).
   Any other track address leads back to `#/demo`.
 - **Signing in.** The quiet "Sign in" link in the bottom corner of the start screen, or `#/login`.
 - **Roles.** `owner` can do everything; `viewer` (invited people) reads every track and keeps a

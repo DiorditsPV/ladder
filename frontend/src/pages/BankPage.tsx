@@ -3,7 +3,6 @@ import { api } from "../api";
 import { AddQuestionModal } from "../components/AddQuestionModal";
 import { BankBrowser } from "../components/BankBrowser";
 import { UploadModal } from "../components/UploadModal";
-import { downloadBank } from "../report";
 import { useT } from "../i18n";
 import { useCan } from "../session";
 import type { PoolConfig, QNode } from "../types";
@@ -36,7 +35,6 @@ export function BankPage({ pool, onChanged }: { pool: PoolConfig; onChanged: () 
               <button className="iconbtn uploadbtn" onClick={() => setUploadOpen(true)}>{t("Загрузить файл")}</button>
             </>
           )}
-          <button className="iconbtn bankbtn" onClick={() => downloadBank(nodes, pool)} disabled={!nodes.length}>{t("Скачать HTML")}</button>
         </>
       }
     >
