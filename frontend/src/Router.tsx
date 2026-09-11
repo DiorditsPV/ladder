@@ -1,43 +1,98 @@
-import { useEffect, useState } from "react";
-import { api } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import { api, type AuthUser } from "./api";
+import { Login } from "./components/Login";
 import BoardPage from "./pages/BoardPage";
 import { BankPage } from "./pages/BankPage";
 import { HomePage } from "./pages/HomePage";
-import { useRoute } from "./router";
-import { useT } from "./i18n";
+import { Landing } from "./pages/Landing";
+import { PeoplePage } from "./pages/PeoplePage";
+import { pairOf, poolsForLang } from "./poolLang";
+import { href, useRoute, type Route } from "./router";
+import { useSession } from "./session";
+import { useLang, useT } from "./i18n";
 import type { PoolConfig } from "./types";
 
-// Раздаёт страницы по маршруту. Список пулов грузится один раз на вход: он нужен и меню,
-// и доске (таксономия колонок), и банку. Неизвестный пул в адресе → меню с пометкой.
+// Раздаёт страницы по маршруту; режим — из сессии (spec 2026-09-11): без входа — стартовый экран
+// и демо (только демо-направления), после входа — полный режим. Список пулов грузится на вход и
+// перезагружается при смене пользователя: он нужен и меню, и доске (таксономия колонок), и банку.
+// Неизвестный пул в адресе: у вошедшего → меню с пометкой; в демо → демо-главная (см. redirectFor).
+
+// Куда увести с маршрута, недоступного режиму (null — остаться). pools — список текущего режима
+// (null, пока грузится): в демо это только демо-направления.
+function redirectFor(route: Route, user: AuthUser | null, pools: PoolConfig[] | null): string | null {
+  if (user) {
+    if (route.name === "login" || route.name === "demo") return href.home;
+    if (route.name === "people" && user.role !== "owner") return href.home;
+    return null;
+  }
+  if (route.name === "people") return href.home;
+  // Демо: направления нет в анонимном списке (закрыто входом или не существует) → демо-главная
+  // без плашки «Направления нет» — оно может и существовать, просто за входом (spec 2026-09-11).
+  if ((route.name === "board" || route.name === "bank") && pools && !pools.some((p) => p.id === route.pool)) {
+    return href.demo;
+  }
+  return null;
+}
+
 export default function Router() {
   const t = useT();
+  const [lang] = useLang();
   const route = useRoute();
+  const { user, refresh } = useSession();
   const [pools, setPools] = useState<PoolConfig[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const reloadPools = () => api.pools().then(setPools).catch((e) => setError(String(e)));
+  const reloadPools = useCallback(() => api.pools().then(setPools).catch((e) => setError(String(e))), []);
   useEffect(() => {
-    reloadPools();
-  }, []);
+    setPools(null);
+    setError(null);
+    void reloadPools();
+  }, [reloadPools, user?.id]);
 
+  const redirect = redirectFor(route, user, pools);
+  useEffect(() => {
+    if (redirect) window.location.replace(redirect);
+  }, [redirect]);
+  // Язык контента: доска/банк направления уходят на его пару на языке интерфейса, если пара есть
+  // (#/board/data-engineer ↔ #/board/data-engineer-en). Эффект — до ранних return (порядок хуков).
+  useEffect(() => {
+    if (!pools || (route.name !== "board" && route.name !== "bank")) return;
+    const current = pools.find((p) => p.id === route.pool);
+    const pair = current ? pairOf(pools, current, lang) : null;
+    if (pair && current && pair.id !== current.id) {
+      window.location.replace(route.name === "board" ? href.board(pair.id) : href.bank(pair.id));
+    }
+  }, [lang, pools, route]);
+  if (redirect) return null;
+
+  if (route.name === "login") {
+    return <Login onLogin={async () => { await refresh(); window.location.replace(href.home); }} />;
+  }
+  if (!user && route.name === "home") return <Landing />;
   if (error) return <div className="loading">{t("Не удалось загрузить направления: {error}", { error })}</div>;
   if (!pools) return <div className="loading">{t("Загрузка…")}</div>;
 
+  const demo = !user;
+  // Главная показывает направления на языке интерфейса (перевод вместо оригинала, где он есть);
+  // доска и банк ищут пул по полному списку — адрес может указывать и на перевод.
+  const homePools = poolsForLang(pools, lang);
   const poolOf = (id: string) => pools.find((p) => p.id === id) ?? null;
-
   switch (route.name) {
+    // Пула нет → главная с пометкой; сюда попадает только вошедший (демо redirectFor увёл на #/demo).
     case "board": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       // key — чтобы смена пула пересоздавала доску целиком (состояние, таймеры).
       return <BoardPage key={pool.id} pool={pool} />;
     }
     case "bank": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       return <BankPage key={pool.id} pool={pool} onChanged={reloadPools} />;
     }
+    case "people":
+      // Только owner: остальных redirectFor уже увёл на главную.
+      return <PeoplePage />;
     default:
-      return <HomePage pools={pools} onChanged={reloadPools} />;
+      return <HomePage pools={homePools} demo={demo} onChanged={reloadPools} />;
   }
 }

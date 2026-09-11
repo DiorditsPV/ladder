@@ -1,15 +1,21 @@
-// Headless smoke-тест реального рантайма (доска рендерится, карточка → drawer, чек-лист, банк).
-// Запуск: node smoke.mjs   (сервер должен слушать http://localhost:8000)
+// Headless smoke-тест реального рантайма: демо без входа (стартовый экран, демо-доска, чек-лист
+// в браузере, EN-перевод), вход, доска, карточка → drawer, чек-лист, банк, аккаунты («Люди», viewer).
+// Запуск: node smoke.mjs   (сервер должен слушать http://localhost:8000; свежая БД — см. CLAUDE.md)
 import { chromium } from "playwright";
 
 const URL = process.env.SMOKE_URL || "http://localhost:8000/";
+const OWNER_EMAIL = process.env.SMOKE_OWNER_EMAIL || "owner@interview.local";
+const OWNER_PASSWORD = process.env.SMOKE_OWNER_PASSWORD || "interview-dev";
 const fail = (m) => { console.error("FAIL:", m); process.exit(1); };
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const errors = [];
-page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+// У «Failed to load resource» адрес запроса — в location(): по нему отличаем штатный 401 проверки
+// сессии (/api/auth/me без входа — демо-режим) от настоящих ошибок.
+page.on("console", (m) => m.type() === "error" && errors.push(`${m.text()} @ ${m.location()?.url ?? ""}`));
 page.on("pageerror", (e) => errors.push(String(e)));
+const unexpectedErrors = () => errors.filter((e) => !(e.includes("status of 401") && e.includes("/api/auth/me")));
 
 // topbar-settings: тумблеры отображения — в боковой панели (.setdrawer) под ⚙, а ⚙ (.setbtn) —
 // пункт меню «•••» toolbar'а (board-toolbar). Каждое переключение = ••• → Настройки → чип → Esc.
@@ -37,16 +43,68 @@ async function closeFiltersIfOpen() {
   }
 }
 
+// 0. Демо-режим (spec 2026-09-11): без входа — стартовый экран, демо-главная (только демо-направления),
+//    доска с чек-листом в localStorage, смена языка ведёт на перевод направления.
 await page.goto(URL, { waitUntil: "networkidle" });
+await page.waitForSelector(".landing__demo", { timeout: 10000 });
+const loginFont = await page.$eval(".landing__login", (el) => parseFloat(getComputedStyle(el).fontSize));
+if (loginFont > 13) fail(`landing: «Вход» слишком заметен (font-size ${loginFont}px)`);
+console.log(`OK: landing — demo first, «Вход» is quiet (${loginFont}px)`);
+await page.click(".landing__demo");
+await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 10000 });
+if ((await page.locator('.poolcard[data-pool="system-analyst"]').count()) !== 1) fail("demo: нет системного аналитика");
+if ((await page.locator('.poolcard[data-pool="data-engineer-x5"]').count()) !== 0) fail("demo: виден не-демо пул X5");
+if ((await page.locator('.poolcard[data-pool$="-en"]').count()) !== 0) fail("demo RU: на главной видны EN-переводы");
+if ((await page.locator(".home__add, .poolcard__menu").count()) !== 0) fail("demo: видна правка направлений");
+console.log("OK: landing → demo home (DE + SA, no editing)");
+// Закрытое входом направление → демо-главная без плашки «Направления нет».
+for (const path of ["#/board/data-engineer-x5", "#/bank/data-engineer-x5"]) {
+  await page.goto(URL + path, { waitUntil: "networkidle" });
+  await page.waitForURL(/#\/demo$/, { timeout: 5000 }).catch(() => fail(`demo: ${path} не увёл на #/demo`));
+  await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 5000 });
+  if ((await page.locator(".errbar").count()) !== 0) fail(`demo: ${path} показал плашку`);
+}
+console.log("OK: demo — closed pools lead to the demo home");
+// Карточку выбираем по заголовку (как шаги ниже): порядок нод в DOM не совпадает с раскладкой,
+// первая по DOM может оказаться за кадром.
+await page.click('.poolcard[data-pool="data-engineer"] .poolcard__open');
+await page.waitForSelector(".react-flow__node-question", { timeout: 15000 });
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await page.waitForSelector(".drawer", { timeout: 5000 });
+if ((await page.locator(".drawer__delete, .drawer__edit").count()) !== 0) fail("demo: в drawer есть удаление/правка");
+if ((await page.locator(".drawer__hide").count()) !== 1) fail("demo: пропало локальное «Скрыть» в drawer");
+await page.keyboard.press("1");
+await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 3000 });
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 15000 })
+  .catch(() => fail("demo: отметка не пережила перезагрузку (localStorage)"));
+console.log("OK: demo checklist persists in the browser");
+// Смена языка на доске → парное направление. Hash меняется раньше перерисовки: ждём и адрес,
+// и заголовок доски перевода — иначе проверки ниже увидят ещё старую доску.
+await page.click(".langswitch");
+await page.waitForURL(/#\/board\/data-engineer-en$/, { timeout: 10000 })
+  .catch(() => fail("demo: EN не переключил на перевод направления"));
+await page.waitForFunction(() => document.querySelector(".appname")?.textContent === "Data Engineer", null, { timeout: 10000 })
+  .catch(() => fail("demo: доска перевода не отрисовалась"));
+await page.waitForSelector(".react-flow__node-question", { timeout: 15000 });
+const cyrTitles = (await page.locator(".qnode__title").allInnerTexts()).filter((s) => /[а-яё]/i.test(s));
+if (cyrTitles.length) fail(`demo EN: карточки не переведены: ${cyrTitles.slice(0, 3).join(" | ")}`);
+await page.click(".langswitch");
+await page.waitForURL(/#\/board\/data-engineer$/, { timeout: 10000 }).catch(() => fail("demo: RU не вернул оригинал"));
+await page.waitForFunction(() => document.querySelector(".appname")?.textContent === "Дата-инженер", null, { timeout: 10000 })
+  .catch(() => fail("demo: доска оригинала не отрисовалась"));
+console.log("OK: demo language switch uses the translation and back");
+const demoErrors = unexpectedErrors();
+if (demoErrors.length) fail(`demo: console/page errors:\n${demoErrors.join("\n")}`);
 
-// 0. auth-identity (#36): доска за гейтом — логинимся owner'ом (дефолтные сид-креды).
+// 0a. Вход — по #/login (ссылка «Вход» на стартовом экране); после входа — полный режим.
+await page.goto(URL + "#/login", { waitUntil: "networkidle" });
 await page.waitForSelector(".login__card", { timeout: 10000 });
-await page.fill('.login__input[type="email"]', process.env.SMOKE_OWNER_EMAIL || "owner@interview.local");
-await page.fill('.login__input[type="password"]', process.env.SMOKE_OWNER_PASSWORD || "interview-dev");
+await page.fill('.login__input[type="email"]', OWNER_EMAIL);
+await page.fill('.login__input[type="password"]', OWNER_PASSWORD);
 await page.click(".login__card button[type=submit]");
 console.log("OK: logged in as owner");
-// AuthGate проверяет сессию через /api/auth/me ДО логина → ожидаемый 401 в консоли.
-// Сбрасываем накопленное, чтобы он не считался ошибкой; пост-логин запросы идут с cookie.
+// Демо-часть штатно ловила 401 на /api/auth/me (сессии нет) и уже проверена выше — сбрасываем.
 errors.length = 0;
 
 // 0b. Главное меню (pools-main-menu): направления как входы; клик по DE открывает доску.
@@ -543,10 +601,13 @@ console.log(`OK: hide dims (${dimBeforeHide}→${dimAfterHide}), show-hidden mar
 
 // 20. question-management: удаление — confirm всплывает; dismiss НЕ меняет банк.
 let confirmFired = false;
-page.on("dialog", (d) => { confirmFired = true; d.dismiss(); });
+// Именованный и снимается после проверки: иначе он «отклоняет» и все следующие confirm (шаг 26).
+const dismissDialog = (d) => { confirmFired = true; d.dismiss(); };
+page.on("dialog", dismissDialog);
 const qBeforeDel = await page.locator(".qnode").count();
 await page.locator(".drawer__delete").click();
 await page.waitForTimeout(250);
+page.off("dialog", dismissDialog);
 if (!confirmFired) fail("delete did not raise a confirm dialog");
 if ((await page.locator(".qnode").count()) !== qBeforeDel) fail("dismissed delete changed bank");
 console.log(`OK: delete confirms + dismiss non-destructive (${qBeforeDel} nodes)`);
@@ -597,7 +658,71 @@ for (const [pid, needle] of [["system-analyst", "требования"], ["data-
   console.log(`OK: ${pid} board has its own blocks (${heads.length})`);
 }
 
-if (errors.length) fail(`console/page errors:\n${errors.join("\n")}`);
+// 26. Аккаунты (spec 2026-09-11): owner заводит viewer'а на «Люди» (одноразовый пароль показан один
+//     раз) → выход → вход viewer'ом: все направления, без правки, свой чек-лист на сервере, смена пароля.
+await page.goto(URL + "#/people", { waitUntil: "networkidle" });
+const viewerEmail = `viewer-${Date.now()}@smoke.test`;
+await page.fill(".people__email", viewerEmail);
+await page.click(".people__submit");
+await page.waitForSelector(".people__password", { timeout: 5000 });
+const viewerPw = (await page.locator(".people__password").innerText()).trim();
+if (viewerPw.length < 12) fail("people: одноразовый пароль не показан");
+console.log("OK: people — account created with a one-time password");
+await page.goto(URL, { waitUntil: "networkidle" });
+await page.click(".account__btn");
+await page.click(".account__logout");
+await page.waitForSelector(".landing__demo", { timeout: 10000 });
+await page.goto(URL + "#/login", { waitUntil: "networkidle" });
+await page.fill('.login__input[type="email"]', viewerEmail);
+await page.fill('.login__input[type="password"]', viewerPw);
+await page.click(".login__card button[type=submit]");
+await page.waitForSelector('.poolcard[data-pool="apache-kafka"]', { timeout: 10000 });
+if ((await page.locator(".home__add, .poolcard__menu").count()) !== 0) fail("viewer: видна правка направлений");
+await page.click(".account__btn");
+if ((await page.locator(".account__people").count()) !== 0) fail("viewer: в меню аккаунта есть «Люди»");
+await page.click(".account__password");
+await page.fill(".pwmodal__current", viewerPw);
+await page.fill(".pwmodal__new", "viewer-new-pass-1");
+await page.fill(".pwmodal__repeat", "viewer-new-pass-1");
+await page.click(".pwmodal__submit");
+await page.waitForSelector(".pwmodal__ok", { timeout: 5000 }).catch(() => fail("viewer: пароль не сменился"));
+console.log("OK: viewer signs in, sees all pools read-only, changes the password");
+// Доска viewer'а: карточку открываем с клавиатуры (↓ — первая карточка матрицы, Enter — drawer),
+// правки в drawer нет, «1» пишет статус на сервер (чек-лист у любой роли).
+await page.goto(URL + "#/board/apache-kafka", { waitUntil: "networkidle" });
+await page.waitForSelector(".react-flow__node-question", { timeout: 15000 });
+await page.keyboard.press("ArrowDown");
+await page.keyboard.press("Enter");
+await page.waitForSelector(".drawer", { timeout: 5000 });
+if ((await page.locator(".drawer__delete, .drawer__edit").count()) !== 0) fail("viewer: в drawer есть удаление/правка");
+const [viewerProgress] = await Promise.all([
+  page.waitForResponse((r) => r.request().method() === "PUT" && r.url().includes("/api/progress/")),
+  page.keyboard.press("1"),
+]);
+if (viewerProgress.status() !== 200) fail(`viewer: статус чек-листа не сохранён (${viewerProgress.status()})`);
+console.log("OK: viewer board — no editing, checklist saved on the server");
+// Уборка: owner удаляет viewer'а (confirm называет почту) — повторные прогоны на том же стенде без мусора.
+await page.goto(URL + "#/", { waitUntil: "networkidle" });
+await page.click(".account__btn");
+await page.click(".account__logout");
+await page.waitForSelector(".landing__demo", { timeout: 10000 });
+await page.goto(URL + "#/login", { waitUntil: "networkidle" });
+await page.fill('.login__input[type="email"]', OWNER_EMAIL);
+await page.fill('.login__input[type="password"]', OWNER_PASSWORD);
+await page.click(".login__card button[type=submit]");
+await page.waitForSelector(".account__btn", { timeout: 10000 });
+await page.goto(URL + "#/people", { waitUntil: "networkidle" });
+const viewerRow = page.locator(`.people__table tr[data-email="${viewerEmail}"]`);
+await viewerRow.waitFor({ timeout: 5000 });
+let accountConfirm = "";
+page.once("dialog", (d) => { accountConfirm = d.message(); d.accept(); });
+await viewerRow.locator(".people__delete").click();
+await viewerRow.waitFor({ state: "detached", timeout: 5000 }).catch(() => fail("people: аккаунт не удалён"));
+if (!accountConfirm.includes(viewerEmail)) fail(`people: confirm не называет почту: "${accountConfirm}"`);
+console.log("OK: people — owner deletes the account (confirm names the email)");
+
+const lateErrors = unexpectedErrors();
+if (lateErrors.length) fail(`console/page errors:\n${lateErrors.join("\n")}`);
 
 console.log("\nALL SMOKE CHECKS PASSED ✓");
 await browser.close();

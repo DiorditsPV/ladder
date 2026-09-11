@@ -150,6 +150,9 @@ async function main() {
   const page = await ctx.newPage();
 
   // Доска за auth-гейтом: один раз логинимся в UI, дальше cookie живёт в контексте.
+  // TODO(follow-up): после демо-режима (spec 2026-09-11) `/` без входа открывает стартовый экран,
+  // а форма входа — по адресу `#/login` (goto(BASE + "/#/login")); ожидание .login__card сразу после
+  // goto(BASE) ниже её не дождётся. Там же — перевод скриншотов на EN-пары (data-engineer-en).
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".login__card", { timeout: 10000 });
   await page.fill('.login__input[type="email"]', OWNER_EMAIL);

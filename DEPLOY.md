@@ -13,7 +13,9 @@ Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispa
                  │      └─ sudo /usr/local/bin/deploy-ladder.sh
                  │            распаковка → /opt/ladder · venv (pip только при смене requirements)
                  │            · systemctl restart ladder · health :8770
-                 └─ curl https://ladder.paveldiordits.site/api/health → 200, /api/graph → 401
+                 └─ curl https://ladder.paveldiordits.site (без cookie): /api/health → 200,
+                        /api/pools → 200, /api/graph?pool=data-engineer → 200 (демо),
+                        /api/graph?pool=data-engineer-x5 → 401 (остальное за входом)
 ```
 
 | Путь на сервере                                           | Назначение                                        | Переживает выкладку  |
@@ -45,10 +47,27 @@ Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispa
         bash /root/ladder-deploy/install.sh'
    ```
    Без `OWNER_PASSWORD` пароль сгенерируется и напечатается **один раз**. Owner сидится в БД при первом
-   старте (`seed.py`); менять потом — в БД, `/etc/ladder.env` для смены уже не читается.
-4. DNS на reg.ru: `A interview → 37.46.132.95`. Проверка: `dig +short ladder.paveldiordits.site`.
+   старте (`seed.py`); менять потом — в интерфейсе («Сменить пароль» в меню аккаунта или в ⚙ на доске),
+   `/etc/ladder.env` для смены уже не читается.
+4. DNS на reg.ru: `A ladder → 37.46.132.95`. Проверка: `dig +short ladder.paveldiordits.site`.
 5. TLS: `ssh root@37.46.132.95 certbot --nginx -d ladder.paveldiordits.site --redirect`.
 6. Merge в `main` → выкладка → https://ladder.paveldiordits.site.
+
+## Режимы доступа
+
+Сайт без входа открывается как **демо** (spec `docs/superpowers/specs/2026-09-11-demo-and-access-design.md`):
+стартовый экран, «Открыть демо» → направления с `demo: true` в `pool.yaml` («Дата-инженер» и «Системный аналитик»,
+на английском — их переводы `*-en`), чек-лист только в браузере посетителя. Без cookie бэкенд отвечает ровно на
+`GET /api/pools` (демо-список) и `GET /api/graph?pool=<демо>`; всё остальное — 401. Шаг «Проверить боевой адрес»
+в `deploy.yml` проверяет именно это: health 200, `/api/pools` 200, демо-граф 200, граф `data-engineer-x5` 401 —
+если после выкладки закрытое направление читается без входа или демо не открывается, прогон падает.
+
+**Полный режим** — вход по `https://ladder.paveldiordits.site/#/login` (на стартовом экране — приглушённая ссылка
+«Вход»). Владелец заводит людей на странице «Люди» (`#/people`): почта → одноразовый пароль, показывается один раз;
+там же сброс пароля и удаление аккаунта. Приглашённые (роль viewer) видят все направления и ведут свой чек-лист;
+свой пароль каждый меняет сам («Сменить пароль»), остальные его сессии при этом завершаются.
+
+Риск: ограничения частоты попыток входа нет — на публичном адресе это отдельная задача (spec, «Вне скоупа»).
 
 ## Что умеет ключ раннера
 

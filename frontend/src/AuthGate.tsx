@@ -1,23 +1,18 @@
-import { useEffect, useState } from "react";
-
 import Router from "./Router.tsx";
-import { api } from "./api";
-import { Login } from "./components/Login";
+import { SessionProvider, useSession } from "./session";
 
-// auth-identity (#36): обёртка над Router. Проверяет сессию через /api/auth/me;
-// 401 → экран входа, иначе рендерит роутер страниц. Router не трогаем — его data-эффекты
-// стартуют только когда AuthGate отрендерит <Router/> (после успешной аутентификации).
-export function AuthGate() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    api
-      .me()
-      .then(() => setAuthed(true))
-      .catch(() => setAuthed(false));
-  }, []);
-
-  if (authed === null) return null; // первичная проверка сессии
-  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
+// Гейт больше не требует входа: без сессии — демо-режим, вход — по #/login (spec 2026-09-11).
+// Router рендерится после первичной проверки сессии (/api/auth/me): режим известен до первых запросов.
+function Gate() {
+  const { ready } = useSession();
+  if (!ready) return null;
   return <Router />;
+}
+
+export function AuthGate() {
+  return (
+    <SessionProvider>
+      <Gate />
+    </SessionProvider>
+  );
 }
