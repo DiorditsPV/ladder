@@ -31,3 +31,4 @@ blocks:
     label: Платформа
     color: "#9333ea"
     weight: 12
+demo: true
