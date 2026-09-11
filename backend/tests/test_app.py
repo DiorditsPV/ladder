@@ -23,7 +23,7 @@ def _de():
 def test_every_pool_imports_without_errors(pool_id):
     nodes, errors = load_pool_content(load_pools(CONTENT_ROOT)[pool_id])
     assert errors == [], f"{pool_id}: {errors}"
-    assert len(nodes) >= 10
+    assert len({n.id for n in nodes}) == len(nodes)
     assert all(n.pool == pool_id for n in nodes)
     assert all(n.title and 1 <= len(n.tags) <= 3 for n in nodes)
 

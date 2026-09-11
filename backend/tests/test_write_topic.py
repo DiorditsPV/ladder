@@ -8,6 +8,9 @@ from pathlib import Path
 import frontmatter
 import yaml
 
+from app.importer import load_pool_content
+from app.pools import load_pools
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / ".claude" / "skills" / "ladder-topic" / "write_topic.py"
 
@@ -144,17 +147,32 @@ def test_writes_normalized_files_and_pool_yaml(tmp_path):
     assert "ячеек тоньше 1: 0" in r.stdout
 
 
-def test_pool_tags_extend_vocabulary_and_check_mode(tmp_path):
+def test_pool_tags_cannot_extend_project_vocabulary(tmp_path):
     spec = _spec([_card(1, tags=["elicitation"])])
-    r = _run(tmp_path, spec, "--per-cell", "0")
-    assert r.returncode == 1 and "pool.tags" in r.stderr
     spec["pool"]["tags"] = ["elicitation"]
-    r = _run(tmp_path, spec, "--per-cell", "0", "--check")
-    assert r.returncode == 0 and not (tmp_path / "content").exists()  # --check ничего не пишет
-    assert "ответ" in r.stdout and "знаков" in r.stdout  # короткий ответ → предупреждение
-    r = _run(tmp_path, spec, "--per-cell", "0")
-    assert r.returncode == 0
-    assert yaml.safe_load((tmp_path / "content/kafka/pool.yaml").read_text(encoding="utf-8"))["tags"] == ["elicitation"]
+    r = _run(tmp_path, spec, "--check")
+    assert r.returncode == 1 and "tags" in r.stderr
+    assert not (tmp_path / "content").exists()
+
+
+def test_sparse_board_has_no_implicit_quota_or_length_warning(tmp_path):
+    cards = [_card(1, title="Журнал"), _card(2, answer="Объяснение механизма. " * 100)]
+    r = _run(tmp_path, _spec(cards), "--check")
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert "!" not in r.stdout and "знаков" not in r.stdout
+    assert not (tmp_path / "content").exists()
+    r = _run(tmp_path, _spec(cards))
+    assert r.returncode == 0, r.stderr + r.stdout
+    post = frontmatter.load(str(tmp_path / "content/kafka/ops/kafka-ops-02.md"))
+    assert cards[1]["answer"].strip() in post.content
+    nodes, errors = load_pool_content(load_pools(tmp_path / "content")["kafka"])
+    assert errors == [] and len(nodes) == 2
+    assert next(n for n in nodes if n.id == cards[1]["id"]).answer == cards[1]["answer"].strip()
+
+
+def test_negative_quota_is_invalid(tmp_path):
+    r = _run(tmp_path, _spec([_card(1)]), "--per-cell", "-1", "--check")
+    assert r.returncode != 0
 
 
 def test_thin_cells_exit_2(tmp_path):
