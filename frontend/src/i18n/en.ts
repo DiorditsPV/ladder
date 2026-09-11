@@ -12,7 +12,12 @@ export const EN: Record<string, string> = {
   "+ Добавить уровень": "+ Add level",
   // --- HomePage: «Обновить из файлов» ---
   "Обновить из файлов": "Reload from files",
-  "Обновлено из файлов: направлений {p}, вопросов {n}, скрыто {h}, конфликтов {c}": "Reloaded from files: {p} pools, {n} questions, {h} hidden, {c} conflicts",
+  "«{label}» совпадает с файлами — обновлять нечего": "“{label}” matches its files — nothing to reload",
+  "«{label}» из файлов: колонки и уровни — {cfg}, карточек изменится {n}, будет скрыто {h}, конфликтов {c}": "“{label}” from files: sections and levels — {cfg}, {n} cards will change, {h} will be hidden, {c} conflicts",
+  "перезапишутся": "overwritten",
+  "без изменений": "unchanged",
+  "Применить?": "Apply?",
+  "«{label}» обновлено из файлов: карточек {n}, скрыто {h}, конфликтов {c}": "“{label}” reloaded from files: {n} cards, {h} hidden, {c} conflicts",
   "Ошибок импорта: {n}; первая — {file}: {error}": "Import errors: {n}; first — {file}: {error}",
   "Не удалось обновить из файлов": "Could not reload from files",
   "Отмена": "Cancel",

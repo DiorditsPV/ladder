@@ -75,7 +75,8 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 (вопросы удаляются, id остаётся занятым tombstone'ом), `POST /api/pools/sync` (owner: засев из `content/` —
 только недостающие направления и карточки; `update=true` — явное обновление пресета из файлов, `pool=<id>` — одно
 направление, 404 без каталога; `dry_run=true` — прогон на копии БД, ответ — отчёт `created/updated/config_changed/
-nodes_upserted/skipped/hidden/conflicts/errors`). Чек-лист: `GET /api/progress?pool=`, `PUT/DELETE /api/progress/{node_id}`.
+nodes_upserted/nodes_changed/skipped/hidden/conflicts/errors`; у направлений в `GET /api/pools[/{id}]` флаг `has_files` —
+есть пресет в `content/`, только у них на главной пункт «Обновить из файлов»: предпросмотр → подтверждение). Чек-лист: `GET /api/progress?pool=`, `PUT/DELETE /api/progress/{node_id}`.
 Аутентификация: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`,
 `POST /api/auth/password` (свой пароль: неверный текущий → 403, не 401; новый короче 8 → 422; остальные сессии
 отзываются). Аккаунты (owner): `GET /api/users`, `POST /api/users` (без `password` — одноразовый пароль в ответе,

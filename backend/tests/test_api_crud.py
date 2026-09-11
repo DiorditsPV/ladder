@@ -64,6 +64,8 @@ def test_get_pool_by_id(pool):
     assert body["id"] == p["id"] and [b["id"] for b in body["blocks"]] == ["alpha", "beta"]
     assert [s["id"] for s in body["blocks"][0]["subblocks"]] == ["one", "two"]
     assert "progress" in body and "counts" in body
+    # has_files: пресет из content/ — только у направлений с каталогом; созданное через API живёт в БД
+    assert body["has_files"] is False and owner.get("/api/pools/data-engineer").json()["has_files"] is True
     assert owner.get("/api/pools/no-such-pool").status_code == 404
     assert TestClient(app).get(f"/api/pools/{p['id']}").status_code == 401
 

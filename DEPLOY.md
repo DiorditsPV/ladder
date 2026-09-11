@@ -103,10 +103,12 @@ tar czf - -C deploy . | ssh root@37.46.132.95 'rm -rf /root/ladder-deploy && mkd
   && tar xzf - -C /root/ladder-deploy && bash /root/ladder-deploy/install-backup.sh'
 ```
 
-Восстановление из снимка (карточки, прогресс, аккаунты — всё в одном файле):
+Восстановление из снимка (карточки, прогресс, аккаунты — всё в одном файле). Журналы SQLite рядом с базой
+(`-journal`, `-wal`, `-shm`) удаляются до подмены — иначе SQLite применит чужой журнал к восстановленной базе:
 
 ```bash
 ssh root@37.46.132.95 'systemctl stop ladder && ladder-backup manual \
+  && rm -f /var/lib/ladder/ladder.db-journal /var/lib/ladder/ladder.db-wal /var/lib/ladder/ladder.db-shm \
   && install -o ladder -g ladder -m 644 /var/backups/ladder/<снимок>.db /var/lib/ladder/ladder.db \
   && systemctl start ladder'
 ```

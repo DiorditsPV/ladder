@@ -59,6 +59,18 @@ def _config_differs(existing: Dict, cfg: Dict) -> bool:
     return bool(existing.get("demo")) != bool(cfg.get("demo"))
 
 
+# Поля карточки, по которым отчёт считает, что update её перепишет (nodes_changed — «что изменится» в dry_run).
+_NODE_KEYS = ("pool", "kind", "block", "subblock", "topic", "title", "difficulty", "weight", "question", "answer",
+              "starter_code", "rubric", "tags")
+
+
+def _node_differs(before: Dict, after: Dict) -> bool:
+    """Перепишет ли upsert карточку: другое содержимое, чужой source или скрытая (upsert её развернёт)."""
+    if before.get("source") != "seed" or before.get("hidden"):
+        return True
+    return any((before.get(k) or None) != (after.get(k) or None) for k in _NODE_KEYS)
+
+
 def seed_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None:
     """Засев одного направления: создать, если нет; добавить карточки, id которых нет в БД (id уникальны в
     тенанте, поэтому занятый в другом направлении тоже пропускается). Ничего не перезаписывает и не прячет."""
@@ -80,6 +92,7 @@ def seed_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None
         taken.add(node.id)
         added += 1
     report["nodes_upserted"] += added
+    report["nodes_changed"] += added
     if existing is not None and added:
         report["updated"].append(pool.id)
 
@@ -107,13 +120,17 @@ def update_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> No
     user_ids_all = set(db.list_node_ids(tenant_id, pool.id, source="user"))
     user_visible = set(db.list_node_ids(tenant_id, pool.id, source="user", hidden=False))
     hidden_ids = set(db.list_node_ids(tenant_id, pool.id, source="seed", hidden=True))
+    before = {row["id"]: row for row in db.list_nodes(tenant_id)}
     file_ids: List[str] = []
     for node in nodes:
         if node.id in user_ids_all:
             if node.id in user_visible:
                 report["conflicts"].append(node.id)
             continue
-        db.upsert_node(tenant_id, node.model_dump(), source="seed")
+        dump = node.model_dump()
+        if node.id not in before or _node_differs(before[node.id], dump):
+            report["nodes_changed"] += 1
+        db.upsert_node(tenant_id, dump, source="seed")
         if node.id in hidden_ids:
             # вернулась в файлы — флаг hidden пишет только sync, снимаем его здесь же
             db.set_node_hidden(tenant_id, node.id, False)
@@ -156,6 +173,7 @@ def sync_pools(
         "updated": [],
         "config_changed": [],
         "nodes_upserted": 0,
+        "nodes_changed": 0,  # новые + те, чьё содержимое upsert действительно меняет
         "skipped": 0,
         "hidden": [],
         "conflicts": [],

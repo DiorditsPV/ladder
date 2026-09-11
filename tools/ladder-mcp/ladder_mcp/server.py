@@ -565,9 +565,10 @@ def build_server(client: LadderClient) -> MCPServer:
         update_existing: Annotated[bool, Field(description="false — only add what is missing (safe); true — rewrite the preset's columns/levels and untouched cards from files, hide cards whose files are gone")] = False,
         dry_run: Annotated[bool, Field(description="Report what would change without writing (default true)")] = True,
     ) -> dict:
-        """Owner only. Pull preset directions from the server's content/ files. By default only adds missing
-        directions and cards and never overwrites; update_existing=true is the explicit preset update — run it
-        with dry_run=true first and read `config_changed` / `hidden` before applying."""
+        """Owner only. Pull preset directions (has_files=true in get_direction) from the server's content/ files.
+        By default only adds missing directions and cards and never overwrites; update_existing=true is the
+        explicit preset update — run it with dry_run=true first and read `config_changed` / `nodes_changed` /
+        `hidden` before applying."""
         return await api("POST", "/api/pools/sync", pool=direction_id, update=update_existing or None, dry_run=dry_run or None)
 
     return server

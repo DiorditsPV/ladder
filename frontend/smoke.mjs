@@ -241,6 +241,19 @@ await dupCard.locator(".poolcard__delete").click();
 await page.waitForSelector(`.poolcard[data-pool="${dupId}"]`, { state: "detached", timeout: 5000 });
 console.log(`OK: duplicate — ${dupId} created with DE stats and deleted`);
 
+// 0c'''. «Обновить из файлов» — только у пресетов (has_files): у DE есть, у smoke-pool (создан в UI) нет;
+//        на свежей БД предпросмотр (dry_run) правок не находит и подтверждение не спрашивает.
+await smokeCard.locator(".poolcard__menu").click();
+if ((await smokeCard.locator(".poolcard__sync").count()) !== 0) fail("reload from files shown for a pool without files");
+await deCard.locator(".poolcard__menu").click();
+await deCard.locator(".poolcard__sync").click();
+await page.waitForFunction(
+  () => document.querySelector(".errbar--ok")?.textContent?.includes("совпадает с файлами"),
+  null,
+  { timeout: 5000 },
+);
+console.log("OK: reload from files — presets only, no-op preview on a fresh DB");
+
 page.once("dialog", (d) => d.accept());
 await smokeCard.locator(".poolcard__menu").click();
 await smokeCard.locator(".poolcard__delete").click();

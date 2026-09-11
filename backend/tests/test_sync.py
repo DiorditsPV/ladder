@@ -81,11 +81,16 @@ def test_update_dry_run_reports_without_writing(tmp_path):
     db.ensure_tenant("t")
     root = _content(tmp_path)
     sync_pools(db, "t", root)
+    same = sync_pools(db, "t", root, update=True, dry_run=True)
+    assert same["nodes_changed"] == 0 and same["config_changed"] == [] and same["hidden"] == []
     (root / "demo" / "a" / "demo-02.md").unlink()
+    _card(root, "demo-01", title="Из файла")
     (root / "demo" / "pool.yaml").write_text(POOL.replace("description: d1", "description: d2"), encoding="utf-8")
     rep = sync_pools(db, "t", root, update=True, dry_run=True)
     assert rep["dry_run"] is True and rep["hidden"] == ["demo-02"] and rep["config_changed"] == ["demo"]
+    assert rep["nodes_upserted"] == 1 and rep["nodes_changed"] == 1
     assert db.get_node("t", "demo-02")["hidden"] is False
+    assert db.get_node("t", "demo-01")["title"] == "T"
     assert db.get_pool("t", "demo")["description"] == "d1"
 
 
@@ -216,6 +221,8 @@ def test_api_sync_requires_owner_and_returns_report():
     assert body["errors"] == [] and body["mode"] == "seed" and body["hidden"] == []
     dry = c.post("/api/pools/sync?pool=data-engineer&update=true&dry_run=true")
     assert dry.status_code == 200 and dry.json()["mode"] == "update" and dry.json()["dry_run"] is True
+    # только что засеянный пресет совпадает с файлами — предпросмотр не находит правок (задачи со starterCode и rubric тоже)
+    assert dry.json()["nodes_changed"] == 0 and dry.json()["config_changed"] == [] and dry.json()["hidden"] == []
     assert c.post("/api/pools/sync?pool=no-such-pool").status_code == 404
 
 

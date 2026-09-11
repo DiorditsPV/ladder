@@ -351,9 +351,14 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
 
 
 def _pool_out(request: Request, p: PoolCfg, user: Optional[dict]) -> dict:
-    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа (только у вошедшего)."""
+    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа (только у вошедшего).
+    has_files — у направления есть пресет в content/ (к нему применимо обновление из файлов)."""
     tenant = resolve_tenant(request)
-    out = {**p.to_dict(), "counts": {"nodes": db.count_nodes(tenant, pool=p.id)}}
+    out = {
+        **p.to_dict(),
+        "counts": {"nodes": db.count_nodes(tenant, pool=p.id)},
+        "has_files": (CONTENT_DIR / p.id / "pool.yaml").is_file(),
+    }
     if user is not None:
         out["progress"] = db.progress_summary(tenant, user["id"], p.id)
     return out
