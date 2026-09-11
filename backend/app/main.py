@@ -386,7 +386,8 @@ def _tags_or_422(tags: List[str]) -> List[str]:
     у темы вне DE могут быть свои теги (pool.tags); список концептов отдаёт GET /api/tags."""
     out: List[str] = []
     for raw in tags:
-        tag = (raw or "").strip().lower()
+        # «Data Modeling» / «data_modeling» из поля UI → data-modeling; не-латиница и символы — 422.
+        tag = re.sub(r"[\s_]+", "-", (raw or "").strip().lower())
         if not _TAG_RE.match(tag):
             raise HTTPException(status_code=422, detail=f"tag '{raw}' must be a lowercase slug [a-z0-9-]")
         if tag not in out:

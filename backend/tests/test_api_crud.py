@@ -98,7 +98,13 @@ def test_create_node_with_all_fields(pool):
                                           "difficulty": "base", "question": "q"}).status_code == 409
 
 
-@pytest.mark.parametrize("tags", [["Not A Slug"], ["a", "b", "c", "d", "e", "f"]])
+def test_create_node_normalizes_tags(pool):
+    owner, p = pool
+    node = _node(owner, p["id"], tags=["Data Modeling", "data_modeling", " SQL "])
+    assert node["tags"] == ["data-modeling", "sql"]
+
+
+@pytest.mark.parametrize("tags", [["не тег"], ["tag!"], ["a", "b", "c", "d", "e", "f"]])
 def test_create_node_rejects_bad_tags(pool, tags):
     owner, p = pool
     r = owner.post("/api/nodes", json={"pool": p["id"], "block": "alpha", "topic": "t", "difficulty": "base",
@@ -166,7 +172,7 @@ def test_update_node_moves_and_edits_every_field(pool):
     assert owner.put(f"/api/nodes/{nid}", json={"subblock": ""}).json()["node"]["subblock"] is None
     assert owner.put(f"/api/nodes/{nid}", json={"block": "gamma"}).status_code == 422
     assert owner.put(f"/api/nodes/{nid}", json={"subblock": "nope"}).status_code == 422
-    assert owner.put(f"/api/nodes/{nid}", json={"tags": ["Bad Tag"]}).status_code == 422
+    assert owner.put(f"/api/nodes/{nid}", json={"tags": ["плохой тег"]}).status_code == 422
 
 
 def test_update_node_moves_between_pools(pool):
