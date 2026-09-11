@@ -20,12 +20,12 @@
             "levels": [{"id","label"}]},
    "cards": [{"id","block","subblock"?,"difficulty","title","topic","tags","question","answer","kind"?}]}
 
-Что делает: валидирует (уровни 2–8; теги 1–3 из 17 концептов ∪ pool.tags — свои теги темы вне дата-инженерии;
-difficulty ∈ levels; block/subblock ∈ pool; id = "<pool>-<block>-NN"), предупреждает об ответах короче 400 или
-длиннее 2000 знаков, пишет pool.yaml (веса блоков ∝ числу карточек, pool.tags — как документация словаря) и карточки
-через python-frontmatter в нормализованном формате проекта, печатает матрицу «колонка × уровень», покрытие
-под-колонок и ячейки тоньше --per-cell. --check — только проверка и матрица, без записи. --fresh сносит каталог темы; без него существующие файлы остаются, карточки
-с занятыми id пропускаются (режим дополнения). --sync: POST /api/pools/sync + проверка /api/graph → 0 ошибок.
+Валидирует схему, уровни 2–8 и 1–3 тега из 17 концептов проекта; пишет pool.yaml и карточки
+через python-frontmatter. Печатает распределение по колонкам, уровням и под-колонкам.
+Количество карточек и длина ответа не доказывают качество: квоты по умолчанию нет.
+--per-cell N — только явно запрошенный минимум (0 отключает его), нарушение даёт exit 2.
+--check ничего не записывает. --fresh удаляет каталог темы; без него занятые id пропускаются.
+--sync: POST /api/pools/sync + проверка /api/graph; заранее проверь адрес и доступ сервера к файлам.
 Запускать из корня репозитория с активированным backend/.venv (нужен python-frontmatter).
 """
 
@@ -73,14 +73,6 @@ def validate(spec: dict) -> None:
     if len(set(bids)) != len(bids) or not all(ID_RE.match(x) for x in bids):
         die("id колонок — уникальные slug'и")
     subs = {b["id"]: {s["id"] for s in (b.get("subblocks") or [])} for b in pool["blocks"]}
-    extra = pool.get("tags") or []
-    if not all(isinstance(t, str) and ID_RE.match(t) for t in extra):
-        die("pool.tags — список slug'ов (латиница, дефисы)")
-    topics = Counter((c.get("block"), c.get("topic")) for c in cards)
-    dup_topics = [f"{b}/{t}" for (b, t), n in topics.items() if n > 1]
-    if dup_topics:
-        print(f"  ! повторяющийся topic внутри колонки (не ошибка, но проверь на дубли): {', '.join(dup_topics)}")
-    allowed = TAGS | set(extra)
     seen = set()
     for c in cards:
         cid = c.get("id") or ""
@@ -98,13 +90,11 @@ def validate(spec: dict) -> None:
         if c.get("difficulty") not in lids:
             die(f"{cid}: difficulty '{c.get('difficulty')}' не из levels {lids}")
         tags = c.get("tags") or []
-        if not 1 <= len(tags) <= 3 or not set(tags) <= allowed:
-            die(f"{cid}: tags — 1–3 из 17 концептов ∪ pool.tags {sorted(extra)}, получено {tags}")
+        if not 1 <= len(tags) <= 3 or not set(tags) <= TAGS:
+            die(f"{cid}: tags — 1–3 из 17 концептов проекта, получено {tags}")
         for key in ("title", "topic", "question", "answer"):
             if not (c.get(key) or "").strip():
                 die(f"{cid}: поле '{key}' пустое")
-        if not 2 <= len(c["title"].split()) <= 8:
-            die(f"{cid}: title — 2–8 слов, получено «{c['title']}»")
         if c["question"].lstrip().startswith("#") or any(line.startswith("#") for line in c["answer"].splitlines()):
             die(f"{cid}: строки вопроса/ответа не должны начинаться с '#' (маркеры разбиения тела)")
 
@@ -121,8 +111,6 @@ def write_pool_yaml(pool: dict, cards: list, path: Path) -> None:
         blocks.append(entry)
     doc = {"id": pool["id"], "label": pool["label"], "description": pool.get("description") or "",
            "blocks": blocks, "levels": [{"id": l["id"], "label": l["label"]} for l in pool["levels"]]}
-    if pool.get("tags"):
-        doc["tags"] = list(pool["tags"])  # словарь темы сверх 17 концептов; бэкенд ключ не читает
     header = (f"# Направление «{pool['label']}» — сгенерировано скиллом ladder-topic.\n"
               f"# levels — ряды матрицы сверху вниз (первый — самый лёгкий, верхний ряд); weight блоков ∝ числу карточек.\n")
     path.write_text(header + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -139,7 +127,7 @@ def write_card(card: dict, path: Path) -> None:
     path.write_text(frontmatter.dumps(post, sort_keys=True, allow_unicode=True) + "\n", encoding="utf-8")
 
 
-def coverage(pool: dict, cards: list, per_cell: int) -> int:
+def coverage(pool: dict, cards: list, per_cell: int | None = None) -> int:
     lids = [l["id"] for l in pool["levels"]]
     cnt = Counter((c["block"], c["difficulty"]) for c in cards)
     w = max(len(b["id"]) for b in pool["blocks"]) + 2
@@ -150,25 +138,18 @@ def coverage(pool: dict, cards: list, per_cell: int) -> int:
         row = ""
         for l in lids:
             n = cnt[(b["id"], l)]
-            mark = "" if n >= per_cell else "!"
-            thin += n < per_cell
+            below_minimum = per_cell is not None and n < per_cell
+            mark = "!" if below_minimum else ""
+            thin += below_minimum
             row += f"{str(n) + mark:>10}"
         print(f"{b['id']:<{w}}{row}")
-    print(f"карточек: {len(cards)}; ячеек тоньше {per_cell}: {thin}")
+    print(f"карточек: {len(cards)}" + (f"; ячеек тоньше {per_cell}: {thin}" if per_cell is not None else "; квота не задана"))
     by_sub = Counter((c["block"], c.get("subblock")) for c in cards if c.get("subblock"))
     for b in pool["blocks"]:
         for sb in b.get("subblocks") or []:
             n = by_sub[(b["id"], sb["id"])]
-            print(f"  под-колонка {b['id']}/{sb['id']}: {n}{'  !' if n < per_cell else ''}")
+            print(f"  под-колонка {b['id']}/{sb['id']}: {n}{'  !' if per_cell is not None and n < per_cell else ''}")
     return thin
-
-
-def warn_lengths(cards: list) -> None:
-    """Мягкая проверка: ответ короче 400 знаков — почти наверняка пустой, длиннее 1500 — лекция (ориентир SKILL.md)."""
-    for c in cards:
-        n = len((c.get("answer") or "").strip())
-        if n < 400 or n > 1500:
-            print(f"  ! {c['id']}: ответ {n} знаков (ориентир 400–1500)")
 
 
 def api_client(api: str):
@@ -318,15 +299,16 @@ def main() -> None:
     ap.add_argument("--overwrite", action="store_true", help="--upload: обновлять карточки с занятыми id")
     ap.add_argument("--content", default="content", help="--files: каталог content/ (по умолчанию ./content)")
     ap.add_argument("--fresh", action="store_true", help="--files: снести каталог темы перед записью")
-    ap.add_argument("--per-cell", type=int, default=2, help="минимум карточек в ячейке колонка × уровень")
+    ap.add_argument("--per-cell", type=int, default=None, help="явно заданный минимум в ячейке; по умолчанию квоты нет")
     ap.add_argument("--sync", action="store_true", help="--files: после записи — явное обновление пресета на сервере")
     ap.add_argument("--api", default=os.environ.get("LADDER_URL") or os.environ.get("API_URL", "http://localhost:8000"))
     a = ap.parse_args()
+    if a.per_cell is not None and a.per_cell < 0:
+        ap.error("--per-cell должен быть неотрицательным")
 
     spec = json.loads(Path(a.spec).read_text(encoding="utf-8"))
     validate(spec)
     pool, cards = spec["pool"], spec["cards"]
-    warn_lengths(cards)
     if a.check:
         sys.exit(2 if coverage(pool, cards, a.per_cell) else 0)
     if a.upload:
