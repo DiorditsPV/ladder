@@ -49,7 +49,7 @@ Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispa
    Без `OWNER_PASSWORD` пароль сгенерируется и напечатается **один раз**. Owner сидится в БД при первом
    старте (`seed.py`); менять потом — в интерфейсе («Сменить пароль» в меню аккаунта или в ⚙ на доске),
    `/etc/ladder.env` для смены уже не читается.
-4. DNS на reg.ru: `A interview → 37.46.132.95`. Проверка: `dig +short ladder.paveldiordits.site`.
+4. DNS на reg.ru: `A ladder → 37.46.132.95`. Проверка: `dig +short ladder.paveldiordits.site`.
 5. TLS: `ssh root@37.46.132.95 certbot --nginx -d ladder.paveldiordits.site --redirect`.
 6. Merge в `main` → выкладка → https://ladder.paveldiordits.site.
 

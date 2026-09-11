@@ -239,7 +239,7 @@ at `#/login`: `/` is the start screen now.
 
 ## Deploy
 
-Deploying to **https://interview.paveldiordits.site** is a manual GitHub Actions run (*Deploy → Run workflow*);
+Deploying to **https://ladder.paveldiordits.site** is a manual GitHub Actions run (*Deploy → Run workflow*);
 merging into `main` deploys nothing. The front end is
 built on the runner and shipped as one tarball to a forced-command SSH key on the server. Details and the
 one-time server setup are in `DEPLOY.md`.
