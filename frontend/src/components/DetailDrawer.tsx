@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import Markdown from "react-markdown";
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import Markdown, { type Options as MarkdownOptions } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { blockColor, blockLabel, levelLabel, levelOrder, type PoolConfig, type Progress, type QNode } from "../types";
@@ -97,6 +97,19 @@ function saveDrawerWidth(w: number | null): void {
     /* приватный режим */
   }
 }
+
+// Текст вопроса и ответа. Мемоизирован: окно перерисовывается на каждое движение указателя, пока его тащат
+// или тянут ручкой (и раз в секунду от таймера доски), а разбор markdown и подсветка кода повторяются только
+// при смене текста.
+const GFM: MarkdownOptions["remarkPlugins"] = [remarkGfm];
+const HIGHLIGHT: MarkdownOptions["rehypePlugins"] = [rehypeHighlight];
+const Md = memo(function Md({ text, gfm = true }: { text: string; gfm?: boolean }) {
+  return (
+    <Markdown remarkPlugins={gfm ? GFM : undefined} rehypePlugins={HIGHLIGHT}>
+      {text}
+    </Markdown>
+  );
+});
 
 // Клик мышью по кнопке оставляет на ней фокус, и случайный пробел нажал бы её снова (например, › ещё раз).
 // Снимаем фокус только у кликов мышью (detail > 0): с клавиатуры фокус остаётся на месте.
@@ -360,9 +373,7 @@ export function DetailDrawer({
     <section>
       <h2>{isTask ? t("Задача") : t("Вопрос")}</h2>
       <div className="md">
-        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-          {node.question}
-        </Markdown>
+        <Md text={node.question} />
       </div>
     </section>
   );
@@ -374,9 +385,7 @@ export function DetailDrawer({
         <section>
           <h3>{t("Стартовый код")}</h3>
           <div className="md">
-            <Markdown rehypePlugins={[rehypeHighlight]}>
-              {"```python\n" + node.starterCode + "\n```"}
-            </Markdown>
+            <Md text={"```python\n" + node.starterCode + "\n```"} gfm={false} />
           </div>
         </section>
       )}
@@ -384,9 +393,7 @@ export function DetailDrawer({
       <section>
         <h2>{isTask ? t("Эталон / решение") : t("Ответ")}</h2>
         <div className="md">
-          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-            {node.answer}
-          </Markdown>
+          <Md text={node.answer} />
         </div>
       </section>
 
