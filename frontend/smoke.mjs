@@ -1034,5 +1034,26 @@ console.log("OK: people — owner deletes the account (confirm names the email)"
 const lateErrors = unexpectedErrors();
 if (lateErrors.length) fail(`console/page errors:\n${lateErrors.join("\n")}`);
 
+// 27. Регрессия флака CI (2026-09-11): фоновые узлы доски — полосы уровней, колонки, подзаголовки —
+//     не должны зависеть от замера ResizeObserver. Когда замер терялся, они оставались hidden навсегда
+//     (`.bgroup__header` «not visible»), а карточки вопросов с явным размером — нет.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => {
+    window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  });
+  const p2 = await ctx.newPage();
+  await p2.goto(URL + "#/board/data-engineer", { waitUntil: "networkidle" });
+  await p2.waitForSelector(".react-flow__node-blockGroup", { state: "attached", timeout: 15000 });
+  const hiddenStatic = await p2.evaluate(
+    () => [...document.querySelectorAll(".react-flow__node-bands, .react-flow__node-blockGroup, .react-flow__node-subhead")]
+      .filter((n) => n.style.visibility === "hidden").length,
+  );
+  if (hiddenStatic !== 0) fail(`board: ${hiddenStatic} static nodes stay hidden without a ResizeObserver measurement`);
+  if (!(await p2.locator(".bgroup__header").first().isVisible())) fail("board: column headers not visible without a ResizeObserver measurement");
+  await ctx.close();
+  console.log("OK: board columns render without a ResizeObserver measurement (static nodes carry their size)");
+}
+
 console.log("\nALL SMOKE CHECKS PASSED ✓");
 await browser.close();
