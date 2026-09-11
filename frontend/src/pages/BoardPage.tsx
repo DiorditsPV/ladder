@@ -564,7 +564,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   );
 
   // «n»: следующая НЕРАЗОБРАННАЯ карточка по порядку обхода, с переносом по кругу.
-  // Если неразобранных не осталось — просто следующая видимая.
+  // Если неразобранных не осталось — остаёмся на месте: уводить на погашенную «знаю»
+  // карточку значит врать кнопкой «следующее неразобранное».
   const nextUnresolved = useCallback(() => {
     if (!placement) return;
     // только видимый срез (активные фильтры)
@@ -578,7 +579,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         return;
       }
     }
-    moveCurrent(flat[(start + 1 + flat.length) % flat.length]);
   }, [placement, currentId, statuses, moveCurrent, visibleIds, walkOrder]);
 
   // Хоткеи чек-листа (1-3): следующая ВИДИМАЯ карточка в порядке матрицы —
@@ -696,6 +696,15 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     blockOrder(pool).some((b) => !activeBlocks[b]) ||
     levelOrder(pool).some((d) => !activeDiffs[d]) ||
     KINDS.some((k) => !activeKinds[k]);
+  // «Только неразобранное» и в видимом срезе не осталось ни одной не-«знаю» карточки:
+  // доска пуста по делу, а не по ошибке — говорим об этом и даём снять фильтр.
+  const allKnownUnderFilter = useMemo(
+    () =>
+      unresolvedOnly &&
+      graph.length > 0 &&
+      !graph.some((n) => visibleIds.has(n.id) && statuses[n.id] !== "known"),
+    [unresolvedOnly, graph, visibleIds, statuses],
+  );
   const currentNode = currentId ? nodeMap[currentId] : null;
   const selectedNode = selectedId ? nodeMap[selectedId] : null;
 
@@ -822,6 +831,17 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
                 pannable
                 zoomable
               />
+
+              {allKnownUnderFilter && (
+                <Panel position="top-center">
+                  <div className="boardnote" role="status">
+                    <span>{t("Всё разобрано")}</span>
+                    <button className="boardnote__btn" onClick={() => setUnresolvedOnly(false)}>
+                      {t("Показать все")}
+                    </button>
+                  </div>
+                </Panel>
+              )}
 
               {filtersOpen && (
                 <Panel position="top-right">

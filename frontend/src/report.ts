@@ -12,7 +12,7 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-// ---- Экспорт всего банка вопросов (полные формулировки + ответы, без оценок) ----
+// ---- Экспорт всего банка вопросов направления (полные формулировки + ответы) ----
 export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
   const now = new Date();
   const dateStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -84,7 +84,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
   return `<!doctype html>
 <html lang="${getLang()}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${t("Банк вопросов · Ladder")}</title>
+<title>${esc(`${t("Банк вопросов")} · ${pool.label}`)} · Ladder</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; background: #f1f5f9; margin: 0; padding: 24px; }
@@ -119,7 +119,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
 <body>
   <div class="sheet">
     <div class="head">
-      <h1>${t("Банк вопросов")}</h1>
+      <h1>${t("Банк вопросов")} · ${esc(pool.label)}</h1>
       <div class="sub">${nodes.length} ${nWord(nodes.length, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])} · ${dateStr}</div>
     </div>
     <div class="summary">${summaryChips}</div>
@@ -137,7 +137,7 @@ export function downloadBank(nodes: QNode[], pool: PoolConfig): void {
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const a = document.createElement("a");
   a.href = url;
-  a.download = `ladder_bank_${stamp}.html`;
+  a.download = `ladder_bank_${pool.id}_${stamp}.html`;
   document.body.appendChild(a);
   a.click();
   a.remove();

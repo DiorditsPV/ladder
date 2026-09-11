@@ -82,6 +82,19 @@ body {
 .tbbtn.btn--primary:hover { background: #1d4ed8; }
 .tbbtn.btn--quiet { border-color: transparent; background: transparent; color: var(--text-muted); }
 .tbbtn.btn--quiet:hover { background: var(--hover); color: var(--text); border-color: var(--border); }
+/* Плашка над канвой: «Всё разобрано» при фильтре «только неразобранное» — вместо поля
+   погашенных карточек без объяснения. */
+.boardnote {
+  display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 4px 12px var(--shadow-strong);
+  font-size: 13px; color: var(--text);
+}
+.boardnote__btn {
+  padding: 3px 10px; border: 1px solid var(--accent); border-radius: 999px;
+  background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+}
+.boardnote__btn:hover { background: var(--accent); color: #fff; }
+
 /* Точка на «Фильтры»: панель закрыта, а доска отфильтрована — факт не должен прятаться. */
 .filtersbtn__dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
 
@@ -672,6 +685,9 @@ kbd {
 .wizard__preview { display: grid; gap: 10px; }
 .wizard__preview-row { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start; }
 .wizard__preview-dot { width: 10px; height: 10px; margin-top: 4px; border-radius: 999px; }
+/* Ряд «Уровни» без цветной точки: текст должен стоять во второй колонке грида,
+   иначе он ужимается до ширины точки (10px) и рассыпается по букве. */
+.wizard__preview-levels .wizard__preview-text { grid-column: 2; }
 .wizard__preview-text { min-width: 0; display: grid; gap: 2px; }
 .wizard__preview-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--heading); overflow-wrap: anywhere; }
 .wizard__preview-subs { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }

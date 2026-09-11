@@ -194,6 +194,9 @@ export const EN: Record<string, string> = {
   "Развернуть всё": "Expand all",
   "Свернуть всё": "Collapse all",
   "Ничего не найдено": "Nothing found",
+  "Всё разобрано": "All done",
+  "Показать все": "Show all",
+  "В направлении пока нет вопросов": "This direction has no questions yet",
 
   // --- QuestionNode ---
   "скрыт · ": "hidden · ",
@@ -203,7 +206,6 @@ export const EN: Record<string, string> = {
   "Заготовка кода": "Starter code",
   "Критерии": "Criteria",
   "Банк пуст.": "The bank is empty.",
-  "Банк вопросов · Ladder": "Question bank · Ladder",
 
   // --- study-progress: чек-лист разбора (статусы вне сессии) ---
   "Знаю (1)": "Know it (1)",
