@@ -186,20 +186,33 @@ The answer (Markdown, code blocks supported)…
 
 ## API
 
-| method | path                        | purpose                                                |
-|--------|-----------------------------|--------------------------------------------------------|
-| GET    | `/api/pools`                | tracks with sections, question counts and checklist summary; without a session — demo tracks only, no summary |
-| POST   | `/api/pools`                | create a track from a preset or from your own sections |
-| PUT    | `/api/pools/{id}`           | rename a track or edit its sections and levels         |
-| POST   | `/api/pools/sync`           | re-read `content/` into the database (owner)           |
-| GET    | `/api/graph?pool=<id>`      | nodes plus import errors; without a session — demo tracks only |
-| PUT    | `/api/progress/{node_id}`   | set a card's status (`{status}`: known / review / unknown) |
-| GET    | `/api/progress?pool=<id>`   | the current user's checklist for a track               |
-| POST   | `/api/auth/password`        | change your own password (wrong current one → 403, new one under 8 characters → 422) |
+| method              | path                               | purpose                                                                                                       |
+|---------------------|------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| GET                 | `/api/pools`                       | tracks with sections, question counts and checklist summary; without a session — demo tracks only, no summary |
+| POST                | `/api/pools`                       | create a track from a preset or from your own sections                                                        |
+| PUT                 | `/api/pools/{id}`                  | rename a track or edit its sections and levels                                                                |
+| POST                | `/api/pools/sync`                  | re-read `content/` into the database (owner)                                                                  |
+| GET                 | `/api/graph?pool=<id>`             | nodes plus import errors; without a session — demo tracks only                                                |
+| PUT                 | `/api/progress/{node_id}`          | set a card's status (`{status}`: known / review / unknown)                                                    |
+| GET                 | `/api/progress?pool=<id>`          | the current user's checklist for a track                                                                      |
+| POST                | `/api/auth/password`               | change your own password (wrong current one → 403, new one under 8 characters → 422)                          |
+| GET                 | `/api/pools/{id}`                  | one track: sections, sub-columns, levels, counts                                                              |
+| GET                 | `/api/nodes?pool=<id>&…`           | cards of a track, filtered by `block`, `subblock`, `difficulty`, `topic`, `tag`, `kind`, text `q`             |
+| GET/POST/PUT/DELETE | `/api/nodes/{id}`                  | one card: every field, an explicit id on create, moves between tracks, sections and levels on update          |
+| GET/PUT/DELETE      | `/api/pools/{id}/topics[/{topic}]` | topics of a track with counts; rename or delete a topic across its cards                                      |
+| GET                 | `/api/tags[?pool=<id>]`            | the concept tag vocabulary and the tags a track already uses                                                  |
 
-That is the core. The full list (node CRUD on `/api/nodes`, import on `/api/import`, auth on
-`/api/auth/*`, accounts on `/api/users` — create with a one-time password, reset, delete) and the
-schemas are in the Swagger UI at `/docs`.
+That is the core. The full list (import on `/api/import`, auth on `/api/auth/*`, accounts on
+`/api/users` — create with a one-time password, reset, delete) and the schemas are in the Swagger UI
+at `/docs`.
+
+### MCP server
+
+`tools/ladder-mcp` is an MCP server over this API: list and edit tracks, their sections and
+sub-columns (vertical), levels (horizontal), topics and question cards — 24 tools, from
+`get_direction` with a coverage matrix to `create_questions` in batches. It signs in as an account
+that may edit content and runs over stdio against a local container or the live site. Setup,
+the tool list and tests are in [tools/ladder-mcp/README.md](tools/ladder-mcp/README.md).
 
 ## Tests
 

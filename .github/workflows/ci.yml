@@ -76,6 +76,12 @@ jobs:
           INTERVIEW_OWNER_PASSWORD: interview-dev   # детерминированный owner-пароль для auth-фикстур
         run: python -m pytest -q
 
+      # --- 4b. MCP-сервер (tools/ladder-mcp): инструменты против настоящего API в процессе, своя БД ---
+      - name: MCP tests
+        run: |
+          pip install -r tools/ladder-mcp/requirements.txt
+          python -m pytest -q tools/ladder-mcp/tests -p no:cacheprovider
+
       # --- 5. Браузер для smoke (на раннере — без allowlist-ограничений) ---
       - name: Install Playwright Chromium
         working-directory: frontend
