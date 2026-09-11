@@ -279,9 +279,9 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
    карточка не прыгает при листании. Пользовательский сдвиг — transform (ladder.cardPos), размер —
    --card-w / --card-h (ladder.cardSize; без них — ширина min(760px, 58vw), высота по содержимому).
    Потолок — min(92vw, 1400px) и область доски; на телефоне (≤ 820px, см. @media ниже) окно почти во всю
-   ширину. Под окном лёгкий скрим (.cardscrim), доска видна и кликается. z-index: скрим 18 < окно 20, оба
-   выше канвы (React Flow — 0/5) и ниже ⚙ (45) и модалок (50). Цвет верхней рамки — цвет колонки (inline);
-   жёсткая тень оформления 37 и тёмной темы — в design-themes.css. */
+   ширину. Под окном лёгкий скрим (.cardscrim), доска видна и кликается. z-index: скрим 18 < окно фильтров
+   19 < окно карточки 20 < окно фильтров, с которым работали последним (21); всё ниже ⚙ (45) и модалок (50).
+   Цвет верхней рамки — цвет колонки (inline); жёсткая тень оформления 37 и тёмной темы — в design-themes.css. */
 .drawer--center {
   position: absolute; z-index: 20; left: 0; right: 0; margin-inline: auto;
   top: max(16px, calc((100% - 72vh) / 2));
@@ -404,18 +404,20 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 .btn--primary { background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 600; }
 .btn--primary:hover { background: #1d4ed8; }
 
-/* ---- панель фильтров: popover у правого края канвы, открывается кнопкой toolbar'а ----
-   Обёртка React Flow растянута на всю высоту канвы (top+bottom), чтобы max-height панели
-   считался от неё; клики сквозь пустую часть обёртки идут на канву (pointer-events).
-   Снизу оставлен запас под мини-карту. */
-.react-flow__panel.top.right { bottom: 0; display: flex; align-items: flex-start; pointer-events: none; }
+/* ---- окно фильтров: плавающее над доской, открывается кнопкой toolbar'а ----
+   Место по умолчанию — у правого края доски под шапкой; тащится за шапку (ladder.filtersPos, floating.ts)
+   и не выходит за канву (при панели карточки справа встаёт левее неё). Стиль — как у окна карточки:
+   рамка и заметная тень. Шапка стоит, прокручивается тело; снизу — запас под мини-карту. */
 .filterpanel {
-  width: 340px; max-width: calc(100vw - 40px); max-height: calc(100% - 150px); overflow-y: auto; pointer-events: auto;
-  background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 12px; box-shadow: 0 4px 16px var(--shadow); display: flex; flex-direction: column; gap: 8px;
+  position: absolute; z-index: 19; top: 15px; right: 15px;
+  width: 340px; max-width: calc(100% - 30px); max-height: max(220px, calc(100% - 180px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel-bg); border: 1px solid var(--border-strong); border-radius: 10px;
+  box-shadow: 0 22px 52px -10px var(--shadow-strong), 0 8px 20px -6px var(--shadow-strong), 0 1px 3px var(--shadow);
   backdrop-filter: blur(4px);
 }
-.fp__head { display: flex; align-items: center; justify-content: space-between; }
+/* Окна перекрываются (карточка шире, фильтры у правого края): сверху то, с которым работали последним. */
+.filterpanel--top { z-index: 21; }
 .fp__head {
   display: flex; align-items: center; justify-content: space-between; flex: none;
   padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border);

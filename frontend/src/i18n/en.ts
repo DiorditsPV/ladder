@@ -76,6 +76,7 @@ export const EN: Record<string, string> = {
   "Фильтры": "Filters",
   "Фильтры активны": "Filters active",
   "Закрыть фильтры": "Close filters",
+  "Потяните за шапку, чтобы переместить окно; двойной клик — вернуть на место": "Drag the header to move the window; double-click to put it back",
   "Поиск по вопросам…": "Search questions…",
   "Поиск по вопросам": "Search questions",
   "Блоки": "Blocks",

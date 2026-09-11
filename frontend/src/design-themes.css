@@ -50,9 +50,13 @@ html[data-design="37"]:not([data-theme="dark"]) .bgroup__header {
 html[data-design="37"]:not([data-theme="dark"]) .bgroup__header { background: var(--plate) !important; color: #fff !important; }
 html[data-design="37"]:not([data-theme="dark"]) .topbar { border-bottom: 2px solid #0f0f0f; }
 html[data-design="37"]:not([data-theme="dark"]) .hud { border: 2px solid #0f0f0f; box-shadow: 2.5px 2.5px 0 #0f0f0f; }
-/* карточка по центру — язык HUD: жёсткая рамка и плоская тень (мягкая --shadow в 37 прозрачна) */
+/* окна над доской (карточка по центру, фильтры) — язык HUD: жёсткая рамка и плоская тень
+   (мягкая --shadow в 37 прозрачна) */
 html[data-design="37"]:not([data-theme="dark"]) .drawer--center {
   border: 2px solid #0f0f0f; border-top-width: 4px; border-radius: 0; box-shadow: 6px 6px 0 #0f0f0f;
+}
+html[data-design="37"]:not([data-theme="dark"]) .filterpanel {
+  border: 2px solid #0f0f0f; border-radius: 0; box-shadow: 5px 5px 0 #0f0f0f;
 }
 
 /* ============================ 58 · Изыскания (дефолт) ============================
@@ -104,9 +108,14 @@ html[data-theme="dark"] .bgroup__header {
 }
 html[data-theme="dark"] .bgroup__header { background: var(--plate) !important; color: #fff !important; }
 html[data-theme="dark"] .hud { border: 1.5px solid var(--border); }
-/* карточка по центру: рамка + глубокая тень — над утопленной канвой она читается приподнятой */
+/* окна над доской (карточка по центру, фильтры): рамка + глубокая тень — над утопленной канвой
+   они читаются приподнятыми */
 html[data-theme="dark"] .drawer--center {
   border: 1.5px solid var(--border-strong); border-top-width: 4px; border-radius: 0;
   box-shadow: 0 28px 64px -10px rgba(0, 0, 0, .75), 0 0 0 1px rgba(0, 0, 0, .35);
+}
+html[data-theme="dark"] .filterpanel {
+  border: 1.5px solid var(--border-strong); border-radius: 0;
+  box-shadow: 0 24px 56px -12px rgba(0, 0, 0, .75), 0 0 0 1px rgba(0, 0, 0, .35);
 }
 html[data-theme="dark"] .topbar { border-bottom: 1.5px solid var(--border); }

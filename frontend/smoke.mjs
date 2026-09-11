@@ -752,6 +752,40 @@ await page.waitForSelector(".drawer", { state: "detached", timeout: 3000 });
 if ((await page.locator(".cardscrim").count()) !== 0) fail("scrim must go away with the card");
 console.log("OK: ⚙ «Карточка вопроса» switches the open card back to the center");
 
+// 22c. Окно фильтров — плавающее (решение владельца 2026-09-11): по умолчанию у правого края под шапкой доски,
+//      тащится за шапку (не за ✕), место (ladder.filtersPos) переживает перезагрузку, двойной клик по шапке
+//      возвращает его на место.
+await page.locator(".topbar .filtersbtn").click();
+const fpanel = page.locator(".filterpanel");
+await fpanel.waitFor({ timeout: 3000 });
+const canvasBox = await page.locator(".canvas").boundingBox();
+const f0 = await fpanel.boundingBox();
+if (Math.abs(canvasBox.x + canvasBox.width - (f0.x + f0.width) - 15) > 2 || Math.abs(f0.y - canvasBox.y - 15) > 2) {
+  fail(`filters window must start at the right edge under the board header: ${JSON.stringify(f0)} in ${JSON.stringify(canvasBox)}`);
+}
+const fhead = await page.locator(".fp__heading").boundingBox();
+const fx = fhead.x + 10;
+const fy = fhead.y + fhead.height / 2;
+await page.mouse.move(fx, fy);
+await page.mouse.down();
+await page.mouse.move(fx - 250, fy + 40, { steps: 6 });
+await page.mouse.move(fx - 500, fy + 80, { steps: 6 });
+await page.mouse.up();
+const f1 = await fpanel.boundingBox();
+if (Math.abs(f1.x - (f0.x - 500)) > 2 || Math.abs(f1.y - (f0.y + 80)) > 2) fail(`dragging the filters header did not move the window: ${JSON.stringify(f0)} → ${JSON.stringify(f1)}`);
+if (!(await page.evaluate(() => localStorage.getItem("ladder.filtersPos")))) fail("filters window position was not stored");
+await page.reload({ waitUntil: "networkidle" });
+await fpanel.waitFor({ timeout: 10000 }); // открытость фильтров запоминается, как раньше
+const f2 = await fpanel.boundingBox();
+if (Math.abs(f2.x - f1.x) > 1 || Math.abs(f2.y - f1.y) > 1) fail(`filters window position did not survive reload: ${JSON.stringify(f1)} → ${JSON.stringify(f2)}`);
+await page.locator(".fp__heading").dblclick();
+await page.waitForFunction((x) => Math.abs(document.querySelector(".filterpanel").getBoundingClientRect().x - x) <= 1, f0.x, { timeout: 3000 })
+  .catch(() => fail("double click on the filters header did not put the window back"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.filtersPos"))) !== null) fail("filters window back in place must drop the stored offset");
+await page.locator(".fp__close").click();
+await fpanel.waitFor({ state: "detached", timeout: 3000 });
+console.log(`OK: filters window drags by its header (${Math.round(f0.x)} → ${Math.round(f1.x)}), survives reload, double click puts it back`);
+
 // Работа с банком — страница #/bank/<pool> (pools-main-menu).
 await page.goto(URL + "#/bank/data-engineer", { waitUntil: "load" });
 await page.waitForSelector(".bankbrowser--embedded", { timeout: 10000 });
