@@ -46,19 +46,6 @@ def seed_pool_if_empty(db: Database, tenant_id: str, pool: PoolCfg) -> Tuple[int
     return inserted, errors
 
 
-def seed_interviewer_if_empty(db: Database, tenant_id: str) -> int:
-    """Сид одного интервьюера по умолчанию («Я») при пустой таблице interviewers тенанта.
-
-    Без auth у сессии всё равно должен быть проводивший: дефолтный интервьюер
-    преселектится в UI. Идемпотентно: при непустой таблице ничего не делает.
-    """
-    db.ensure_tenant(tenant_id)
-    if db.count_interviewers(tenant_id) > 0:
-        return 0
-    db.create_interviewer(tenant_id, {"name": "Я", "role": "Ведущий"})
-    return 1
-
-
 def seed_owner_if_empty(db: Database, tenant_id: str, email: str, password: str) -> int:
     """Сид первого owner-пользователя при пустой таблице users тенанта.
 

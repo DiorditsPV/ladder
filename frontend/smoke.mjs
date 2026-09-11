@@ -1,4 +1,4 @@
-// Headless smoke-тест реального рантайма (граф рендерится, нода → drawer, оценка → ребро).
+// Headless smoke-тест реального рантайма (доска рендерится, карточка → drawer, чек-лист, банк).
 // Запуск: node smoke.mjs   (сервер должен слушать http://localhost:8000)
 import { chromium } from "playwright";
 
@@ -183,7 +183,7 @@ console.log("OK: pool create from preset / rename / delete");
 //     (язык хранится в localStorage — обязательно вернуть RU, остальные шаги идут по русским строкам).
 await page.locator(".langswitch").first().click();
 await page.waitForFunction(() => document.querySelector(".home__h2")?.textContent === "Tracks", null, { timeout: 3000 });
-if ((await page.locator(".poolcard__start").first().innerText()) !== "Start interview") fail("EN: start button not translated");
+if ((await page.locator(".poolcard__start").first().innerText()) !== "Question bank") fail("EN: bank button not translated");
 await page.locator(".langswitch").first().click();
 await page.waitForFunction(() => document.querySelector(".home__h2")?.textContent === "Направления", null, { timeout: 3000 });
 console.log("OK: RU/EN switch");
@@ -232,15 +232,14 @@ const drawerText = await page.locator(".drawer__body").innerText();
 if (drawerText.length < 50) fail("drawer body too short");
 console.log("OK: drawer opened with content");
 
-// 3b. Клик задаёт «текущий вопрос» → появляется HUD ведущего.
+// 3b. Клик задаёт «текущую карточку» → появляется HUD.
 await page.waitForSelector(".hud", { timeout: 3000 });
 const hudTitle = await page.locator(".hud__title").innerText();
 if (!hudTitle.includes("ROW_NUMBER")) fail(`HUD shows wrong question: ${hudTitle}`);
-console.log("OK: interviewer HUD shows current question");
+console.log("OK: HUD shows current question");
 
-// 4. Чек-лист разбора вне сессии: клик по кнопке «Знаю» в HUD → карточка помечена статусом
-//    «знаю» (Ruling C3: вне сессии HUD ставит статусы чек-листа, не оценки — звёзды/черновые
-//    оценки без сессии убраны совсем). Повторный клик по той же кнопке снимает статус.
+// 4. Чек-лист разбора: клик по кнопке «Знаю» в HUD → карточка помечена статусом «знаю».
+//    Повторный клик по той же кнопке снимает статус.
 const rowNumberCard = page.locator(".qnode").filter({ has: page.locator(".qnode__title", { hasText: "ROW_NUMBER" }) });
 await page.locator(".hud__score .statusbtn--known").click();
 await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 3000 });
@@ -275,18 +274,18 @@ if (dimmedByKind < 1) fail("kind filter did not dim any nodes");
 await page.locator(".fp__chip", { hasText: "вопрос" }).click(); // вернуть
 console.log(`OK: kind filter dims ${dimmedByKind} nodes`);
 
-// 6. «Дальше» на листовой ноде (без исходящих рёбер) всё равно переходит дальше.
+// 6. «n» уводит к следующей неразобранной карточке (в том числе с последней в колонке).
 await page.locator(".qnode__title", { hasText: "KubernetesExecutor" }).first().click();
 await page.waitForSelector(".hud", { timeout: 3000 });
 const beforeNext = await page.locator(".hud__title").innerText();
-await page.locator(".hud button.btn--primary").click();
+await page.keyboard.press("n");
 await page.waitForTimeout(500);
 const afterNext = await page.locator(".hud__title").innerText();
-if (afterNext === beforeNext) fail("«Дальше» stuck on leaf node");
-console.log("OK: «Дальше» advances from a leaf node");
+if (afterNext === beforeNext) fail("«n» stuck on the current card");
+console.log("OK: «n» advances to the next unreviewed card");
 
 // 6b. Настройки отображения (topbar-settings): панель под ⚙ (пункт «•••») открывается и содержит
-// тумблеры направляющих, точек-фона, агенды, скрытых и таймера.
+// тумблеры направляющих, точек-фона, скрытых и таймера.
 await openSettings();
 const tbBtns = await page.locator(".setdrawer .tb__toggle").count();
 if (tbBtns < 6) fail(`display toggles missing in settings drawer (got ${tbBtns})`);
@@ -306,15 +305,15 @@ const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
 
-// 7. Ruling C3: черновых оценок вне сессии больше нет (шаг 4 ставит статус чек-листа, не оценку) —
-//    экспортировать вне сессии нечего, пункт остаётся выключен. Реальное скачивание .html
-//    проверяется в сессии, где есть настоящие оценки (см. шаг «Возобновление сессии»).
-await page.locator(".topbar .exportbtn").click();
-await page.waitForSelector(".exportmenu", { timeout: 3000 });
-if (!(await page.locator(".exportmenu .dlbtn").isDisabled())) fail("report export must stay disabled without a session (no scores to report)");
-await page.keyboard.press("Escape");
-await page.waitForSelector(".exportmenu", { state: "detached", timeout: 3000 });
-console.log("OK: report export stays disabled outside a session");
+// 7. Экспорт — одна кнопка toolbar'а (без выпадающего меню), сразу отдаёт банк вопросов.
+const expBtn = page.locator(".topbar .exportbtn");
+if ((await expBtn.count()) !== 1) fail("toolbar must offer exactly one export control");
+if ((await expBtn.getAttribute("aria-haspopup")) !== null) fail("export control must not be a dropdown");
+if ((await page.locator(".exportmenu").count()) !== 0) fail("export dropdown menu must be gone");
+const [dlToolbar] = await Promise.all([page.waitForEvent("download"), expBtn.click()]);
+const toolbarFn = dlToolbar.suggestedFilename();
+if (!toolbarFn.includes("bank") || !toolbarFn.endsWith(".html")) fail(`toolbar export wrong file: ${toolbarFn}`);
+console.log(`OK: toolbar export is a single button (${toolbarFn})`);
 
 // 8. Тёмная тема: переключатель в настройках меняет data-theme и тёмный фон.
 const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
@@ -326,27 +325,12 @@ const after = await page.evaluate(() => document.documentElement.dataset.theme);
 if (after === before) fail(`theme toggle did not change theme (${before} → ${after})`);
 console.log(`OK: theme toggles (${before} → ${after})`);
 
-// --- Накопленные проверки фич. Порядок важен (объяснения у каждой):
-//  локально-стейтовые (note/timer/search/unscored/progress) → сессия (стартует свою)
-//  → resume ПОСЛЕДНЕЙ (делает page.reload(), стирающий всё накопленное состояние).
+// --- Накопленные проверки фич. Порядок важен: локально-стейтовые (таймер/поиск/чек-лист)
+//  идут до шага 21, который делает page.reload() и стирает накопленное состояние.
 
-// 9. Заметка на ноду: ввод в drawer переживает закрытие/повторное открытие.
-// Открываем/закрываем drawer текущего вопроса клавиатурой (Enter/Esc) — без клика по карточке.
-await page.keyboard.press("Escape"); // закрыть открытый drawer (current сохраняется)
+// 9b. Таймер разбора: по умолчанию скрыт (topbar-settings), включается тумблером в ⚙ — и тикает.
+await page.keyboard.press("Escape"); // закрыть drawer, если открыт с предыдущих шагов
 await page.waitForTimeout(150);
-await page.keyboard.press("Enter"); // открыть drawer текущего вопроса
-await page.waitForSelector(".drawer__note", { timeout: 3000 });
-const noteText = "smoke-note-проверка";
-await page.locator(".drawer__note").fill(noteText);
-await page.keyboard.press("Escape");
-await page.waitForTimeout(150);
-await page.keyboard.press("Enter"); // повторно открыть тот же вопрос
-await page.waitForSelector(".drawer__note", { timeout: 3000 });
-const restored = await page.locator(".drawer__note").inputValue();
-if (restored !== noteText) fail(`note not retained across reopen: "${restored}"`);
-console.log("OK: node note retained across reopen");
-
-// 9b. Таймер: по умолчанию скрыт (topbar-settings), включается тумблером в ⚙ — и тикает.
 if ((await page.locator(".hud__timer").count()) !== 0) fail("HUD timer must be hidden by default");
 await toggleSetting("Таймер");
 await page.waitForSelector(".hud__timer", { timeout: 3000 });
@@ -372,14 +356,13 @@ const dimCleared = await page.locator(".qnode--dimmed").count();
 if (dimCleared >= dimSearch) fail(`clearing search did not remove dim (${dimSearch} → ${dimCleared})`);
 console.log(`OK: question search dims ${dimSearch}, clears to ${dimCleared}`);
 
-// 9d/9e. board-toolbar (ТЗ 13): без сессии оценки — черновик: ни чипа «Только неоценённые» в фильтрах,
-//        ни прогресса интервью в шапке. Оба проверяются в активной сессии (шаг 10).
-if ((await page.locator(".fp__chip", { hasText: "Только неоценённые" }).count()) !== 0) fail("«Только неоценённые» must be hidden without a session");
-if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must be hidden without a session");
-console.log("OK: no unscored-only chip and no progress bar without a session");
+// 9d. Прогресс-фильтр — ровно один чип «Только неразобранное» (чипа оценок больше нет).
+await page.waitForSelector(".filterpanel", { timeout: 3000 });
+if ((await page.locator(".fp__chip", { hasText: "Только неразобранное" }).count()) !== 1) fail("«Только неразобранное» chip missing");
+if ((await page.locator(".topbar .progress").count()) !== 0) fail("board toolbar must not carry a progress bar");
+console.log("OK: progress filter is the checklist chip only");
 
 // 9f. UX-полировка: HUD-прогресс+топик, чип переполнения тегов, свёртка панели тегов.
-// (ДО старта сессии/resume: нужен активный HUD текущего вопроса — после resume-reload его нет.)
 await page.waitForSelector(".hud__progress", { timeout: 3000 });
 const hudProg = await page.locator(".hud__progress").innerText();
 if (!hudProg.includes("/")) fail(`HUD progress missing fraction: "${hudProg}"`);
@@ -406,8 +389,8 @@ const tagsAgain = await page.locator(".fp__tag").count();
 if (tagsAgain !== tagsBefore) fail(`filter panel did not restore tags (${tagsAgain} vs ${tagsBefore})`);
 console.log(`OK: filter panel close/reopen keeps ${tagsBefore} tags`);
 
-// 9c. Чек-лист (study-progress): вне сессии «1» ставит статус «знаю» текущей карточке и уводит к
-//     следующей; в drawer вместо звёзд — кнопки статусов, повторный клик той же кнопки снимает статус.
+// 9g. Чек-лист (study-progress): «1» ставит статус «знаю» текущей карточке и уводит к следующей;
+//     в drawer — кнопки статусов, повторный клик той же кнопки снимает статус.
 //     Проверка относительная: после клика число «знаю» меняется на ±1 и возвращается вторым кликом.
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 await page.waitForSelector(".drawer", { timeout: 3000 });
@@ -416,7 +399,7 @@ await page.waitForSelector('.qnode__status[data-status="known"]', { timeout: 300
 if ((await rowNumberCard.locator('.qnode__status[data-status="known"]').count()) !== 1) fail("checklist: known status not on the current card");
 const knownAfterKey = await page.locator('.qnode__status[data-status="known"]').count();
 await page.waitForSelector(".drawer .statusbtn--known", { timeout: 3000 });
-if ((await page.locator(".drawer .drawer__scoring .scorebtn").count()) !== 0) fail("drawer shows scoring stars outside a session");
+if ((await page.locator(".drawer .drawer__scoring .scorebtn").count()) !== 0) fail("drawer still shows scoring stars");
 await page.locator(".drawer .statusbtn--known").click();
 await page.waitForFunction((n) => Math.abs(document.querySelectorAll('.qnode__status[data-status="known"]').length - n) === 1, knownAfterKey, { timeout: 3000 });
 await page.locator(".drawer .statusbtn--known").click();
@@ -424,194 +407,29 @@ await page.waitForFunction((n) => document.querySelectorAll('.qnode__status[data
 console.log(`OK: checklist — «1» sets status, drawer button toggles it (${knownAfterKey} known)`);
 // (после «1» вьюпорт сдвинут к следующей карточке — дальше идёт переход на экран настройки, это не мешает)
 
-// 10. Старт сессии (v1-closure): «Начать интервью» на карточке DE → экран настройки интервью
-//     (кандидат, разделы, уровни, набор) → автоподбор 5 вопросов → доска с ?session=<id>: план ведёт
-//     (HUD «1/5», вопросы вне плана затемнены), затем оценка текущего в HUD.
-await page.goto(URL + "#/", { waitUntil: "load" });
-await page.waitForSelector('.poolcard[data-pool="data-engineer"] .poolcard__start', { timeout: 10000 });
-await page.locator('.poolcard[data-pool="data-engineer"] .poolcard__start').click();
-await page.waitForFunction(() => location.hash.startsWith("#/setup/data-engineer"), null, { timeout: 5000 });
-await page.waitForSelector(".setup__name", { timeout: 5000 });
-await page.locator(".setup__name").fill("Cmp Bot");
-await page.locator(".setup .cand-sen").fill("middle");
-await page.locator(".setup__count").fill("5");
-await page.waitForFunction(
-  () => /войдёт 5 /.test(document.querySelector(".setup__summary")?.textContent ?? ""),
-  null,
-  { timeout: 5000 },
-);
-await page.locator(".setup__start").click();
-await page.waitForFunction(() => /^#\/board\/data-engineer\?session=\d+/.test(location.hash), null, { timeout: 5000 });
-await page.waitForSelector(".session__active", { timeout: 5000 });
-const activeHdr = await page.locator(".session__active").innerText();
-if (!activeHdr.includes("Cmp Bot")) fail(`active session missing candidate: "${activeHdr}"`);
-if (!activeHdr.includes("Сессия #")) fail(`active session missing session id: "${activeHdr}"`);
-// board-toolbar: в сессии второй ряд шапки, кнопки старта в toolbar'е нет.
-if ((await page.locator(".topbar > .topbar__row").count()) !== 2) fail("active session must add a second topbar row");
-if ((await page.locator(".topbar .session__start").count()) !== 0) fail("start button must be hidden during a session");
-console.log(`OK: session starts via setup page (${activeHdr.replace(/\s+/g, " ").slice(0, 50)})`);
-// План: первый вопрос плана становится текущим сам — HUD показывает позицию «1/5»; вне плана карточки гаснут.
-await page.waitForSelector(".hud__progress", { timeout: 10000 });
-const hudPlan = await page.locator(".hud__progress").innerText();
-if (!/^1\/5\b/.test(hudPlan)) fail(`HUD should show plan position 1/5: "${hudPlan}"`);
-const dimmedByPlan = await page.locator(".qnode--dimmed").count();
-if (dimmedByPlan < 50) fail(`nodes outside the plan must be dimmed (61 − 5 = 56), got ${dimmedByPlan}`);
-console.log(`OK: session plan drives the board (HUD ${hudPlan.split(" ")[0]}, ${dimmedByPlan} dimmed outside plan)`);
-await page.waitForSelector(".hud__score .scorebtn", { timeout: 3000 });
-await page.locator(".hud__score .scorebtn").nth(2).click(); // 3/5 → персист в сессию
-await page.waitForTimeout(400);
-
-// 9b. В сессии drawer по-прежнему оценивает (не статусы). Карточку берём клавиатурой, а не по DOM:
-//     первая .qnode плана может лежать вне вьюпорта канвы (план случайный), и клик по ней — флак.
-//     «n» — следующий неоценённый вопрос плана, «Enter» — открыть его drawer.
-await page.keyboard.press("n");
-await page.keyboard.press("Enter");
-await page.waitForSelector(".drawer .drawer__scoring .scorebtn", { timeout: 3000 });
-if ((await page.locator(".drawer .statusbtn").count()) !== 0) fail("session drawer shows checklist statuses instead of scoring");
-await page.locator(".drawer .drawer__scoring .scorebtn").nth(1).click();
-await page.waitForFunction(() => document.querySelectorAll(".qnode--scored").length >= 2, null, { timeout: 3000 });
-await page.keyboard.press("Escape");
-console.log("OK: session drawer scores via stars (no checklist statuses)");
-
-// 10a. Прогресс интервью — только в сессии: подпись с дробью, заполнение > 0 после оценки.
-await page.waitForSelector(".topbar .progress", { timeout: 3000 });
-const progLabel = await page.locator(".progress__label").innerText();
-if (!progLabel.includes("/")) fail(`progress label has no fraction: "${progLabel}"`);
-const fillW = await page.locator(".progress__fill").evaluate((el) => el.style.width);
-if (!(parseFloat(fillW) > 0)) fail(`progress fill not advanced after scoring: "${fillW}"`);
-console.log(`OK: session progress bar (${progLabel}, fill ${fillW})`);
-
-// 10b. «Только неоценённые» (чип есть только в сессии): оценённая нода (ROW_NUMBER) гаснет.
-await page.waitForSelector(".filterpanel", { timeout: 3000 }); // открыта с шага 1a (персист)
-const unscoredBtn = page.locator(".fp__chip", { hasText: "Только неоценённые" });
-if ((await unscoredBtn.count()) !== 1) fail("«Только неоценённые» chip missing in session");
-await unscoredBtn.click();
-await page.waitForTimeout(250);
-const dimUnscored = await page.locator(".qnode--dimmed").count();
-if (dimUnscored < 1) fail("unscored-only did not dim scored nodes");
-await unscoredBtn.click();
-await page.waitForTimeout(250);
-const dimUnscoredAfter = await page.locator(".qnode--dimmed").count();
-if (dimUnscoredAfter >= dimUnscored) fail(`toggling off did not clear dim (${dimUnscored} → ${dimUnscoredAfter})`);
-console.log(`OK: «только неоценённые» dims ${dimUnscored}, clears to ${dimUnscoredAfter}`);
-
-// 10d. Ссылка для коллеги (v1-closure): интервьюер выдаёт ссылку; новая вкладка без cookie входит по
-//      #/join/<token> и видит эту же сессию; гость ограничен ею (без «Выйти» и без выдачи ссылок),
-//      главная для гостя тоже ведёт на доску сессии.
-await page.locator(".session .invitebtn").click();
-await page.waitForSelector(".invitemenu", { timeout: 3000 });
-await page.locator(".invite__member").click();
-await page.waitForSelector(".invite__url", { timeout: 5000 });
-const inviteUrl = await page.locator(".invite__url").inputValue();
-if (!/#\/join\/[A-Za-z0-9_-]+$/.test(inviteUrl)) fail(`invite url malformed: ${inviteUrl}`);
-await page.keyboard.press("Escape");
-const guestCtx = await browser.newContext();
-const guest = await guestCtx.newPage();
-await guest.goto(inviteUrl, { waitUntil: "load" });
-await guest.waitForSelector(".session__active", { timeout: 10000 });
-const guestHdr = await guest.locator(".session__active").innerText();
-if (!guestHdr.includes("Cmp Bot")) fail(`guest does not see the invited session: "${guestHdr}"`);
-if ((await guest.locator(".session .invitebtn").count()) !== 0) fail("guest must not see the invite button");
-if ((await guest.locator(".session__leave").count()) !== 0) fail("guest must not see «Выйти»");
-await guest.goto(inviteUrl.replace(/#.*$/, "#/"), { waitUntil: "load" });
-await guest.waitForSelector(".session__active", { timeout: 10000 });
-// Отзыв: владелец отзывает ссылку → гость после перезагрузки видит экран входа, повторный вход по
-// ссылке показывает пояснение (410).
-await page.locator(".session .invitebtn").click();
-await page.waitForSelector(".invite__revoke", { timeout: 5000 });
-await page.locator(".invite__revoke").first().click();
-await page.waitForSelector(".invite__revoke", { state: "detached", timeout: 5000 });
-await page.keyboard.press("Escape");
-await guest.reload({ waitUntil: "load" });
-await guest.waitForSelector(".login__card", { timeout: 10000 });
-await guest.goto(inviteUrl, { waitUntil: "load" });
-await guest.reload({ waitUntil: "load" }); // hash-переход не перезапускает AuthGate
-await guest.waitForSelector(".login__notice", { timeout: 10000 });
-await guestCtx.close();
-console.log("OK: guest joins by invite link, scoped to the session; revoke kicks the guest out");
-
-// 10c. Итог интервью (v1-closure): «Завершить» → решение + комментарий → статус «Завершена» в ряду
-//      сессии; кнопка превращается в «Итог» (правка итога).
-await page.locator(".session .cta-done").click();
-await page.waitForSelector(".finish", { timeout: 3000 });
-await page.locator('.finish input[value="hire"]').check();
-await page.locator(".finish__summary").fill("Сильный SQL, уверенный Airflow");
-await page.locator(".finish__submit").click();
-await page.waitForSelector(".session__status", { timeout: 5000 });
-const statusText = await page.locator(".session__status").innerText();
-if (!statusText.includes("Завершена") || !statusText.includes("Нанимать")) fail(`session verdict badge wrong: "${statusText}"`);
-if ((await page.locator(".session .cta-done").innerText()) !== "Итог") fail("finish button should turn into «Итог»");
-console.log(`OK: interview finished with verdict (${statusText})`);
-
-// 11. Возобновление сессии: создать сессию+оценку через API → страница «Сессии» → «Открыть»
-//     → доска подключается по ?session= и восстанавливает оценки. «Загрузить сессию» с доски убран.
-const sid = (await (await page.request.post(URL + "api/sessions", { data: { candidate: "SmokeResume" } })).json()).id;
-await page.request.post(`${URL}api/sessions/${sid}/score`, { data: { nodeId: "sql-01", score: 5 } });
-await page.goto(URL + "#/sessions", { waitUntil: "load" });
-await page.waitForSelector(`tr[data-session="${sid}"] a.iconbtn`, { timeout: 10000 });
-await page.locator(`tr[data-session="${sid}"] a.iconbtn`, { hasText: "Открыть" }).click();
-await page.waitForSelector(".session__active", { timeout: 5000 });
-const active = await page.locator(".session__active").innerText();
-if (!active.includes("SmokeResume")) fail(`resume did not load session: ${active}`);
-// Граф и сессия грузятся независимо: .session__active может появиться раньше карточек — ждём оценку, а не считаем сразу.
-await page.waitForSelector(".qnode--scored", { timeout: 10000 }).catch(() => fail("resume did not restore scores onto the board"));
-const scoredCount = await page.locator(".qnode--scored").count();
-// В активной сессии экспорт отчёта в toolbar'е активен (оценки есть) и есть «Выйти»;
-// после «Выйти» доска без сессии ведёт на форму старта.
-if ((await page.locator(".topbar .exportbtn").count()) !== 1) fail("export button missing in active session");
-await page.locator(".topbar .exportbtn").click();
-await page.waitForSelector(".exportmenu", { timeout: 3000 });
-if (await page.locator(".exportmenu .dlbtn").isDisabled()) fail("report export must be enabled in a session with scores");
-// Ruling C3: черновых оценок вне сессии больше нет, поэтому реальную загрузку .html (раньше
-// проверялась вне сессии на шаге 7) гоняем здесь, где оценки настоящие (из сессии).
-const [dl] = await Promise.all([
-  page.waitForEvent("download"),
-  page.locator(".exportmenu .dlbtn").click(),
-]);
-await page.waitForSelector(".exportmenu", { state: "detached", timeout: 3000 });
-const reportFn = dl.suggestedFilename();
-if (!reportFn.endsWith(".html")) fail(`download is not .html: ${reportFn}`);
-await page.locator(".session button", { hasText: "Выйти" }).click();
-await page.waitForSelector(".topbar .session__start", { timeout: 3000 });
-const startHref = await page.locator(".topbar .session__start").getAttribute("href");
-if (!startHref?.startsWith("#/setup/data-engineer")) fail(`board without session must link to interview setup, got ${startHref}`);
-console.log(`OK: session resume restores scores (${scoredCount} scored), report downloads (${reportFn}), no-session board links to start form`);
-
-// --- pools-main-menu: 13/15/17 остаются на доске (banks/help-модалка/агенда работают только там);
+// --- pools-main-menu: 13/17 остаются на доске (шпаргалка и toolbar живут только там);
 // 12/14/16/18 (банк) выполняются после перехода на страницу #/bank/<pool> — см. ниже.
 
 // 13. Шпаргалка горячих клавиш: «?» открывает оверлей, Esc закрывает.
-// (После «Выйти» кнопка размонтирована, фокус на body, не в input/textarea — «?» доходит до обработчика.)
+// (Фокус на body, не в input/textarea — «?» доходит до обработчика.)
 await page.keyboard.press("?");
 await page.waitForSelector(".help-modal", { timeout: 3000 });
 const helpText = await page.locator(".help-modal").innerText();
-if (!helpText.includes("неоценённому")) fail(`help overlay missing shortcuts: "${helpText}"`);
+if (!helpText.includes("неразобранному")) fail(`help overlay missing shortcuts: "${helpText}"`);
 await page.keyboard.press("Escape");
 await page.waitForSelector(".help-modal", { state: "detached", timeout: 3000 });
 console.log("OK: shortcuts help overlay (? opens, Esc closes)");
 
-// 15. Сайдбар-агенда: тоггл показывает список вопросов; клик по пункту делает ноду текущей (HUD).
-// (Остаётся открытым — тумблер не возвращается назад; шаг 19 использует его после возврата с банка.)
-await toggleSetting("Агенда");
-await page.waitForSelector(".interview", { timeout: 3000 });
-const ivCount = await page.locator(".interview .ivbtn").count();
-if (ivCount < 5) fail(`agenda has too few items: ${ivCount}`);
-await page.locator(".interview .ivbtn").first().click();
-await page.waitForSelector(".hud", { timeout: 3000 });
-const agHud = await page.locator(".hud__title").innerText();
-if (!agHud || agHud.length < 2) fail(`agenda click did not set current question: "${agHud}"`);
-console.log(`OK: agenda sidebar (${ivCount} items, click → HUD "${agHud.slice(0, 30)}")`);
-
-// 17. board-toolbar: шапка без сессии — один ряд: «← Направления», название, фильтры, экспорт,
-//     «Начать интервью», •••; прогресса нет; ⚙ — пункт меню •••; кнопок банка/темы в шапке нет.
+// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, экспорт, RU/EN, •••;
+//     прогресса нет; ⚙ — пункт меню •••; кнопок банка/темы в шапке нет.
 const topRows = await page.locator(".topbar > .topbar__row").count();
-if (topRows !== 1) fail(`expected 1 topbar row without a session, got ${topRows}`);
+if (topRows !== 1) fail(`expected exactly 1 topbar row, got ${topRows}`);
 if ((await page.locator(".topbar .topbar__back").count()) !== 1) fail("back-to-menu link missing");
 if (!(await page.locator(".topbar .appname").innerText()).includes("Дата-инженер")) fail("pool label missing in topbar");
-for (const sel of [".filtersbtn", ".exportbtn", ".session__start", ".morebtn"]) {
+for (const sel of [".filtersbtn", ".exportbtn", ".langswitch", ".morebtn"]) {
   if ((await page.locator(`.topbar ${sel}`).count()) !== 1) fail(`toolbar element ${sel} missing`);
 }
-if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must not be in the toolbar without a session");
+if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must not be in the toolbar");
 if ((await page.locator(".topbar .setbtn").count()) !== 0) fail("settings must live inside the ••• menu, not in the toolbar");
 if ((await page.locator(".topbar .addbtn, .topbar .bankbtn, .topbar .themebtn").count()) !== 0) fail("bank/theme buttons must leave the topbar");
 await page.locator(".topbar .morebtn").click();
@@ -621,13 +439,13 @@ if ((await page.locator(".moremenu .helpbtn").count()) !== 1) fail("shortcuts it
 if (!(await page.locator(".moremenu .bankLink").getAttribute("href"))?.startsWith("#/bank/data-engineer")) fail("••• menu must link to the question bank");
 await page.keyboard.press("Escape");
 await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
-console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/export/start/•••)`);
+console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/export/•••)`);
 
 // Работа с банком — страница #/bank/<pool> (pools-main-menu).
 await page.goto(URL + "#/bank/data-engineer", { waitUntil: "load" });
 await page.waitForSelector(".bankbrowser--embedded", { timeout: 10000 });
 
-// 12. Экспорт банка вопросов: кнопка отдаёт interview_bank_*.html (всегда активна, без reload).
+// 12. Экспорт банка вопросов: кнопка отдаёт ladder_bank_*.html (всегда активна, без reload).
 const [dlBank] = await Promise.all([
   page.waitForEvent("download"),
   page.locator(".pageshell .bankbtn").click(),
@@ -695,13 +513,10 @@ await page.goto(URL + "#/board/data-engineer", { waitUntil: "load" });
 await page.waitForSelector(".qnode", { timeout: 10000 });
 
 // 19. question-management: открыть вопрос → drawer; правка (открыть/Отмена) неразрушающа.
-// Доска смонтирована заново (после банка) на дефолтном зуме — открываем вопрос через агенду
-// (осталась включённой с шага 15, персистится в localStorage) вместо прямого клика по карточке,
-// которая может оказаться вне кадра; agenda-клик и так уже центрирует камеру (moveCurrent).
-if ((await page.locator(".interview").count()) === 0) await toggleSetting("Агенда");
-await page.locator(".interview .ivbtn", { hasText: "ROW_NUMBER" }).click();
-await page.waitForSelector(".hud", { timeout: 3000 });
-await page.keyboard.press("Enter");
+// Доска смонтирована заново (после банка) на дефолтном зуме: панель фильтров может накрыть
+// карточку, поэтому сначала закрываем её, а потом кликаем по самой карточке.
+await closeFiltersIfOpen();
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 await page.waitForSelector(".drawer__edit", { timeout: 3000 });
 await page.locator(".drawer__edit").click();
 await page.waitForSelector(".drawer__editform", { timeout: 3000 });
@@ -736,14 +551,8 @@ if (!confirmFired) fail("delete did not raise a confirm dialog");
 if ((await page.locator(".qnode").count()) !== qBeforeDel) fail("dismissed delete changed bank");
 console.log(`OK: delete confirms + dismiss non-destructive (${qBeforeDel} nodes)`);
 
-// 21. Ruling C3: черновых оценок вне сессии больше нет — вместо них персистентность проверяем
-// у статуса чек-листа (он живёт в БД через /api/progress, не в localStorage): поставить «повторить»
-// через HUD, пережить page.reload() (ПОСЛЕДНЕЙ), затем снять тем же кликом.
-// Снимаем возможный ?session из URL (resume-шаг мог его выставить), чтобы сессии точно не было.
-// id сессии живёт в hash (#/board/data-engineer?session=N), а не в location.search — пишем hash напрямую.
-await page.evaluate(() => {
-  location.hash = "#/board/data-engineer";
-});
+// 21. Персистентность чек-листа: статус живёт в БД через /api/progress, не в localStorage —
+// поставить «повторить» через HUD, пережить page.reload() (ПОСЛЕДНЕЙ), затем снять тем же кликом.
 await page.waitForSelector(".qnode", { timeout: 10000 });
 await page.keyboard.press("Escape"); // закрыть drawer
 await closeFiltersIfOpen();
@@ -769,28 +578,6 @@ await rowNumberCard
   .waitFor({ state: "detached", timeout: 3000 })
   .catch(() => fail("repeat click on HUD status button did not clear the checklist status"));
 console.log("OK: checklist status cleared");
-
-// 22. Сессии: созданная ранее сессия «Cmp Bot» видна на странице сессий с направлением.
-await page.goto(URL + "#/sessions", { waitUntil: "load" });
-// Таблица рендерится сразу (даже пустой) — список сессий подгружается асинхронно (useEffect),
-// поэтому ждём именно строку, а не просто наличие таблицы.
-await page.waitForSelector(".table.sessions tbody tr", { timeout: 10000 });
-const sessRows = await page.locator(".table.sessions tbody tr").count();
-if (sessRows < 1) fail("sessions page is empty");
-const sessText = await page.locator(".table.sessions").innerText();
-if (!sessText.includes("Cmp Bot") || !sessText.includes("Дата-инженер")) fail(`sessions page missing candidate/pool: ${sessText.slice(0, 120)}`);
-console.log(`OK: sessions page lists ${sessRows} session(s) with pool label`);
-
-// 23. Кандидаты: справочник открывается, кандидат из сессии в списке.
-await page.goto(URL + "#/candidates", { waitUntil: "load" });
-await page.waitForSelector(".table", { timeout: 10000 });
-// Таблица рендерится сразу, список кандидатов подгружается асинхронно (useEffect) — ждём текст.
-await page.waitForFunction(
-  () => document.querySelector(".table")?.innerText.includes("Cmp Bot"),
-  null,
-  { timeout: 10000 },
-);
-console.log("OK: candidates page lists session candidate");
 
 // 24. Неизвестный пул в адресе → меню с пометкой, без падения.
 await page.goto(URL + "#/board/nope", { waitUntil: "load" });

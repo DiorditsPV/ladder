@@ -5,8 +5,7 @@ import { useT } from "../i18n";
 
 // auth-identity (#36): экран входа. Показывается AuthGate, когда /api/auth/me даёт 401.
 // Успешный логин ставит HttpOnly-cookie сессии → onLogin() переключает на доску.
-// notice — пояснение над формой (например, недействительная ссылка-приглашение).
-export function Login({ onLogin, notice }: { onLogin: () => void; notice?: string | null }) {
+export function Login({ onLogin }: { onLogin: () => void }) {
   const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,11 +56,6 @@ export function Login({ onLogin, notice }: { onLogin: () => void; notice?: strin
         }}
       >
         <h2 style={{ margin: 0, color: "#1e293b" }}>{t("Вход")}</h2>
-        {notice && (
-          <div className="login__notice" style={{ color: "#b45309", fontSize: 13, background: "#fffbeb", padding: "8px 10px", borderRadius: 8 }}>
-            {notice}
-          </div>
-        )}
         <input
           className="login__input"
           type="email"

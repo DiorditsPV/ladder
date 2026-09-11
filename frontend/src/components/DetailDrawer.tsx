@@ -9,18 +9,12 @@ import { useT } from "../i18n";
 interface Props {
   node: QNode | null;
   pool: PoolConfig;
-  score?: number;
-  note?: string;
-  // Чек-лист разбора: статус текущей карточки + сеттер. Показывается вместо блока оценки
-  // вне сессии — в сессии карточки оценивает интервьюер, статусы не отображаются.
+  // Чек-лист разбора: статус текущей карточки + сеттер.
   status?: Progress;
-  inSession: boolean;
   onStatus: (nodeId: string, status: Progress) => void;
   fullscreen: boolean;
   hidden: boolean;
   onToggleHide: (nodeId: string) => void;
-  onScore: (nodeId: string, score: number) => void;
-  onNote: (nodeId: string, text: string) => void;
   onDelete: (nodeId: string) => void;
   onUpdate: (nodeId: string, fields: NodeUpdate) => void;
   onToggleFullscreen: () => void;
@@ -28,7 +22,7 @@ interface Props {
 }
 
 // Немодальный drawer: полный текст вопроса/ответа. Закрывается с клавиатуры (Esc).
-export function DetailDrawer({ node, pool, score, note, status, inSession, onStatus, fullscreen, hidden, onToggleHide, onScore, onNote, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
+export function DetailDrawer({ node, pool, status, onStatus, fullscreen, hidden, onToggleHide, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<{ title: string; difficulty: string; question: string; answer: string }>(
@@ -192,7 +186,7 @@ export function DetailDrawer({ node, pool, score, note, status, inSession, onSta
 
         {node.rubric.length > 0 && (
           <section>
-            <h3>{t("Критерии оценки")}</h3>
+            <h3>{t("Критерии самопроверки")}</h3>
             <ul className="rubric">
               {node.rubric.map((r, i) => (
                 <li key={i}>{r}</li>
@@ -202,54 +196,27 @@ export function DetailDrawer({ node, pool, score, note, status, inSession, onSta
         )}
 
         <section className="drawer__scoring">
-          {inSession ? (
-            <>
-              <h3>{t("Оценка")}</h3>
-              <div className="scorebar">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <button
-                    key={i}
-                    className={score != null && i <= score ? "scorebtn scorebtn--on" : "scorebtn"}
-                    onClick={() => onScore(node.id, i)}
-                    aria-label={t("Оценка {n}", { n: i })}
-                  >
-                    ●
-                  </button>
-                ))}
-                {score != null && <span className="scoreval">{score}/5</span>}
-              </div>
-            </>
-          ) : (
-            <>
-              <h3>{t("Разобрано")}</h3>
-              <div className="statusbar">
-                <button
-                  className={`statusbtn statusbtn--known ${status === "known" ? "statusbtn--on" : ""}`}
-                  onClick={() => onStatus(node.id, "known")}
-                >
-                  {t("Знаю (1)")}
-                </button>
-                <button
-                  className={`statusbtn statusbtn--review ${status === "review" ? "statusbtn--on" : ""}`}
-                  onClick={() => onStatus(node.id, "review")}
-                >
-                  {t("Повторить (2)")}
-                </button>
-                <button
-                  className={`statusbtn statusbtn--unknown ${status === "unknown" ? "statusbtn--on" : ""}`}
-                  onClick={() => onStatus(node.id, "unknown")}
-                >
-                  {t("Не знаю (3)")}
-                </button>
-              </div>
-            </>
-          )}
-          <textarea
-            className="drawer__note"
-            placeholder={t("Заметка интервьюера…")}
-            value={note ?? ""}
-            onChange={(e) => onNote(node.id, e.target.value)}
-          />
+          <h3>{t("Разобрано")}</h3>
+          <div className="statusbar">
+            <button
+              className={`statusbtn statusbtn--known ${status === "known" ? "statusbtn--on" : ""}`}
+              onClick={() => onStatus(node.id, "known")}
+            >
+              {t("Знаю (1)")}
+            </button>
+            <button
+              className={`statusbtn statusbtn--review ${status === "review" ? "statusbtn--on" : ""}`}
+              onClick={() => onStatus(node.id, "review")}
+            >
+              {t("Повторить (2)")}
+            </button>
+            <button
+              className={`statusbtn statusbtn--unknown ${status === "unknown" ? "statusbtn--on" : ""}`}
+              onClick={() => onStatus(node.id, "unknown")}
+            >
+              {t("Не знаю (3)")}
+            </button>
+          </div>
         </section>
         </>
         )}

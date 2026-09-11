@@ -1,4 +1,4 @@
-"""Персистентность в SQLite: тенанты, банк вопросов (nodes), сессии и оценки.
+"""Персистентность в SQLite: тенанты, направления, банк вопросов (nodes) и чек-лист разбора.
 
 Вопросы — источник правды в БД (а не в content/*.md): UI создаёт/правит/грузит их в
 рантайме, и они должны переживать деплой (который перезаписывает код, но не БД из
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS pools (
 );
 CREATE TABLE IF NOT EXISTS users (
     tenant_id     TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
-    id            TEXT NOT NULL,                -- генерится сервером (token_hex); TEXT — под шов interviewers.user_id
+    id            TEXT NOT NULL,                -- генерится сервером (token_hex)
     email         TEXT NOT NULL,
     password_hash TEXT NOT NULL,                -- bcrypt; пароль в открытом виде не хранится
     role          TEXT NOT NULL DEFAULT 'member', -- owner | member | viewer
@@ -77,53 +77,6 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     tenant_id  TEXT NOT NULL,
     user_id    TEXT NOT NULL,
     created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS session_invites (
-    token      TEXT PRIMARY KEY,                -- часть ссылки #/join/<token>; многоразовая до истечения/отзыва
-    tenant_id  TEXT NOT NULL,
-    session_id INTEGER NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'viewer',  -- viewer | member (гость получает эту роль в рамках одной сессии)
-    created_by TEXT,
-    created_at TEXT NOT NULL,
-    expires_at TEXT,                            -- NULL — бессрочная (не используется UI, задел)
-    revoked_at TEXT                             -- отозвана: вход по ссылке 410, гости выкидываются (401)
-);
-CREATE TABLE IF NOT EXISTS interviewers (
-    tenant_id   TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
-    id          INTEGER NOT NULL,            -- автоинкремент в пределах тенанта, уник. (tenant_id,id)
-    name        TEXT NOT NULL,
-    email       TEXT,
-    role        TEXT,                         -- напр. «Tech Lead», «HR»
-    user_id     TEXT,                         -- ШОВ: связь с auth-пользователем (пока NULL)
-    created_at  TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id)
-);
-CREATE TABLE IF NOT EXISTS candidates (
-    tenant_id   TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
-    id          INTEGER NOT NULL,
-    name        TEXT NOT NULL,
-    position    TEXT,                         -- на какую позицию
-    seniority   TEXT,                         -- грейд (junior/middle/senior/…) — НЕ difficulty вопроса
-    contact     TEXT,                         -- email/телефон/ссылка (свободно)
-    note        TEXT,                         -- заметка рекрутера
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id)
-);
-CREATE TABLE IF NOT EXISTS sessions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate  TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    pool       TEXT NOT NULL DEFAULT 'data-engineer'
-);
-CREATE TABLE IF NOT EXISTS scores (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    node_id    TEXT NOT NULL,
-    score      INTEGER NOT NULL,
-    note       TEXT,
-    created_at TEXT NOT NULL,
-    UNIQUE(session_id, node_id)
 );
 CREATE TABLE IF NOT EXISTS progress (
     tenant_id  TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id),
@@ -153,16 +106,6 @@ def _row_to_node(row: sqlite3.Row) -> Dict:
     return d
 
 
-def invite_state(inv: Dict) -> str:
-    """Состояние приглашения: revoked (отозвано) → expired (срок вышел) → active."""
-    if inv.get("revoked_at"):
-        return "revoked"
-    exp = inv.get("expires_at")
-    if exp and datetime.fromisoformat(exp) <= datetime.now(timezone.utc):
-        return "expired"
-    return "active"
-
-
 def _row_to_pool(row: sqlite3.Row) -> Dict:
     """Строка pools → dict направления: blocks/levels из JSON в список."""
     d = dict(row)
@@ -177,9 +120,7 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
-            self._migrate_sessions(conn)
             self._migrate_nodes(conn)
-            self._migrate_auth_sessions(conn)
             self._migrate_pools(conn)
 
     @staticmethod
@@ -192,52 +133,6 @@ class Database:
         if "levels" not in cols:
             conn.execute("ALTER TABLE pools ADD COLUMN levels TEXT NOT NULL DEFAULT '[]'")
         conn.execute("UPDATE pools SET levels = ? WHERE levels = '[]'", (levels_to_json(DEFAULT_LEVELS),))
-
-    @staticmethod
-    def _migrate_auth_sessions(conn: sqlite3.Connection) -> None:
-        """Гостевой вход по ссылке: auth-сессия ограничена одной сессией интервью и помнит приглашение
-        (invite_token) — отзыв/истечение приглашения выкидывает гостя; у приглашений — срок и отзыв."""
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(auth_sessions)").fetchall()}
-        if "scope_session_id" not in cols:
-            conn.execute("ALTER TABLE auth_sessions ADD COLUMN scope_session_id INTEGER")
-        if "invite_token" not in cols:
-            conn.execute("ALTER TABLE auth_sessions ADD COLUMN invite_token TEXT")
-        icols = {r["name"] for r in conn.execute("PRAGMA table_info(session_invites)").fetchall()}
-        if icols and "expires_at" not in icols:
-            conn.execute("ALTER TABLE session_invites ADD COLUMN expires_at TEXT")
-            conn.execute("ALTER TABLE session_invites ADD COLUMN revoked_at TEXT")
-
-    @staticmethod
-    def _migrate_sessions(conn: sqlite3.Connection) -> None:
-        """Мягкая миграция существующей БД: добавить новые столбцы в sessions, если их нет.
-
-        Старые БД содержат sessions только с (id, candidate, created_at). Новые столбцы —
-        nullable (или с DEFAULT), поэтому ALTER ... ADD COLUMN безопасен и не теряет данные:
-        старые строки получают NULL/'default'. PRAGMA table_info защищает от повторного ALTER
-        (идемпотентность при каждом старте).
-        """
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
-        # tenant_id без DEFAULT в ALTER → NOT NULL невозможен на готовых строках; даём DEFAULT.
-        if "tenant_id" not in cols:
-            conn.execute(
-                "ALTER TABLE sessions ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
-            )
-        if "candidate_id" not in cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN candidate_id INTEGER")
-        if "interviewer_id" not in cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN interviewer_id INTEGER")
-        if "pool" not in cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN pool TEXT NOT NULL DEFAULT 'data-engineer'")
-        if "plan" not in cols:
-            # План интервью (JSON: mode, blocks, subblocks, difficulties, count, order). NULL — сессия
-            # по всей матрице, как до v1-closure.
-            conn.execute("ALTER TABLE sessions ADD COLUMN plan TEXT")
-        if "status" not in cols:
-            # Итог сессии: active → finished с решением (hire | no_hire | hold) и комментарием.
-            conn.execute("ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
-            conn.execute("ALTER TABLE sessions ADD COLUMN decision TEXT")
-            conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
-            conn.execute("ALTER TABLE sessions ADD COLUMN finished_at TEXT")
 
     @staticmethod
     def _migrate_nodes(conn: sqlite3.Connection) -> None:
@@ -346,66 +241,6 @@ class Database:
     def delete_auth_session(self, token: str) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
-
-    # --- приглашения в сессию (гостевой вход по ссылке) ---
-    def create_invite(
-        self, tenant_id: str, session_id: int, role: str, created_by: Optional[str], expires_at: Optional[str]
-    ) -> str:
-        token = secrets.token_urlsafe(24)
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO session_invites (token, tenant_id, session_id, role, created_by, created_at, expires_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (token, tenant_id, session_id, role, created_by, _now(), expires_at),
-            )
-        return token
-
-    def get_invite(self, token: str) -> Optional[Dict]:
-        with self._conn() as conn:
-            row = conn.execute("SELECT * FROM session_invites WHERE token = ?", (token,)).fetchone()
-        return dict(row) if row else None
-
-    def list_invites(self, tenant_id: str, session_id: int) -> List[Dict]:
-        """Приглашения сессии, новые сверху, с вычисленным состоянием (active | expired | revoked)."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM session_invites WHERE tenant_id = ? AND session_id = ? ORDER BY created_at DESC",
-                (tenant_id, session_id),
-            ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            d["state"] = invite_state(d)
-            out.append(d)
-        return out
-
-    def revoke_invite(self, tenant_id: str, session_id: int, token: str) -> bool:
-        """Отозвать приглашение: вход по ссылке → 410, гости этой ссылки выкидываются (см. auth.current_user)."""
-        with self._conn() as conn:
-            cur = conn.execute(
-                "UPDATE session_invites SET revoked_at = COALESCE(revoked_at, ?) "
-                "WHERE token = ? AND tenant_id = ? AND session_id = ?",
-                (_now(), token, tenant_id, session_id),
-            )
-        return cur.rowcount > 0
-
-    def create_guest_auth_session(self, invite: Dict) -> str:
-        """Гость по приглашению: одноразовый пользователь без пароля с ролью приглашения и auth-сессия,
-        ограниченная одной сессией интервью (scope_session_id) и привязанная к приглашению (invite_token).
-        Возвращает токен cookie."""
-        uid = f"guest-{secrets.token_hex(6)}"
-        token = secrets.token_urlsafe(32)
-        with self._conn() as conn:
-            conn.execute(
-                "INSERT INTO users (tenant_id, id, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (invite["tenant_id"], uid, f"{uid}@invite.local", "!", invite["role"], _now()),
-            )
-            conn.execute(
-                "INSERT INTO auth_sessions (token, tenant_id, user_id, created_at, scope_session_id, invite_token) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (token, invite["tenant_id"], uid, _now(), invite["session_id"], invite["token"]),
-            )
-        return token
 
     # --- nodes (банк вопросов, per-tenant) ---
     def count_nodes(self, tenant_id: str, pool: Optional[str] = None) -> int:
@@ -686,8 +521,8 @@ class Database:
         return self.get_pool(tenant_id, pool_id)
 
     def delete_pool(self, tenant_id: str, pool_id: str) -> Optional[int]:
-        """Удалить направление: вопросы стираются, строка остаётся tombstone'ом (сессии не трогаем —
-        история интервью). Возвращает число удалённых нод; None — нет или уже удалено."""
+        """Удалить направление: вопросы стираются, строка остаётся tombstone'ом (id занят, сид
+        не воскрешает). Возвращает число удалённых нод; None — нет или уже удалено."""
         current = self.get_pool(tenant_id, pool_id)
         if current is None or current["deleted_at"] is not None:
             return None
@@ -739,224 +574,6 @@ class Database:
                 ),
             )
         return len(rows)
-
-    # --- interviewers (per-tenant) ---
-    def list_interviewers(self, tenant_id: str) -> List[Dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM interviewers WHERE tenant_id = ? ORDER BY id",
-                (tenant_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def count_interviewers(self, tenant_id: str) -> int:
-        with self._conn() as conn:
-            return conn.execute(
-                "SELECT COUNT(*) FROM interviewers WHERE tenant_id = ?", (tenant_id,)
-            ).fetchone()[0]
-
-    def get_interviewer(self, tenant_id: str, interviewer_id: int) -> Optional[Dict]:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM interviewers WHERE tenant_id = ? AND id = ?",
-                (tenant_id, interviewer_id),
-            ).fetchone()
-        return dict(row) if row else None
-
-    def create_interviewer(self, tenant_id: str, data: Dict) -> Dict:
-        """Создать интервьюера. id — автоинкремент в пределах тенанта (MAX(id)+1)."""
-        now = _now()
-        with self._conn() as conn:
-            nid = conn.execute(
-                "SELECT COALESCE(MAX(id), 0) + 1 FROM interviewers WHERE tenant_id = ?",
-                (tenant_id,),
-            ).fetchone()[0]
-            conn.execute(
-                """
-                INSERT INTO interviewers (tenant_id, id, name, email, role, user_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tenant_id, nid, data["name"], data.get("email"),
-                    data.get("role"), data.get("user_id"), now,
-                ),
-            )
-        return self.get_interviewer(tenant_id, nid)
-
-    # --- candidates (per-tenant) ---
-    def list_candidates(self, tenant_id: str) -> List[Dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM candidates WHERE tenant_id = ? ORDER BY id",
-                (tenant_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def get_candidate(self, tenant_id: str, candidate_id: int) -> Optional[Dict]:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM candidates WHERE tenant_id = ? AND id = ?",
-                (tenant_id, candidate_id),
-            ).fetchone()
-        return dict(row) if row else None
-
-    def create_candidate(self, tenant_id: str, data: Dict) -> Dict:
-        """Создать кандидата. id — автоинкремент в пределах тенанта (MAX(id)+1)."""
-        now = _now()
-        with self._conn() as conn:
-            cid = conn.execute(
-                "SELECT COALESCE(MAX(id), 0) + 1 FROM candidates WHERE tenant_id = ?",
-                (tenant_id,),
-            ).fetchone()[0]
-            conn.execute(
-                """
-                INSERT INTO candidates (
-                    tenant_id, id, name, position, seniority, contact, note,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tenant_id, cid, data["name"], data.get("position"),
-                    data.get("seniority"), data.get("contact"), data.get("note"),
-                    now, now,
-                ),
-            )
-        return self.get_candidate(tenant_id, cid)
-
-    def update_candidate(self, tenant_id: str, candidate_id: int, fields: Dict) -> Optional[Dict]:
-        """Обновить переданные поля кандидата (None-поля не передаются вызывающим)."""
-        allowed = ("name", "position", "seniority", "contact", "note")
-        sets = {k: v for k, v in fields.items() if k in allowed}
-        if not sets:
-            return self.get_candidate(tenant_id, candidate_id)
-        cols = ", ".join(f"{k} = ?" for k in sets)
-        params = list(sets.values()) + [_now(), tenant_id, candidate_id]
-        with self._conn() as conn:
-            cur = conn.execute(
-                f"UPDATE candidates SET {cols}, updated_at = ? WHERE tenant_id = ? AND id = ?",
-                params,
-            )
-            if cur.rowcount == 0:
-                return None
-        return self.get_candidate(tenant_id, candidate_id)
-
-    # --- sessions ---
-    def create_session(
-        self,
-        candidate: str,
-        tenant_id: str = "default",
-        candidate_id: Optional[int] = None,
-        interviewer_id: Optional[int] = None,
-        pool: str = "data-engineer",
-        plan: Optional[Dict] = None,
-    ) -> Dict:
-        with self._conn() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO sessions (candidate, tenant_id, candidate_id, interviewer_id, pool, plan, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (candidate, tenant_id, candidate_id, interviewer_id, pool,
-                 json.dumps(plan, ensure_ascii=False) if plan else None, _now()),
-            )
-            sid = cur.lastrowid
-        return self.get_session(sid, tenant_id)
-
-    def finish_session(
-        self, session_id: int, tenant_id: str, decision: str, summary: str
-    ) -> Optional[Dict]:
-        """Завершить сессию с итогом; повторный вызов правит решение/комментарий. None — нет сессии."""
-        with self._conn() as conn:
-            cur = conn.execute(
-                """
-                UPDATE sessions SET status = 'finished', decision = ?, summary = ?,
-                    finished_at = COALESCE(finished_at, ?)
-                WHERE id = ? AND tenant_id = ?
-                """,
-                (decision, summary, _now(), session_id, tenant_id),
-            )
-            if cur.rowcount == 0:
-                return None
-        return self.get_session(session_id, tenant_id)
-
-    @staticmethod
-    def _session_summary(row: sqlite3.Row) -> Dict:
-        """Строка sessions для списков: вместо JSON плана — его размер (plan_count, NULL без плана)."""
-        d = dict(row)
-        raw = d.pop("plan", None)
-        d["plan_count"] = len(json.loads(raw).get("order") or []) if raw else None
-        return d
-
-    def sessions_by_candidate(self, tenant_id: str, candidate_id: int) -> List[Dict]:
-        """Все сессии кандидата в тенанте (история), без оценок — для списка."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM sessions
-                WHERE tenant_id = ? AND candidate_id = ?
-                ORDER BY created_at DESC
-                """,
-                (tenant_id, candidate_id),
-            ).fetchall()
-        return [self._session_summary(r) for r in rows]
-
-    def list_sessions(self, tenant_id: str, pool: Optional[str] = None) -> List[Dict]:
-        sql, args = "SELECT * FROM sessions WHERE tenant_id = ?", [tenant_id]
-        if pool is not None:
-            sql += " AND pool = ?"
-            args.append(pool)
-        sql += " ORDER BY created_at DESC"
-        with self._conn() as conn:
-            rows = conn.execute(sql, args).fetchall()
-        return [self._session_summary(r) for r in rows]
-
-    def count_sessions(self, tenant_id: str, pool: str) -> int:
-        with self._conn() as conn:
-            return conn.execute(
-                "SELECT COUNT(*) FROM sessions WHERE tenant_id = ? AND pool = ?", (tenant_id, pool)
-            ).fetchone()[0]
-
-    def get_session(self, session_id: int, tenant_id: str) -> Optional[Dict]:
-        """Сессия по id в пределах тенанта (изоляция: чужой тенант → None)."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM sessions WHERE id = ? AND tenant_id = ?",
-                (session_id, tenant_id),
-            ).fetchone()
-            if row is None:
-                return None
-            scores = conn.execute(
-                "SELECT node_id, score, note, created_at FROM scores WHERE session_id = ?",
-                (session_id,),
-            ).fetchall()
-        result = dict(row)
-        result["plan"] = json.loads(result["plan"]) if result.get("plan") else None
-        result["scores"] = {s["node_id"]: dict(s) for s in scores}
-        return result
-
-    # --- scores ---
-    def set_score(
-        self,
-        session_id: int,
-        node_id: str,
-        score: int,
-        note: Optional[str] = None,
-        *,
-        tenant_id: str,
-    ) -> Dict:
-        with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO scores (session_id, node_id, score, note, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(session_id, node_id)
-                DO UPDATE SET score = excluded.score,
-                              note = excluded.note,
-                              created_at = excluded.created_at
-                """,
-                (session_id, node_id, score, note, _now()),
-            )
-        return self.get_session(session_id, tenant_id)
 
     # --- progress (чек-лист разбора, per-user) ---
     PROGRESS_STATUSES = ("known", "review", "unknown")

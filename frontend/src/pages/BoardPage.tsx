@@ -15,18 +15,15 @@ import {
   CircleHelp,
   Download,
   Ellipsis,
-  Link2,
-  Play,
   Settings,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Invite, type NodeUpdate } from "../api";
+import { api, type NodeUpdate } from "../api";
 import { BandsNode } from "../components/BandsNode";
 import { BlockGroupNode } from "../components/BlockGroupNode";
 import { LangSwitch } from "../components/LangSwitch";
-import { FinishModal, decisionLabel } from "../components/FinishModal";
 import { SettingsMenu } from "../components/SettingsMenu";
 import { nWord, useT } from "../i18n";
 import { DetailDrawer } from "../components/DetailDrawer";
@@ -34,7 +31,7 @@ import { GuidesNode } from "../components/GuidesNode";
 import { QuestionNode } from "../components/QuestionNode";
 import { ShortcutsHelp } from "../components/ShortcutsHelp";
 import { SubHeadNode } from "../components/SubHeadNode";
-import { downloadBank, downloadReport } from "../report";
+import { downloadBank } from "../report";
 import {
   CARD_H,
   CARD_W,
@@ -56,10 +53,8 @@ import {
   type PoolConfig,
   type Progress,
   type QNode,
-  type Session,
 } from "../types";
 import { href } from "../router";
-import { notesOf, scoresOf } from "../sessionUtils";
 
 const nodeTypes = {
   question: QuestionNode,
@@ -70,7 +65,7 @@ const nodeTypes = {
 };
 const NO_EDGES: Edge[] = [];
 
-// M:SS из миллисекунд (для таймеров вопроса/сессии).
+// M:SS из миллисекунд (для таймеров карточки и всего разбора).
 function mmss(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -120,9 +115,7 @@ function buildNodes(
   pool: PoolConfig,
   p: Placement,
   bandCounts: Record<string, { done: number; count: number }>,
-  scores: Record<string, number>,
   statuses: Record<string, Progress>,
-  inSession: boolean,
   currentId: string | null,
   selectedId: string | null,
   activeBlocks: Record<string, boolean>,
@@ -130,14 +123,12 @@ function buildNodes(
   activeTags: Record<string, boolean>,
   activeKinds: Record<string, boolean>,
   query: string,
-  unscoredOnly: boolean,
   unresolvedOnly: boolean,
   hiddenIds: Set<string>,
   showHidden: boolean,
   guidesH: boolean,
   guidesV: boolean,
   dark: boolean,
-  planIds: Set<string> | null,
 ): Node[] {
   const nodes: Node[] = [];
   const anyTag = Object.values(activeTags).some(Boolean);
@@ -172,10 +163,8 @@ function buildNodes(
 
   for (const bg of p.blockGroups) {
     const blockNodes = graph.filter((n) => n.block === bg.block);
-    // В сессии считаем оценённые вопросы, вне сессии — разобранные («знаю») по чек-листу.
-    const done = inSession
-      ? blockNodes.filter((n) => scores[n.id] != null).length
-      : blockNodes.filter((n) => statuses[n.id] === "known").length;
+    // Готово = разобранные («знаю») по чек-листу.
+    const done = blockNodes.filter((n) => statuses[n.id] === "known").length;
     nodes.push({
       id: `bg-${bg.block}`,
       type: "blockGroup",
@@ -200,9 +189,7 @@ function buildNodes(
   for (const col of p.columns) {
     if (!col.label) continue;
     const colNodes = graph.filter((n) => n.block === col.block && subOf(n) === col.subblock);
-    const done = inSession
-      ? colNodes.filter((n) => scores[n.id] != null).length
-      : colNodes.filter((n) => statuses[n.id] === "known").length;
+    const done = colNodes.filter((n) => statuses[n.id] === "known").length;
     nodes.push({
       id: `sh-${col.block}-${col.subblock}`,
       type: "subhead",
@@ -228,16 +215,13 @@ function buildNodes(
     const tagOk = !anyTag || n.tags.some((t) => activeTags[t]);
     // hide-local: скрытый вопрос гасится (если не показываем скрытые); при показе — помечается.
     const hidden = hiddenIds.has(n.id);
-    // План интервью (сессия с plan): вопросы вне набора гаснут и не выбираются, как отфильтрованные.
     const dimmed =
-      (planIds != null && !planIds.has(n.id)) ||
       activeBlocks[n.block] === false ||
       activeDiffs[n.difficulty] === false ||
       !activeKinds[n.kind] ||
       !tagOk ||
       !matchesQuery(n, query) ||
-      (inSession && unscoredOnly && scores[n.id] != null) ||
-      (!inSession && unresolvedOnly && statuses[n.id] === "known") ||
+      (unresolvedOnly && statuses[n.id] === "known") ||
       (hidden && !showHidden);
     nodes.push({
       id: n.id,
@@ -251,9 +235,7 @@ function buildNodes(
         pool,
         color: blockColor(pool, n.block),
         dark,
-        score: scores[n.id],
         status: statuses[n.id],
-        showStatus: !inSession,
         current: n.id === currentId,
         dimmed,
         hidden: hidden && showHidden,
@@ -302,66 +284,30 @@ const KIND_LABEL: Record<string, string> = { question: "вопрос", task: "з
 const KIND_COLOR: Record<string, string> = { question: "#2563eb", task: "#9333ea" };
 const ALL_KINDS: Record<string, boolean> = { question: true, task: true };
 
-// guest — вход по ссылке-приглашению: только эта сессия, без выхода из неё и без выдачи новых ссылок.
-export default function BoardPage({ pool, sessionFromUrl, guest = false }: { pool: PoolConfig; sessionFromUrl: number | null; guest?: boolean }) {
+export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const t = useT();
   const [graph, setGraph] = useState<QNode[]>([]);
   const [errors, setErrors] = useState<ImportErr[]>([]);
   const [placement, setPlacement] = useState<Placement | null>(null);
-  // Ruling C3: оценки — только в сессии (из БД через joinSession); вне сессии черновиков нет.
-  const [scores, setScores] = useState<Record<string, number>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   // hide-local: скрытые с доски вопросы (клиентски) + тумблер показа.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => readHiddenIds(pool.id));
   const [showHidden, setShowHidden] = useState(false);
-  // Сессия стартует с главной (StartSessionForm) и приходит сюда по ?session=<id>;
-  // своей строки кандидата у доски больше нет.
-  const [session, setSession] = useState<Session | null>(null);
-  // Режим сессии — локальное состояние (не sessionFromUrl напрямую): «Выйти» чистит адрес
-  // через replaceState без remount'а доски, поэтому проп остался бы «залипшим».
-  const [inSession, setInSession] = useState<boolean>(sessionFromUrl != null);
-  // Чек-лист разбора (вне сессии, per-user): known|review|unknown по видимым нодам пула.
+  // Чек-лист разбора (per-user): known|review|unknown по видимым нодам пула.
   const [statuses, setStatuses] = useState<Record<string, Progress>>({});
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
-  const [live, setLive] = useState(false);
-  const [notes, setNotes] = useState<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
-  const [sessionStart, setSessionStart] = useState<number | null>(() => {
+  // Таймер разбора: отсчёт с первой выбранной карточки, переживает перезагрузку (localStorage).
+  const [studyStart, setStudyStart] = useState<number | null>(() => {
     const v = localStorage.getItem(legacyKey("timerStart", pool.id));
     return v ? Number(v) : null;
   });
-  const [questionStart, setQuestionStart] = useState<number>(() => Date.now());
+  const [cardStart, setCardStart] = useState<number>(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [finishOpen, setFinishOpen] = useState(false); // итог интервью (решение + комментарий)
-  // Ссылка для коллеги: выбор роли → POST invite → абсолютный URL #/join/<token> с кнопкой «Скопировать».
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [inviteHours, setInviteHours] = useState(24); // срок ссылки: 1 ч / 24 ч / 7 дней
-  const [invites, setInvites] = useState<Invite[]>([]); // выданные ссылки этой сессии — для отзыва
-  const closeInvite = useCallback(() => setInviteOpen(false), []);
-  useDismiss(inviteOpen, closeInvite, ".tbdrop--invite");
-  const reloadInvites = useCallback(() => {
-    if (!session) return;
-    api.listInvites(session.id).then(setInvites).catch(() => setInvites([]));
-  }, [session]);
-  useEffect(() => {
-    if (inviteOpen) reloadInvites();
-  }, [inviteOpen, reloadInvites]);
-  const revokeInvite = async (token: string) => {
-    if (!session) return;
-    try {
-      await api.revokeInvite(session.id, token);
-      setInviteUrl(null);
-      reloadInvites();
-    } catch {
-      alert(t("Не удалось отозвать ссылку"));
-    }
-  };
-  // Dropdown'ы toolbar'а: «Экспорт» и «•••».
-  const [exportOpen, setExportOpen] = useState(false);
+  // Dropdown toolbar'а: «•••».
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
@@ -375,7 +321,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [activeTags, setActiveTags] = useState<Record<string, boolean>>({});
   const [activeKinds, setActiveKinds] = useState<Record<string, boolean>>(ALL_KINDS);
   const [query, setQuery] = useState("");
-  const [unscoredOnly, setUnscoredOnly] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(
     () =>
       (localStorage.getItem("theme") as "light" | "dark") ||
@@ -386,8 +331,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   );
   const [guidesH, setGuidesH] = useState<boolean>(() => localStorage.getItem("guidesH") === "1");
   const [guidesV, setGuidesV] = useState<boolean>(() => localStorage.getItem("guidesV") === "1");
-  const [agendaOpen, setAgendaOpen] = useState<boolean>(() => localStorage.getItem("agendaOpen") === "1");
-  // Таймер в HUD по умолчанию скрыт: во время интервью он тикает в поле зрения и давит.
+  // Таймер в HUD по умолчанию скрыт: тикающие цифры в поле зрения давят.
   const [showTimer, setShowTimer] = useState<boolean>(() => localStorage.getItem("showTimer") === "1");
   // Оформление доски (итог design-funnel): дефолт — 37 «Брутализм в цвете»,
   // альтернативы переключаются в ⚙. Применяется атрибутом data-design (design-themes.css).
@@ -400,9 +344,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const [filtersOpen, setFiltersOpen] = useState<boolean>(
     () => localStorage.getItem("filtersOpen") === "1",
   );
-  const closeExport = useCallback(() => setExportOpen(false), []);
   const closeMore = useCallback(() => setMoreOpen(false), []);
-  useDismiss(exportOpen, closeExport, ".tbdrop--export");
   useDismiss(moreOpen, closeMore, ".tbdrop--more");
 
   useEffect(() => {
@@ -412,7 +354,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   useEffect(() => localStorage.setItem("bgVariant", bgVariant), [bgVariant]);
   useEffect(() => localStorage.setItem("guidesH", guidesH ? "1" : "0"), [guidesH]);
   useEffect(() => localStorage.setItem("guidesV", guidesV ? "1" : "0"), [guidesV]);
-  useEffect(() => localStorage.setItem("agendaOpen", agendaOpen ? "1" : "0"), [agendaOpen]);
   useEffect(() => localStorage.setItem("showTimer", showTimer ? "1" : "0"), [showTimer]);
   useEffect(() => {
     document.documentElement.dataset.design = design;
@@ -435,11 +376,11 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     });
   }, []);
 
-  // Таймеры: сброс «времени на вопрос» при смене текущего; старт «времени сессии» при первом выборе.
+  // Таймеры: сброс «времени на карточку» при смене текущей; старт общего таймера при первом выборе.
   useEffect(() => {
     if (!currentId) return;
-    setQuestionStart(Date.now());
-    setSessionStart((s) => {
+    setCardStart(Date.now());
+    setStudyStart((s) => {
       if (s != null) return s;
       const t = Date.now();
       localStorage.setItem(`timerStart:${pool.id}`, String(t));
@@ -447,10 +388,10 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     });
   }, [currentId, pool.id]);
   useEffect(() => {
-    if (!currentId && sessionStart == null) return;
+    if (!currentId && studyStart == null) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [currentId, sessionStart]);
+  }, [currentId, studyStart]);
 
   const instance = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -485,89 +426,57 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     () => Array.from(new Set(graph.flatMap((n) => n.tags))).sort(),
     [graph],
   );
-  // План интервью: порядок вопросов сессии (sessions.plan.order). null — сессия без плана / нет сессии:
-  // доска ведёт по всей матрице, как раньше.
-  const planOrder = useMemo(() => session?.plan?.order ?? null, [session]);
-  const planIds = useMemo(() => (planOrder ? new Set(planOrder) : null), [planOrder]);
-
-  // Видимый срез (активные фильтры и план) — для навигации «Дальше».
+  // Видимый срез (активные фильтры) — для навигации по карточкам.
   const visibleIds = useMemo(() => {
     const anyTag = Object.values(activeTags).some(Boolean);
     const s = new Set<string>();
     for (const n of graph) {
       const tagOk = !anyTag || n.tags.some((t) => activeTags[t]);
-      const inPlan = planIds == null || planIds.has(n.id);
-      if (inPlan && activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
+      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
         s.add(n.id);
       }
     }
     return s;
-  }, [graph, activeBlocks, activeDiffs, activeKinds, activeTags, planIds]);
+  }, [graph, activeBlocks, activeDiffs, activeKinds, activeTags]);
 
-  // Порядок обхода: план сессии, иначе порядок сетки (колонка за колонкой).
-  const walkOrder = useMemo(
-    () => planOrder ?? (placement ? placement.order.flat() : []),
-    [planOrder, placement],
-  );
+  // Порядок обхода — порядок сетки (колонка за колонкой).
+  const walkOrder = useMemo(() => (placement ? placement.order.flat() : []), [placement]);
 
   // Ruling C2: счётчики по рядам (уровням сложности) для BandsNode — по видимому срезу
-  // (см. visibleIds): вне сессии done = «знаю», в сессии — оценённые.
+  // (см. visibleIds); done = «знаю» по чек-листу.
   const bandCounts = useMemo(() => {
     const out: Record<string, { done: number; count: number }> = {};
     for (const n of graph) {
       if (!visibleIds.has(n.id)) continue;
       const b = (out[n.difficulty] ??= { done: 0, count: 0 });
       b.count++;
-      const isDone = inSession ? scores[n.id] != null : statuses[n.id] === "known";
-      if (isDone) b.done++;
+      if (statuses[n.id] === "known") b.done++;
     }
     return out;
-  }, [graph, visibleIds, scores, statuses, inSession]);
+  }, [graph, visibleIds, statuses]);
 
-  // Строки агенды в порядке обхода, с заголовком при смене блока.
-  const agendaRows = useMemo(() => {
-    if (!placement) return [] as ({ kind: "head"; block: string } | { kind: "item"; node: QNode })[];
-    const rows: ({ kind: "head"; block: string } | { kind: "item"; node: QNode })[] = [];
-    let last: string | null = null;
-    for (const id of walkOrder) {
-      const n = nodeMap[id];
-      if (!n) continue;
-      if (n.block !== last) {
-        rows.push({ kind: "head", block: n.block });
-        last = n.block;
-      }
-      rows.push({ kind: "item", node: n });
-    }
-    return rows;
-  }, [placement, nodeMap, walkOrder]);
-
-  // Режим сессии (открыта по ?session=<id>, включая гостя по приглашению) грузит граф со
-  // скрытыми: иначе завершённая сессия теряет из отчёта/доски оценённую ноду, которую позже
-  // скрыл sync или tombstone (Ruling 8). Обычная доска — без скрытых, как раньше.
   const loadGraph = useCallback(
     () =>
       api
-        .graph(pool.id, { includeHidden: sessionFromUrl != null })
+        .graph(pool.id)
         .then((g) => {
           setGraph(g.nodes);
           setErrors(g.errors);
           setPlacement(swimlaneLayout(g.nodes, pool));
         })
         .catch((err) => setErrors([{ file: "API", error: String(err) }])),
-    [pool, sessionFromUrl],
+    [pool],
   );
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
 
-  // Чек-лист разбора грузится только вне сессии; после «Выйти» (inSession → false) — перечитать.
   useEffect(() => {
-    if (inSession) return;
     api.progress(pool.id).then(setStatuses).catch(() => setStatuses({}));
-  }, [pool.id, inSession]);
+  }, [pool.id]);
 
-  // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор/оценку).
+  // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор).
   const deleteNode = useCallback(
     async (id: string) => {
       try {
@@ -579,12 +488,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
       await loadGraph();
       setSelectedId((s) => (s === id ? null : s));
       setCurrentId((c) => (c === id ? null : c));
-      setScores((prev) => {
-        if (!(id in prev)) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
     },
     [loadGraph],
   );
@@ -606,9 +509,9 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const rfNodes = useMemo(
     () =>
       placement
-        ? buildNodes(graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark", planIds)
+        ? buildNodes(graph, pool, placement, bandCounts, statuses, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query.toLowerCase().trim(), unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme === "dark")
         : [],
-    [graph, pool, placement, bandCounts, scores, statuses, inSession, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unscoredOnly, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme, planIds],
+    [graph, pool, placement, bandCounts, statuses, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme],
   );
 
   const centerOn = useCallback(
@@ -621,17 +524,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [placement],
   );
 
-  // Ruling C3: оценки — только в сессии; вне сессии — no-op (черновиков без сессии больше нет).
-  const applyScore = useCallback(
-    (nodeId: string, score: number) => {
-      if (!session) return;
-      setScores((s) => ({ ...s, [nodeId]: score }));
-      api.setScore(session.id, nodeId, score, notes[nodeId]).catch(() => void 0);
-    },
-    [session, notes],
-  );
-
-  // Чек-лист разбора: статус карточки (вне сессии). Optimistic update + откат при ошибке;
+  // Чек-лист разбора: статус карточки. Optimistic update + откат при ошибке;
   // повтор той же клавиши/кнопки с тем же статусом снимает его (DELETE вместо PUT).
   const setStatus = useCallback(
     (nodeId: string, status: Progress) => {
@@ -656,17 +549,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [statuses],
   );
 
-  // Заметка интервьюера на ноду: персистится вместе с оценкой (схема scores: score+note).
-  const setNote = useCallback(
-    (nodeId: string, text: string) => {
-      setNotes((s) => ({ ...s, [nodeId]: text }));
-      if (session && scores[nodeId] != null) {
-        api.setScore(session.id, nodeId, scores[nodeId], text).catch(() => void 0);
-      }
-    },
-    [session, scores],
-  );
-
   const onNodeClick = useCallback((_: unknown, node: Node) => {
     if (node.type !== "question") return;
     setSelectedId(node.id);
@@ -681,26 +563,27 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     [centerOn],
   );
 
-  // «Дальше»: следующий НЕОЦЕНЁННЫЙ вопрос по порядку обхода (план или сетка), с переносом по кругу.
-  const nextQuestion = useCallback(() => {
+  // «n»: следующая НЕРАЗОБРАННАЯ карточка по порядку обхода, с переносом по кругу.
+  // Если неразобранных не осталось — остаёмся на месте: уводить на погашенную «знаю»
+  // карточку значит врать кнопкой «следующее неразобранное».
+  const nextUnresolved = useCallback(() => {
     if (!placement) return;
-    // только видимый срез (активные фильтры и план)
+    // только видимый срез (активные фильтры)
     const flat = walkOrder.filter((id) => visibleIds.has(id));
     if (!flat.length) return;
     const start = currentId ? flat.indexOf(currentId) : -1;
     for (let k = 1; k <= flat.length; k++) {
       const id = flat[(start + k + flat.length) % flat.length];
-      if (id && id !== currentId && scores[id] == null) {
+      if (id && id !== currentId && statuses[id] !== "known") {
         moveCurrent(id);
         return;
       }
     }
-    moveCurrent(flat[(start + 1 + flat.length) % flat.length]);
-  }, [placement, currentId, scores, moveCurrent, visibleIds, walkOrder]);
+  }, [placement, currentId, statuses, moveCurrent, visibleIds, walkOrder]);
 
-  // Хоткеи чек-листа (1-3, вне сессии): следующая ВИДИМАЯ карточка в порядке матрицы —
+  // Хоткеи чек-листа (1-3): следующая ВИДИМАЯ карточка в порядке матрицы —
   // следующая в колонке, затем первая следующей колонки; те же фильтры и «только
-  // неразобранное», что у nextQuestion. Пусто после фильтра — остаёмся на месте.
+  // неразобранное», что у nextUnresolved. Пусто после фильтра — остаёмся на месте.
   // Возвращает id новой текущей карточки (для drawer, п.2) или null.
   const nextInMatrix = useCallback((): string | null => {
     if (!placement) return null;
@@ -712,15 +595,8 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     return next ?? null;
   }, [placement, currentId, moveCurrent, walkOrder, visibleIds, unresolvedOnly, statuses]);
 
-  // Сессия с планом: стартуем с первого неоценённого вопроса плана, как только доска готова.
-  useEffect(() => {
-    if (!planOrder || !placement || currentId) return;
-    const first = planOrder.find((id) => scores[id] == null && placement.positions[id]) ?? planOrder[0];
-    if (first && placement.positions[first]) moveCurrent(first);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planOrder, placement]);
-
-  // Клавиатура: 1-5 — оценка, Enter — открыть, стрелки — навигация, n — далее, Esc — снять текущий.
+  // Клавиатура: 1-3 — статус чек-листа, Enter — открыть, стрелки — навигация,
+  // n — следующая неразобранная, Esc — снять текущую.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -732,16 +608,12 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
         return;
       }
       if (!placement) return;
-      if (e.key >= "1" && e.key <= "5") {
+      if (e.key in STATUS_BY_KEY) {
         if (!currentId) return;
-        if (inSession) {
-          applyScore(currentId, Number(e.key));
-        } else if (e.key in STATUS_BY_KEY) {
-          setStatus(currentId, STATUS_BY_KEY[e.key]);
-          // Drawer открыт — курсор оценки должен идти вместе с ним (иначе drawer «отстаёт»).
-          const nextId = nextInMatrix();
-          if (nextId != null && selectedId != null) setSelectedId(nextId);
-        }
+        setStatus(currentId, STATUS_BY_KEY[e.key]);
+        // Drawer открыт — курсор должен идти вместе с ним (иначе drawer «отстаёт»).
+        const nextId = nextInMatrix();
+        if (nextId != null && selectedId != null) setSelectedId(nextId);
         return;
       }
       if (e.key === "Enter") {
@@ -749,7 +621,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
         return;
       }
       if (e.key === "n") {
-        nextQuestion();
+        nextUnresolved();
         return;
       }
       if (e.key === "Escape" && !selectedId) {
@@ -789,72 +661,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [placement, currentId, selectedId, inSession, applyScore, moveCurrent, nextQuestion, setStatus, nextInMatrix]);
-
-  // Привязать активную сессию к адресу (#/board/<pool>?session=<id>) — ссылкой можно поделиться.
-  // replaceState не шлёт hashchange: роутер не перерисовывает доску, состояние остаётся.
-  const setSessionParam = useCallback(
-    (id: number | null) => window.history.replaceState(null, "", href.board(pool.id, id)),
-    [pool.id],
-  );
-
-  // Подключиться к уже существующей сессии (другой интервьюер / HR): подтянуть оценки.
-  const joinSession = useCallback(
-    async (id: number) => {
-      try {
-        const s = await api.getSession(id);
-        setSession(s);
-        setInSession(true);
-        setUnresolvedOnly(false); // чип «Только неразобранное» есть только вне сессии — иначе индикатор фильтров залипнет
-        setScores(scoresOf(s));
-        setNotes(notesOf(s));
-        setSessionParam(id);
-      } catch {
-        setInSession(false);
-        setSessionParam(null);
-      }
-    },
-    [setSessionParam],
-  );
-
-  const leaveSession = useCallback(() => {
-    setSession(null);
-    setInSession(false);
-    setLive(false);
-    setUnscoredOnly(false); // чип «Только неоценённые» есть только в сессии — фильтр не должен остаться висеть
-    setUnresolvedOnly(false); // симметрично: «Только неразобранное» — только вне сессии
-    setScores({}); // Ruling C3: черновиков вне сессии нет — не тащим оценки покинутой сессии на доску
-    setSessionParam(null);
-  }, [setSessionParam]);
-
-  // Авто-подключение по ?session=<id> при загрузке (старт с главной и «Открыть» со страницы сессий).
-  useEffect(() => {
-    if (sessionFromUrl) joinSession(sessionFromUrl);
-  }, [joinSession, sessionFromUrl]);
-
-  // Live-синхронизация: подписка на SSE-поток активной сессии. Входящие снимки
-  // сливаются объединением, чтобы не затирать только что выставленную локальную оценку.
-  useEffect(() => {
-    if (!session) return;
-    const es = new EventSource(api.eventsUrl(session.id));
-    const merge = (e: MessageEvent) => {
-      try {
-        const snap = JSON.parse(e.data) as Session;
-        setScores((prev) => ({ ...prev, ...scoresOf(snap) }));
-        setNotes((prev) => ({ ...prev, ...notesOf(snap) }));
-      } catch {
-        /* ignore malformed frame */
-      }
-    };
-    es.addEventListener("snapshot", merge as EventListener);
-    es.addEventListener("update", merge as EventListener);
-    es.onopen = () => setLive(true);
-    es.onerror = () => setLive(false);
-    return () => {
-      es.close();
-      setLive(false);
-    };
-  }, [session]);
+  }, [placement, currentId, selectedId, moveCurrent, nextUnresolved, setStatus, nextInMatrix]);
 
   const toggleBlock = (b: string) => setActiveBlocks((s) => ({ ...s, [b]: !s[b] }));
   const toggleDiff = (d: string) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
@@ -862,41 +669,19 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const clearTags = () => setActiveTags({});
   const toggleKind = (k: string) => setActiveKinds((s) => ({ ...s, [k]: !s[k] }));
 
-  const scored = Object.keys(scores).length;
-  // Позиция/грейд кандидата и имя интервьюера — для шапки отчёта; грузим по факту сессии.
-  const [reportPeople, setReportPeople] = useState<{ interviewer: string | null; position: string | null; seniority: string | null }>(
-    { interviewer: null, position: null, seniority: null },
-  );
-  useEffect(() => {
-    if (!session) {
-      setReportPeople({ interviewer: null, position: null, seniority: null });
-      return;
-    }
-    let alive = true; // ответ по уже сменившейся сессии не должен перетереть актуальный
-    Promise.all([api.listCandidates().catch(() => []), api.listInterviewers().catch(() => [])]).then(([cs, ivs]) => {
-      if (!alive) return;
-      const cand = cs.find((c) => c.id === session.candidate_id);
-      const iv = ivs.find((i) => i.id === session.interviewer_id);
-      setReportPeople({ interviewer: iv?.name ?? null, position: cand?.position ?? null, seniority: cand?.seniority ?? null });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [session]);
-  // Прогресс по блокам для чипов фильтра: в сессии — оценённые, вне сессии — разобранные («знаю»).
+  // Прогресс по блокам для чипов фильтра: разобранные («знаю») из чек-листа.
   const blockProgress = useMemo(() => {
     const out: Record<string, { done: number; total: number }> = {};
     for (const b of blockOrder(pool)) out[b] = { done: 0, total: 0 };
     for (const n of graph) {
       out[n.block] ??= { done: 0, total: 0 };
       out[n.block].total++;
-      const isDone = inSession ? scores[n.id] != null : statuses[n.id] === "known";
-      if (isDone) out[n.block].done++;
+      if (statuses[n.id] === "known") out[n.block].done++;
     }
     return out;
-  }, [graph, scores, statuses, inSession, pool]);
+  }, [graph, statuses, pool]);
 
-  // Число разобранных («знаю») карточек — для HUD/toolbar вне сессии.
+  // Число разобранных («знаю») карточек — для HUD/toolbar.
   const known = useMemo(
     () => Object.values(statuses).filter((s) => s === "known").length,
     [statuses],
@@ -907,65 +692,28 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
   const anyFilterOn =
     anyTagActive ||
     query.trim() !== "" ||
-    unscoredOnly ||
     unresolvedOnly ||
     blockOrder(pool).some((b) => !activeBlocks[b]) ||
     levelOrder(pool).some((d) => !activeDiffs[d]) ||
     KINDS.some((k) => !activeKinds[k]);
-  // Прогресс по ТЕКУЩЕМУ отфильтрованному набору. Условие "проходит фильтры" держать в
-  // синхроне с предикатом `dimmed` в buildNodes (block/diff/kind/tag).
-  // В сессии с планом прогресс считается по плану, а не по фильтрам.
-  const coverage = useMemo(() => {
-    let total = 0;
-    let done = 0;
-    if (planOrder) {
-      for (const id of planOrder) {
-        total++;
-        if (scores[id] != null) done++;
-      }
-      return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
-    }
-    for (const n of graph) {
-      const tagOk = !anyTagActive || n.tags.some((t) => activeTags[t]);
-      if (activeBlocks[n.block] !== false && activeDiffs[n.difficulty] !== false && activeKinds[n.kind] && tagOk) {
-        total++;
-        if (scores[n.id] != null) done++;
-      }
-    }
-    return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
-  }, [graph, scores, activeBlocks, activeDiffs, activeKinds, activeTags, anyTagActive, planOrder]);
+  // «Только неразобранное» и в видимом срезе не осталось ни одной не-«знаю» карточки:
+  // доска пуста по делу, а не по ошибке — говорим об этом и даём снять фильтр.
+  const allKnownUnderFilter = useMemo(
+    () =>
+      unresolvedOnly &&
+      graph.length > 0 &&
+      !graph.some((n) => visibleIds.has(n.id) && statuses[n.id] !== "known"),
+    [unresolvedOnly, graph, visibleIds, statuses],
+  );
   const currentNode = currentId ? nodeMap[currentId] : null;
   const selectedNode = selectedId ? nodeMap[selectedId] : null;
 
   const nQuestions = `${graph.length} ${nWord(graph.length, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
-  const doReport = () => downloadReport(session?.candidate ?? "", graph, scores, pool, notes, reportPeople, session);
-  // Завершение: статус finished + решение и комментарий; сессия остаётся открытой для просмотра/правки итога.
-  const makeInvite = async (role: "viewer" | "member") => {
-    if (!session) return;
-    try {
-      const inv = await api.invite(session.id, role, inviteHours);
-      setInviteUrl(`${window.location.origin}${window.location.pathname}${inv.url}`);
-      reloadInvites();
-    } catch {
-      alert(t("Не удалось создать ссылку"));
-    }
-  };
-  const finishSession = async (decision: "hire" | "no_hire" | "hold", summary: string) => {
-    if (!session) return;
-    try {
-      const s = await api.finishSession(session.id, { decision, summary });
-      setSession(s);
-      setFinishOpen(false);
-    } catch {
-      alert(t("Не удалось завершить интервью"));
-    }
-  };
 
   return (
     <div className="app">
-      {/* Toolbar (ТЗ 10–14): один ряд — слева «где мы» (назад, направление, число вопросов), справа
-          действия (фильтры, экспорт, старт, язык, •••). Ход интервью — второй ряд, и только когда
-          сессия активна; общего процента прохождения вне сессии нет. */}
+      {/* Toolbar (ТЗ 10–14): один ряд — слева «где мы» (назад, направление, число вопросов),
+          справа действия (фильтры, экспорт, язык, •••). */}
       <header className="topbar">
         <div className="topbar__row topbar__row--main">
           <div className="topbar__left">
@@ -987,52 +735,15 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
               {t("Фильтры")}
               {anyFilterOn && <span className="filtersbtn__dot" title={t("Фильтры активны")} />}
             </button>
-            <div className="tbdrop tbdrop--export">
-              <button
-                className="tbbtn exportbtn"
-                onClick={() => setExportOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={exportOpen}
-              >
-                <Download size={16} {...ICON} aria-hidden="true" />
-                {t("Экспорт")}
-              </button>
-              {exportOpen && (
-                <div className="tbmenu exportmenu" role="menu">
-                  {/* Только реально доступные форматы — их два, оба HTML. */}
-                  <button
-                    className="tbmenu__item dlbtn"
-                    role="menuitem"
-                    disabled={scored === 0}
-                    title={scored === 0 ? t("Сначала выставьте оценки") : undefined}
-                    onClick={() => { setExportOpen(false); doReport(); }}
-                  >
-                    {t("Отчёт по сессии (HTML)")}
-                  </button>
-                  <button
-                    className="tbmenu__item bankbtn"
-                    role="menuitem"
-                    onClick={() => { setExportOpen(false); downloadBank(graph, pool); }}
-                  >
-                    {t("Банк вопросов (HTML)")}
-                  </button>
-                </div>
-              )}
-            </div>
-            {/* В сессии мы уже находимся — старт нового интервью из toolbar'а не предлагаем. */}
-            {!session && (
-              <a
-                className="tbbtn session__start btn--primary"
-                // Настройка интервью получает текущие фильтры доски: выбранная область → набор вопросов.
-                href={href.setup(pool.id, {
-                  blocks: blockOrder(pool).filter((b) => activeBlocks[b] !== false),
-                  diffs: levelOrder(pool).filter((d) => activeDiffs[d]),
-                })}
-              >
-                <Play size={15} strokeWidth={2} aria-hidden="true" />
-                {t("Начать интервью →")}
-              </a>
-            )}
+            {/* Экспорт — одно действие (банк вопросов в HTML), поэтому кнопка, а не меню из одного пункта. */}
+            <button
+              className="tbbtn exportbtn"
+              onClick={() => downloadBank(graph, pool)}
+              title={t("Скачать банк вопросов направления в HTML")}
+            >
+              <Download size={16} {...ICON} aria-hidden="true" />
+              {t("Экспорт HTML")}
+            </button>
             <LangSwitch />
             <div className="tbdrop tbdrop--more">
               <button
@@ -1073,122 +784,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
           </div>
         </div>
 
-        {/* ряд 2 — ход интервью: только в активной сессии (кандидат, прогресс, live, выход) */}
-        {session && (
-          <div className="topbar__row topbar__row--session">
-            <div className="session">
-              <span className="session__active">
-                {t("Кандидат: {name} · Сессия #{id}", { name: session.candidate, id: session.id })}
-              </span>
-              <div className="progress" title={t("Оценено по текущему набору фильтров")}>
-                <div className="progress__track">
-                  <div className="progress__fill" style={{ width: `${coverage.pct}%` }} />
-                </div>
-                <span className="progress__label">
-                  {t("оценено {done} / {total} ({pct}%)", { done: coverage.done, total: coverage.total, pct: coverage.pct })}
-                </span>
-              </div>
-              <span
-                className={`livedot ${live ? "livedot--on" : ""}`}
-                title={live ? t("Live: изменения синхронизируются с HR") : t("Подключение к live…")}
-              >
-                ● {live ? "LIVE" : "…"}
-              </span>
-              <div className="session__actions">
-                {session.status === "finished" && (
-                  <span className={`session__status badge badge--${session.decision ?? "done"}`} title={session.summary ?? ""}>
-                    {t("Завершена")} · {decisionLabel(t, session.decision)}
-                  </span>
-                )}
-                {!guest && (
-                  <div className="tbdrop tbdrop--invite">
-                    <button
-                      className="tbbtn invitebtn"
-                      onClick={() => setInviteOpen((v) => !v)}
-                      aria-haspopup="menu"
-                      aria-expanded={inviteOpen}
-                      title={t("Ссылка для коллеги")}
-                    >
-                      <Link2 size={15} {...ICON} aria-hidden="true" />
-                      {t("Ссылка для коллеги")}
-                    </button>
-                    {inviteOpen && (
-                      <div className="tbmenu invitemenu" role="menu">
-                        {!inviteUrl ? (
-                          <>
-                            <label className="invite__ttl">
-                              {t("Срок ссылки")}
-                              <select className="invite__hours" value={inviteHours} onChange={(e) => setInviteHours(Number(e.target.value))}>
-                                <option value={1}>{t("1 час")}</option>
-                                <option value={24}>{t("24 часа")}</option>
-                                <option value={168}>{t("7 дней")}</option>
-                              </select>
-                            </label>
-                            <button className="tbmenu__item invite__member" role="menuitem" onClick={() => makeInvite("member")}>
-                              {t("Интервьюер — может оценивать")}
-                            </button>
-                            <button className="tbmenu__item invite__viewer" role="menuitem" onClick={() => makeInvite("viewer")}>
-                              {t("Наблюдатель — только смотрит")}
-                            </button>
-                          </>
-                        ) : (
-                          <div className="invite__result">
-                            <input className="invite__url" readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
-                            <div className="invite__btns">
-                              <button className="tbbtn invite__copy" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>
-                                {t("Скопировать")}
-                              </button>
-                              <button className="tbbtn btn--quiet" onClick={() => setInviteUrl(null)}>{t("Другая ссылка")}</button>
-                            </div>
-                          </div>
-                        )}
-                        {invites.some((i) => i.state === "active") && (
-                          <div className="invite__list">
-                            <div className="invite__list-head">{t("Действующие ссылки")}</div>
-                            {invites.filter((i) => i.state === "active").map((i) => (
-                              <div key={i.token} className="invite__row">
-                                <span className="invite__role">{i.role === "member" ? t("Интервьюер") : t("Наблюдатель")}</span>
-                                <span className="invite__exp muted">
-                                  {i.expires_at ? t("до {when}", { when: i.expires_at.slice(0, 16).replace("T", " ") }) : ""}
-                                </span>
-                                <button className="tbbtn btn--quiet invite__revoke" onClick={() => revokeInvite(i.token)}>{t("Отозвать")}</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* «Завершить» доступно всегда: итог можно подвести и по части плана; у завершённой — правка итога. */}
-                <button
-                  className={`tbbtn cta-done ${session.status !== "finished" && coverage.total > 0 && coverage.done === coverage.total ? "btn--primary" : ""}`}
-                  onClick={() => setFinishOpen(true)}
-                  title={session.status === "finished" ? t("Итог") : t("Завершить интервью")}
-                >
-                  {session.status === "finished" ? t("Итог") : t("Завершить")}
-                </button>
-                {!guest && (
-                  <button className="tbbtn btn--quiet session__leave" onClick={leaveSession} title={t("Выйти из сессии")}>
-                    <X size={15} {...ICON} aria-hidden="true" />
-                    {t("Выйти")}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </header>
-
-      {finishOpen && session && (
-        <FinishModal
-          session={session}
-          scored={coverage.done}
-          total={coverage.total}
-          onClose={() => setFinishOpen(false)}
-          onFinish={finishSession}
-        />
-      )}
 
       {errors.length > 0 && (
         <div className="errbar">
@@ -1202,33 +798,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
       )}
 
       <div className="main">
-        {agendaOpen && placement && (
-          <aside className="interview">
-            <h4>{t("Агенда")} · {agendaRows.filter((r) => r.kind === "item").length}</h4>
-            {agendaRows.map((r, i) =>
-              r.kind === "head" ? (
-                <div key={`h-${r.block}-${i}`} className="iv-block" style={{ color: blockColor(pool, r.block) }}>
-                  {blockLabel(pool, r.block)}
-                </div>
-              ) : (
-                <button
-                  key={r.node.id}
-                  className={[
-                    "ivbtn",
-                    r.node.id === currentId ? "ivbtn--current" : "",
-                    scores[r.node.id] != null ? "ivbtn--scored" : "",
-                  ].join(" ")}
-                  style={{ borderLeftColor: blockColor(pool, r.node.block) }}
-                  onClick={() => moveCurrent(r.node.id)}
-                  title={r.node.question}
-                >
-                  {scores[r.node.id] != null && <span className="ivbtn__check">✓</span>}
-                  {r.node.title || r.node.topic}
-                </button>
-              ),
-            )}
-          </aside>
-        )}
         <div className="canvas" ref={canvasRef}>
           {rfNodes.length === 0 ? (
             <div className="loading">{t("Загрузка графа…")}</div>
@@ -1263,6 +832,17 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                 zoomable
               />
 
+              {allKnownUnderFilter && (
+                <Panel position="top-center">
+                  <div className="boardnote" role="status">
+                    <span>{t("Всё разобрано")}</span>
+                    <button className="boardnote__btn" onClick={() => setUnresolvedOnly(false)}>
+                      {t("Показать все")}
+                    </button>
+                  </div>
+                </Panel>
+              )}
+
               {filtersOpen && (
                 <Panel position="top-right">
                   <div className="filterpanel" role="region" aria-label={t("Фильтры вопросов")}>
@@ -1296,6 +876,7 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                             background: activeBlocks[b] ? blockColor(pool, b) : "transparent",
                           }}
                           onClick={() => toggleBlock(b)}
+                          title={`${t("Знаю")} ${blockProgress[b].done}/${blockProgress[b].total}`}
                         >
                           {blockLabel(pool, b)} {blockProgress[b].done}/{blockProgress[b].total}
                         </button>
@@ -1335,35 +916,20 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                         </button>
                       ))}
                     </div>
-                    {/* Прогресс-фильтр: в сессии — «только неоценённые» (ход интервью), вне сессии —
-                        «только неразобранное» (чек-лист разбора, гасит уже «знаю» карточки). */}
+                    {/* Прогресс-фильтр: «только неразобранное» — гасит карточки со статусом «знаю». */}
                     <div className="fp__group">
                       <h2 className="fp__title">{t("Прогресс")}</h2>
-                      {inSession ? (
-                        <button
-                          className={`fp__chip ${unscoredOnly ? "" : "fp__chip--off"}`}
-                          style={{
-                            borderColor: "#16a34a",
-                            color: unscoredOnly ? "#fff" : "#16a34a",
-                            background: unscoredOnly ? "#16a34a" : "transparent",
-                          }}
-                          onClick={() => setUnscoredOnly((v) => !v)}
-                        >
-                          {t("Только неоценённые")}
-                        </button>
-                      ) : (
-                        <button
-                          className={`fp__chip ${unresolvedOnly ? "" : "fp__chip--off"}`}
-                          style={{
-                            borderColor: "#16a34a",
-                            color: unresolvedOnly ? "#fff" : "#16a34a",
-                            background: unresolvedOnly ? "#16a34a" : "transparent",
-                          }}
-                          onClick={() => setUnresolvedOnly((v) => !v)}
-                        >
-                          {t("Только неразобранное")}
-                        </button>
-                      )}
+                      <button
+                        className={`fp__chip ${unresolvedOnly ? "" : "fp__chip--off"}`}
+                        style={{
+                          borderColor: "#16a34a",
+                          color: unresolvedOnly ? "#fff" : "#16a34a",
+                          background: unresolvedOnly ? "#16a34a" : "transparent",
+                        }}
+                        onClick={() => setUnresolvedOnly((v) => !v)}
+                      >
+                        {t("Только неразобранное")}
+                      </button>
                     </div>
                     <div className="fp__group fp__group--tags">
                       <div className="fp__title">
@@ -1411,63 +977,38 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
                       {currentNode.title || currentNode.question}
                     </span>
                     {showTimer && (
-                      <span className="hud__timer" title={t("Время на вопрос · вся сессия")}>
-                        ⏱ {mmss(now - questionStart)}
-                        {sessionStart != null && ` · ${mmss(now - sessionStart)}`}
+                      <span className="hud__timer" title={t("Время на карточку · весь разбор")}>
+                        ⏱ {mmss(now - cardStart)}
+                        {studyStart != null && ` · ${mmss(now - studyStart)}`}
                       </span>
                     )}
                     <span className="hud__progress">
-                      {planOrder
-                        ? `${Math.max(0, planOrder.indexOf(currentNode.id)) + 1}/${planOrder.length}`
-                        : inSession
-                        ? `${scored}/${graph.length}`
-                        : `${t("Разобрано")} ${known}/${graph.length}`}
+                      {`${t("Знаю")} ${known}/${graph.length}`}
                       {" · "}
                       {currentNode.topic}
                     </span>
-                    {/* Ruling C3: вне сессии HUD ставит статусы чек-листа, не оценки; звёзды — только в сессии. */}
+                    {/* HUD ставит статусы чек-листа: знаю / повторить / не знаю. */}
                     <span className="hud__score">
-                      {inSession ? (
-                        [1, 2, 3, 4, 5].map((i) => (
-                          <button
-                            key={i}
-                            className={
-                              scores[currentId!] != null && i <= scores[currentId!]
-                                ? "scorebtn scorebtn--on"
-                                : "scorebtn"
-                            }
-                            onClick={() => applyScore(currentId!, i)}
-                          >
-                            ●
-                          </button>
-                        ))
-                      ) : (
-                        <>
-                          <button
-                            className={`statusbtn statusbtn--known ${statuses[currentId!] === "known" ? "statusbtn--on" : ""}`}
-                            onClick={() => setStatus(currentId!, "known")}
-                          >
-                            {t("Знаю (1)")}
-                          </button>
-                          <button
-                            className={`statusbtn statusbtn--review ${statuses[currentId!] === "review" ? "statusbtn--on" : ""}`}
-                            onClick={() => setStatus(currentId!, "review")}
-                          >
-                            {t("Повторить (2)")}
-                          </button>
-                          <button
-                            className={`statusbtn statusbtn--unknown ${statuses[currentId!] === "unknown" ? "statusbtn--on" : ""}`}
-                            onClick={() => setStatus(currentId!, "unknown")}
-                          >
-                            {t("Не знаю (3)")}
-                          </button>
-                        </>
-                      )}
+                      <button
+                        className={`statusbtn statusbtn--known ${statuses[currentId!] === "known" ? "statusbtn--on" : ""}`}
+                        onClick={() => setStatus(currentId!, "known")}
+                      >
+                        {t("Знаю (1)")}
+                      </button>
+                      <button
+                        className={`statusbtn statusbtn--review ${statuses[currentId!] === "review" ? "statusbtn--on" : ""}`}
+                        onClick={() => setStatus(currentId!, "review")}
+                      >
+                        {t("Повторить (2)")}
+                      </button>
+                      <button
+                        className={`statusbtn statusbtn--unknown ${statuses[currentId!] === "unknown" ? "statusbtn--on" : ""}`}
+                        onClick={() => setStatus(currentId!, "unknown")}
+                      >
+                        {t("Не знаю (3)")}
+                      </button>
                     </span>
                     <button onClick={() => setSelectedId(currentId)}>{t("Открыть")}</button>
-                    <button className="btn--primary" onClick={nextQuestion}>
-                      {t("Дальше →")}
-                    </button>
                     <button className="hud__cancel" onClick={() => setCurrentId(null)} title={t("Снять выбор (Esc)")}>
                       ✕
                     </button>
@@ -1481,16 +1022,11 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
         <DetailDrawer
           node={selectedNode}
           pool={pool}
-          score={selectedId ? scores[selectedId] : undefined}
-          note={selectedId ? notes[selectedId] : undefined}
           status={selectedId ? statuses[selectedId] : undefined}
-          inSession={inSession}
           onStatus={setStatus}
           fullscreen={fullscreen}
           hidden={selectedId ? hiddenIds.has(selectedId) : false}
           onToggleHide={toggleHide}
-          onScore={applyScore}
-          onNote={setNote}
           onDelete={deleteNode}
           onUpdate={updateNode}
           onToggleFullscreen={() => setFullscreen((f) => !f)}
@@ -1516,8 +1052,6 @@ export default function BoardPage({ pool, sessionFromUrl, guest = false }: { poo
               onToggleGuidesV: () => setGuidesV((v) => !v),
               guidesH,
               onToggleGuidesH: () => setGuidesH((v) => !v),
-              agendaOpen,
-              onToggleAgenda: () => setAgendaOpen((v) => !v),
               showHidden,
               onToggleHidden: () => setShowHidden((v) => !v),
               hiddenCount: hiddenIds.size,
