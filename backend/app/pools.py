@@ -24,6 +24,8 @@ log = logging.getLogger("interview")
 
 _ID_RE = re.compile(r"^[a-z0-9-]+$")
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# Язык контента направления (spec 2026-09-11): EN-перевод — отдельное направление с translation_of.
+LANGS = ("ru", "en")
 
 
 class PoolConfigError(ValueError):
@@ -70,6 +72,10 @@ class PoolCfg:
     levels: Tuple[LevelCfg, ...] = DEFAULT_LEVELS
     # Каталог content/<pool>/ — только у пулов-сидов; у направлений, созданных из UI, его нет.
     dir: Optional[Path] = None
+    # Демо-режим (spec 2026-09-11): направление видно без входа; язык контента; оригинал перевода.
+    demo: bool = False
+    lang: str = "ru"
+    translation_of: Optional[str] = None
 
     @property
     def block_ids(self) -> frozenset:
@@ -102,6 +108,9 @@ class PoolCfg:
                 for b in self.blocks
             ],
             "levels": [{"id": l.id, "label": l.label} for l in self.levels],
+            "demo": self.demo,
+            "lang": self.lang,
+            "translation_of": self.translation_of,
         }
 
 
@@ -110,6 +119,20 @@ def _req_str(d: dict, key: str, where: str) -> str:
     if not isinstance(v, str) or not v.strip():
         raise PoolConfigError(f"{where}: '{key}' must be a non-empty string")
     return v.strip()
+
+
+def _parse_flags(data: dict) -> tuple:
+    """Флаги направления из pool.yaml: demo (bool), lang (ru|en), translation_of (id оригинала или None)."""
+    demo = data.get("demo", False)
+    if not isinstance(demo, bool):
+        raise PoolConfigError("pool: 'demo' must be true or false")
+    lang = str(data.get("lang") or "ru").strip()
+    if lang not in LANGS:
+        raise PoolConfigError(f"pool: 'lang' must be one of {', '.join(LANGS)}")
+    tr = data.get("translation_of")
+    if tr is not None and (not isinstance(tr, str) or not _ID_RE.match(tr)):
+        raise PoolConfigError("pool: 'translation_of' must be a pool id")
+    return demo, lang, tr
 
 
 def parse_blocks(raw_blocks: object) -> Tuple[BlockCfg, ...]:
@@ -191,6 +214,7 @@ def _parse_pool(data: dict, pool_dir: Path) -> PoolCfg:
         raise PoolConfigError(f"pool id '{pid}' must match [a-z0-9-]+")
     if pid != pool_dir.name:
         raise PoolConfigError(f"pool id '{pid}' must equal directory name '{pool_dir.name}'")
+    demo, lang, translation_of = _parse_flags(data)
     return PoolCfg(
         id=pid,
         label=_req_str(data, "label", "pool"),
@@ -198,6 +222,9 @@ def _parse_pool(data: dict, pool_dir: Path) -> PoolCfg:
         blocks=parse_blocks(data.get("blocks")),
         levels=parse_levels(data["levels"]) if data.get("levels") is not None else DEFAULT_LEVELS,
         dir=pool_dir,
+        demo=demo,
+        lang=lang,
+        translation_of=translation_of,
     )
 
 
@@ -227,6 +254,9 @@ def pool_from_row(row: dict) -> PoolCfg:
         blocks=parse_blocks(row.get("blocks")),
         levels=parse_levels(row["levels"]) if row.get("levels") else DEFAULT_LEVELS,
         dir=None,
+        demo=bool(row.get("demo")),
+        lang=row.get("lang") or "ru",
+        translation_of=row.get("translation_of") or None,
     )
 
 
