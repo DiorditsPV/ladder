@@ -37,6 +37,7 @@ import {
   CARD_H,
   CARD_W,
   LABEL_W,
+  TOP_H,
   subOf,
   swimlaneLayout,
   type Placement,
@@ -140,6 +141,10 @@ function buildNodes(
     id: "bg-bands",
     type: "bands",
     position: { x: -LABEL_W, y: 0 },
+    // Размер фоновых узлов известен из раскладки — задаём его сразу: иначе React Flow держит узел hidden
+    // до замера ResizeObserver, а потерянный замер (флак CI 2026-09-11) оставлял колонки невидимыми.
+    initialWidth: LABEL_W + p.width,
+    initialHeight: p.height,
     data: {
       bands: p.bands.map((b) => ({ ...b, ...(bandCounts[b.difficulty] ?? { done: 0, count: 0 }) })),
       width: p.width,
@@ -157,6 +162,8 @@ function buildNodes(
       id: "bg-guides",
       type: "guides",
       position: { x: 0, y: 0 },
+      initialWidth: p.width,
+      initialHeight: p.height,
       data: { columns: p.columns, bands: p.bands, width: p.width, height: p.height, guidesH, guidesV },
       draggable: false,
       selectable: false,
@@ -172,6 +179,8 @@ function buildNodes(
       id: `bg-${bg.block}`,
       type: "blockGroup",
       position: { x: bg.x, y: 0 },
+      initialWidth: bg.width,
+      initialHeight: bg.height,
       data: {
         block: bg.block,
         label: blockLabel(pool, bg.block),
@@ -197,6 +206,8 @@ function buildNodes(
       id: `sh-${col.block}-${col.subblock}`,
       type: "subhead",
       position: { x: col.x, y: 0 },
+      initialWidth: col.width,
+      initialHeight: TOP_H, // marginTop SUPER_H + полоса HEADER_H (см. SubHeadNode)
       data: {
         block: col.block,
         label: col.label,
