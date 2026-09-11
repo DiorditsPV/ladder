@@ -112,7 +112,7 @@ def write_pool_yaml(pool: dict, cards: list, path: Path) -> None:
     if pool.get("tags"):
         doc["tags"] = list(pool["tags"])  # словарь темы сверх 17 концептов; бэкенд ключ не читает
     header = (f"# Направление «{pool['label']}» — сгенерировано скиллом interview-topic.\n"
-              f"# levels — ряды матрицы снизу вверх (первый — самый лёгкий); weight блоков ∝ числу карточек.\n")
+              f"# levels — ряды матрицы сверху вниз (первый — самый лёгкий, верхний ряд); weight блоков ∝ числу карточек.\n")
     path.write_text(header + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 

@@ -182,7 +182,7 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
                     <option value="">{t("Без пресета — создать самостоятельно")}</option>
                     {pools.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.label} · {t("{n} вопросов", { n: p.counts?.nodes ?? 0 })}
+                        {p.label} · {p.counts?.nodes ?? 0} {nWord(p.counts?.nodes ?? 0, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}
                       </option>
                     ))}
                   </select>
@@ -198,7 +198,7 @@ export function PoolFormModal({ mode, pools, pool, onClose, onSaved }: {
               </p>
               <BlocksEditor blocks={blocks} onChange={setBlocks} nodeCounts={mode === "edit" ? nodeCounts : {}} />
               <h4 className="wizard__h4">{t("Уровни")}</h4>
-              <p className="wizard__hint wizard__hint--top">{t("Уровни — ряды матрицы снизу вверх: первый в списке самый лёгкий. От 2 до 8.")}</p>
+              <p className="wizard__hint wizard__hint--top">{t("Уровни — ряды матрицы сверху вниз: первый в списке самый лёгкий и рисуется верхним рядом. От 2 до 8.")}</p>
               <LevelsEditor levels={levels} onChange={setLevels} nodeCounts={mode === "edit" ? levelCounts : {}} />
             </>
           )}

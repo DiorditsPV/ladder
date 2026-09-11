@@ -2,7 +2,7 @@
 // Открывается в браузере, печатается в PDF. Светлый (документ для шаринга/печати).
 
 import { subOf } from "./layout";
-import { getLang, t } from "./i18n";
+import { getLang, nWord, t } from "./i18n";
 import { blockColor, blockLabel, blockOrder, subLabel, levelColor, levelLabel, levelOrder, type PoolConfig, type QNode } from "./types";
 
 const esc = (s: string) =>
@@ -120,7 +120,7 @@ export function buildBankHtml(nodes: QNode[], pool: PoolConfig): string {
   <div class="sheet">
     <div class="head">
       <h1>${t("Банк вопросов")}</h1>
-      <div class="sub">${t("{n} вопросов", { n: nodes.length })} · ${dateStr}</div>
+      <div class="sub">${nodes.length} ${nWord(nodes.length, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])} · ${dateStr}</div>
     </div>
     <div class="summary">${summaryChips}</div>
     ${body}

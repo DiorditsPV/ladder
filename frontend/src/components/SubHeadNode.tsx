@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useT } from "../i18n";
 import { hexA, lighten } from "../types";
 import { HEADER_H, SUPER_H } from "../layout";
 
@@ -15,6 +16,7 @@ export interface SubHeadNodeData {
 
 // Заголовок под-колонки (технологии) внутри блока + лёгкая заливка под ним.
 function SubHeadNodeImpl({ data }: { data: SubHeadNodeData }) {
+  const t = useT();
   const { label, color, width, count, done, dark } = data;
   const fg = dark ? lighten(color, 0.6) : color;
   return (
@@ -30,7 +32,7 @@ function SubHeadNodeImpl({ data }: { data: SubHeadNodeData }) {
       }}
     >
       <span className="subhead__name">{label}</span>
-      <span className="subhead__count">
+      <span className="subhead__count" title={`${t("Знаю")} ${done}/${count}`}>
         {done}/{count}
       </span>
     </div>

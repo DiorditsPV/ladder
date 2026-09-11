@@ -856,6 +856,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
                             background: activeBlocks[b] ? blockColor(pool, b) : "transparent",
                           }}
                           onClick={() => toggleBlock(b)}
+                          title={`${t("Знаю")} ${blockProgress[b].done}/${blockProgress[b].total}`}
                         >
                           {blockLabel(pool, b)} {blockProgress[b].done}/{blockProgress[b].total}
                         </button>
@@ -962,7 +963,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
                       </span>
                     )}
                     <span className="hud__progress">
-                      {`${t("Разобрано")} ${known}/${graph.length}`}
+                      {`${t("Знаю")} ${known}/${graph.length}`}
                       {" · "}
                       {currentNode.topic}
                     </span>

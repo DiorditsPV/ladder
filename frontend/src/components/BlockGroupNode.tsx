@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useT } from "../i18n";
 import { hexA, lighten, plateColor } from "../types";
 import { SUPER_H } from "../layout";
 
@@ -26,6 +27,7 @@ const DARK_ZONE_ALPHA: Record<string, number> = {
 
 // Фон всего блока (на всю группу под-колонок) + верхний заголовок направления.
 function BlockGroupNodeImpl({ data }: { data: BlockGroupNodeData }) {
+  const t = useT();
   const { block, label: blockLabel, color, width, height, count, done, split, dark } = data;
   const fg = dark ? lighten(color, 0.45) : color;
   return (
@@ -51,7 +53,7 @@ function BlockGroupNodeImpl({ data }: { data: BlockGroupNodeData }) {
       >
         <span className="bgroup__name">{blockLabel}</span>
         {!split && (
-          <span className="bgroup__count">
+          <span className="bgroup__count" title={`${t("Знаю")} ${done}/${count}`}>
             {done}/{count}
           </span>
         )}

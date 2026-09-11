@@ -178,7 +178,7 @@ export function HomePage({
                     />
                   </div>
                   <span className="poolcard__progress-label">
-                    {t("разобрано {k} из {n}", { k: p.progress.known, n: p.progress.total })}
+                    {t("знаю {k} из {n}", { k: p.progress.known, n: p.progress.total })}
                   </span>
                 </div>
               )}

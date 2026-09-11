@@ -5,7 +5,7 @@
 // один ключ может быть только один раз).
 export const EN: Record<string, string> = {
   // --- LevelsEditor / PoolFormModal: уровни направления ---
-  "Уровни — ряды матрицы снизу вверх: первый в списке самый лёгкий. От 2 до 8.": "Levels are the matrix rows, bottom to top: the first one is the easiest. From 2 to 8.",
+  "Уровни — ряды матрицы сверху вниз: первый в списке самый лёгкий и рисуется верхним рядом. От 2 до 8.": "Levels are the matrix rows, top to bottom: the first one is the easiest and is drawn as the top row. From 2 to 8.",
   "Название уровня": "Level name",
   "Удалить уровень «{label}» и его вопросы ({n})?": "Delete level “{label}” and its questions ({n})?",
   "Убрать уровень": "Remove level",
@@ -32,7 +32,6 @@ export const EN: Record<string, string> = {
   "Тип": "Type",
   "Стартовый код": "Starter code",
   "Критерии самопроверки": "Self-check criteria",
-  "{n} вопросов": "{n} questions",
   "Банк вопросов": "Question bank",
   "Горячие клавиши": "Keyboard shortcuts",
   "Настройки": "Settings",
@@ -208,11 +207,12 @@ export const EN: Record<string, string> = {
 
   // --- study-progress: чек-лист разбора (статусы вне сессии) ---
   "Знаю (1)": "Know it (1)",
-  "Повторить (2)": "Review (2)",
+  "Повторить (2)": "Revisit (2)",
   "Не знаю (3)": "Don't know (3)",
   "Только неразобранное": "Unresolved only",
-  "разобрано {k} из {n}": "{k} of {n} reviewed",
+  "знаю {k} из {n}": "{k} of {n} known",
   "Разобрано": "Reviewed",
+  "Знаю": "Known",
   // --- ShortcutsHelp: подписи приходят через t(desc), i18n-check их не видит ---
   "знаю · повторить · не знаю": "known · review · don't know",
   "открыть карточку текущего вопроса": "open the current question's card",
