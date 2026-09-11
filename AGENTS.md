@@ -47,6 +47,11 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
   `test_pool_crud.py`/`test_levels.py` направления и уровни, `test_sync.py`, `test_progress.py`
   чек-лист, `test_auth.py` auth/RBAC/тенант-изоляция, `test_demo_access.py` анонимное демо-чтение,
   `test_accounts.py` пароли и аккаунты). `Q_IDEAS.txt` — реестр вопросов + идеи.
+- `backend/tests/test_api_crud.py` — CRUD API для MCP (направление по id, карточки со всеми полями и переносом,
+  фильтры, топики, теги, права).
+- `tools/ladder-mcp/` — MCP-сервер поверх API (`ladder_mcp/server.py` — 24 инструмента, `client.py` — HTTP-клиент
+  с логином, `structure.py` — read-modify-write колонок и уровней); тесты `tools/ladder-mcp/tests` (in-process
+  против настоящего FastAPI), проверка по stdio — `scripts/stdio_smoke.py`. Подробно — его README.
 - `REPORT.md` — отчёт-исследование и архитектурные решения. `.claude/skills/` — скиллы (ниже).
 
 ## API (FastAPI)
@@ -65,6 +70,15 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 один раз; роль по умолчанию viewer), `POST /api/users/{id}/password` (сброс: новый одноразовый, сессии отозваны),
 `DELETE /api/users/{id}` (вместе с сессиями и чек-листом; себя — 400). Без сессии доступны только
 `GET /api/pools` (направления с `demo: true`, без `progress`) и `GET /api/graph?pool=<демо>` — остальное 401.
+Для MCP и скриптов (spec 2026-09-11-api-mcp): `GET /api/pools/{id}`; `POST /api/pools` принимает явный `id` (занят —
+409); `GET /api/nodes?pool=&block=&subblock=&difficulty=&topic=&tag=&kind=&q=&include_hidden=` и `GET /api/nodes/{id}`
+(все поля + `hidden`, `source`); `POST /api/nodes` — ещё `id` (явный, 409), `subblock`, `weight`, `starterCode`,
+`rubric`, ответ — вся карточка; `PUT /api/nodes/{id}` — любые поля и перенос (`pool`, `block`, `subblock`,
+`difficulty`; `""` снимает `subblock`/`title`/`starterCode`; прежняя под-колонка при переносе снимается), ответ
+`{updated, node}`; теги — slug, не больше 5. Топики: `GET /api/pools/{id}/topics`, `PUT|DELETE
+/api/pools/{id}/topics/{topic}` (переименовать/удалить у всех карточек, `block` — сузить колонкой). `GET /api/tags` —
+словарь концептов (`app/tags.py`) + использованные в направлении. Структуру колонок и уровней MCP правит через
+`PUT /api/pools/{id}` (read-modify-write). Правка через API помечает карточку `source=user` — sync её не перетирает.
 Служебное: `GET /api/health`. Полные схемы — Swagger UI на `/docs`.
 
 ## Модель ноды и формат контента
