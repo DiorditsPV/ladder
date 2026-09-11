@@ -553,8 +553,8 @@ def get_progress(request: Request, pool: Optional[str] = None, user: dict = Depe
 
 
 @app.put("/api/progress/{node_id}")
-def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(require_member)) -> dict:
-    """Статус карточки для текущего пользователя. Гость (по ссылке) статусы не ставит — 403 из require_member."""
+def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Статус карточки для текущего пользователя — любая роль (чек-лист личный)."""
     tenant = resolve_tenant(request)
     if db.get_node(tenant, node_id) is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
@@ -562,7 +562,7 @@ def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = 
 
 
 @app.delete("/api/progress/{node_id}")
-def clear_progress(node_id: str, request: Request, user: dict = Depends(require_member)) -> dict:
+def clear_progress(node_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
     return {"cleared": db.clear_progress(resolve_tenant(request), user["id"], node_id)}
 
 

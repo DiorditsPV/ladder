@@ -221,14 +221,14 @@ class Database:
 
     # --- auth sessions (server-side, токен = значение cookie) ---
     def create_auth_session(self, tenant_id: str, user_id: str) -> str:
+        """Новая сессия. Несколько сессий на пользователя (устройства); отзыв — delete_user_sessions."""
         token = secrets.token_urlsafe(32)
+        # Прежние сессии вход больше не вытесняет, поэтому протухшие (старше SESSION_MAX_AGE) чистим
+        # здесь — иначе таблица росла бы без предела. Сравнение строк корректно: created_at пишет
+        # только _now(), всегда в одном формате (isoformat, секунды, +00:00).
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=SESSION_MAX_AGE)).isoformat(timespec="seconds")
         with self._conn() as conn:
-            # Повторный логин инвалидирует прежние сессии того же пользователя:
-            # один активный токен на аккаунт (старые cookie перестают работать).
-            conn.execute(
-                "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?",
-                (tenant_id, user_id),
-            )
+            conn.execute("DELETE FROM auth_sessions WHERE created_at < ?", (cutoff,))
             conn.execute(
                 "INSERT INTO auth_sessions (token, tenant_id, user_id, created_at) "
                 "VALUES (?, ?, ?, ?)",
@@ -253,6 +253,20 @@ class Database:
     def delete_auth_session(self, token: str) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+
+    def delete_user_sessions(self, tenant_id: str, user_id: str, except_token: Optional[str] = None) -> int:
+        """Отозвать сессии пользователя (кроме except_token — текущей). Возвращает число удалённых."""
+        with self._conn() as conn:
+            if except_token:
+                cur = conn.execute(
+                    "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ? AND token != ?",
+                    (tenant_id, user_id, except_token),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id)
+                )
+        return cur.rowcount
 
     # --- nodes (банк вопросов, per-tenant) ---
     def count_nodes(self, tenant_id: str, pool: Optional[str] = None) -> int:
