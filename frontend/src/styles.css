@@ -51,8 +51,7 @@ body {
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 
-/* ---- topbar (ТЗ 10–14): один ряд toolbar — слева «где мы», справа действия;
-   ряд сессии появляется только при активной сессии ---- */
+/* ---- topbar (ТЗ 10–14): один ряд toolbar — слева «где мы», справа действия ---- */
 .topbar {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -86,7 +85,7 @@ body {
 /* Точка на «Фильтры»: панель закрыта, а доска отфильтрована — факт не должен прятаться. */
 .filtersbtn__dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
 
-/* Dropdown'ы toolbar'а («Экспорт», «•••»): выпадают под кнопкой, к правому краю;
+/* Dropdown toolbar'а («•••»): выпадает под кнопкой, к правому краю;
    z-index выше канвы (5) и панели ⚙ (45) — меню коротко живёт поверх всего, кроме модалок (50). */
 .tbdrop { position: relative; display: inline-flex; }
 .tbmenu {

@@ -305,14 +305,15 @@ const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
 
-// 7. Экспорт: в меню toolbar'а остался ровно один пункт — банк вопросов (отчёта по сессии нет).
-await page.locator(".topbar .exportbtn").click();
-await page.waitForSelector(".exportmenu", { timeout: 3000 });
-if ((await page.locator(".exportmenu .tbmenu__item").count()) !== 1) fail("export menu must offer exactly one item (question bank)");
-if ((await page.locator(".exportmenu .bankbtn").count()) !== 1) fail("bank export item missing");
-await page.keyboard.press("Escape");
-await page.waitForSelector(".exportmenu", { state: "detached", timeout: 3000 });
-console.log("OK: export menu offers the question bank only");
+// 7. Экспорт — одна кнопка toolbar'а (без выпадающего меню), сразу отдаёт банк вопросов.
+const expBtn = page.locator(".topbar .exportbtn");
+if ((await expBtn.count()) !== 1) fail("toolbar must offer exactly one export control");
+if ((await expBtn.getAttribute("aria-haspopup")) !== null) fail("export control must not be a dropdown");
+if ((await page.locator(".exportmenu").count()) !== 0) fail("export dropdown menu must be gone");
+const [dlToolbar] = await Promise.all([page.waitForEvent("download"), expBtn.click()]);
+const toolbarFn = dlToolbar.suggestedFilename();
+if (!toolbarFn.includes("bank") || !toolbarFn.endsWith(".html")) fail(`toolbar export wrong file: ${toolbarFn}`);
+console.log(`OK: toolbar export is a single button (${toolbarFn})`);
 
 // 8. Тёмная тема: переключатель в настройках меняет data-theme и тёмный фон.
 const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");

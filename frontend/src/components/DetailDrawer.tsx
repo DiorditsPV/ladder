@@ -186,7 +186,7 @@ export function DetailDrawer({ node, pool, status, onStatus, fullscreen, hidden,
 
         {node.rubric.length > 0 && (
           <section>
-            <h3>{t("Критерии оценки")}</h3>
+            <h3>{t("Критерии самопроверки")}</h3>
             <ul className="rubric">
               {node.rubric.map((r, i) => (
                 <li key={i}>{r}</li>

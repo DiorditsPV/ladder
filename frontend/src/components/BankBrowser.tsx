@@ -222,7 +222,7 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
                           </section>
                           {n.rubric.length > 0 && (
                             <section>
-                              <h4>{t("Критерии оценки")}</h4>
+                              <h4>{t("Критерии самопроверки")}</h4>
                               <ul className="rubric">
                                 {n.rubric.map((r, i) => (
                                   <li key={i}>{r}</li>

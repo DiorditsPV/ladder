@@ -31,7 +31,7 @@ export const EN: Record<string, string> = {
   "Сложность": "Difficulty",
   "Тип": "Type",
   "Стартовый код": "Starter code",
-  "Критерии оценки": "Scoring criteria",
+  "Критерии самопроверки": "Self-check criteria",
   "{n} вопросов": "{n} questions",
   "Банк вопросов": "Question bank",
   "Горячие клавиши": "Keyboard shortcuts",
@@ -69,8 +69,8 @@ export const EN: Record<string, string> = {
   "Неверный email или пароль": "Invalid email or password",
 
   // --- BoardPage ---
-  "Экспорт": "Export",
-  "Банк вопросов (HTML)": "Question bank (HTML)",
+  "Экспорт HTML": "Export HTML",
+  "Скачать банк вопросов направления в HTML": "Download this direction's question bank as HTML",
   "Ещё": "More",
   "Шпаргалка клавиш": "Keyboard cheat sheet",
   "⚠ Ошибки импорта ({n}):": "⚠ Import errors ({n}):",
@@ -160,7 +160,7 @@ export const EN: Record<string, string> = {
   "Точки на фоне": "Background dots",
   "Границы блоков": "Block boundaries",
   "Вертикальные направляющие": "Vertical guides",
-  "Уровни Base / Junior / Middle / Senior": "Base / Junior / Middle / Senior levels",
+  "Ряды уровней направления": "The direction's level rows",
   "Горизонтальные направляющие": "Horizontal guides",
   "Панели": "Panels",
   "Показывать вопросы, убранные с доски": "Show questions removed from the board",

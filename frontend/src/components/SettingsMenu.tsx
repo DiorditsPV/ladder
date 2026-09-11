@@ -102,7 +102,7 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         <div className="settings__chips" role="group" aria-label={t("Отображение холста")}>
           <Chip on={s.bgDots} onClick={s.onToggleBgDots}>{t("Точки на фоне")}</Chip>
           <Chip on={s.guidesV} onClick={s.onToggleGuidesV} title={t("Границы блоков")}>{t("Вертикальные направляющие")}</Chip>
-          <Chip on={s.guidesH} onClick={s.onToggleGuidesH} title={t("Уровни Base / Junior / Middle / Senior")}>{t("Горизонтальные направляющие")}</Chip>
+          <Chip on={s.guidesH} onClick={s.onToggleGuidesH} title={t("Ряды уровней направления")}>{t("Горизонтальные направляющие")}</Chip>
         </div>
       </div>
 

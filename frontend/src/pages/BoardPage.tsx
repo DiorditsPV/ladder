@@ -307,8 +307,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [cardStart, setCardStart] = useState<number>(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Dropdown'ы toolbar'а: «Экспорт» и «•••».
-  const [exportOpen, setExportOpen] = useState(false);
+  // Dropdown toolbar'а: «•••».
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
@@ -345,9 +344,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [filtersOpen, setFiltersOpen] = useState<boolean>(
     () => localStorage.getItem("filtersOpen") === "1",
   );
-  const closeExport = useCallback(() => setExportOpen(false), []);
   const closeMore = useCallback(() => setMoreOpen(false), []);
-  useDismiss(exportOpen, closeExport, ".tbdrop--export");
   useDismiss(moreOpen, closeMore, ".tbdrop--more");
 
   useEffect(() => {
@@ -479,7 +476,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     api.progress(pool.id).then(setStatuses).catch(() => setStatuses({}));
   }, [pool.id]);
 
-  // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор/оценку).
+  // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор).
   const deleteNode = useCallback(
     async (id: string) => {
       try {
@@ -729,28 +726,15 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               {t("Фильтры")}
               {anyFilterOn && <span className="filtersbtn__dot" title={t("Фильтры активны")} />}
             </button>
-            <div className="tbdrop tbdrop--export">
-              <button
-                className="tbbtn exportbtn"
-                onClick={() => setExportOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={exportOpen}
-              >
-                <Download size={16} {...ICON} aria-hidden="true" />
-                {t("Экспорт")}
-              </button>
-              {exportOpen && (
-                <div className="tbmenu exportmenu" role="menu">
-                  <button
-                    className="tbmenu__item bankbtn"
-                    role="menuitem"
-                    onClick={() => { setExportOpen(false); downloadBank(graph, pool); }}
-                  >
-                    {t("Банк вопросов (HTML)")}
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Экспорт — одно действие (банк вопросов в HTML), поэтому кнопка, а не меню из одного пункта. */}
+            <button
+              className="tbbtn exportbtn"
+              onClick={() => downloadBank(graph, pool)}
+              title={t("Скачать банк вопросов направления в HTML")}
+            >
+              <Download size={16} {...ICON} aria-hidden="true" />
+              {t("Экспорт HTML")}
+            </button>
             <LangSwitch />
             <div className="tbdrop tbdrop--more">
               <button
