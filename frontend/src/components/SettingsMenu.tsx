@@ -21,8 +21,6 @@ import { ChangePasswordModal } from "./ChangePasswordModal";
 export type DisplaySettings = {
   design: string;
   onSetDesign: (id: string) => void;
-  theme: "light" | "dark";
-  onToggleTheme: () => void;
   bgDots: boolean;
   onToggleBgDots: () => void;
   guidesV: boolean;
@@ -101,12 +99,6 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         </div>
       </div>
 
-      <div className="settings__group">
-        <div className="settings__title">{t("Цветовая тема")}</div>
-        <div className="settings__chips">
-          <Chip className="themebtn" on={s.theme === "dark"} onClick={s.onToggleTheme} title={t("Выбор запоминается")}>{t("Тёмная тема")}</Chip>
-        </div>
-      </div>
 
       <div className="settings__group">
         <div className="settings__title">{t("Холст")}</div>

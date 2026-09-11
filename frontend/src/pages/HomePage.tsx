@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { AccountMenu } from "../components/AccountMenu";
 import { LangSwitch } from "../components/LangSwitch";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { PoolFormModal } from "../components/PoolFormModal";
 import { nWord, useT } from "../i18n";
 import { poolIcon } from "../poolIcons";
@@ -104,6 +105,7 @@ export function HomePage({
         <h1 className="pageshell__title">{t("Ladder · разбор тем по ступеням")}</h1>
         <div className="pageshell__actions">
           {!demo && <AccountMenu />}
+          <ThemeToggle />
           <LangSwitch />
         </div>
       </header>

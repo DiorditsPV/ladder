@@ -639,7 +639,8 @@ kbd {
 .poolcard__progress-fill { height: 100%; background: #16a34a; border-radius: 999px; transition: width 0.25s ease; }
 .poolcard__progress-label { font-size: 11px; color: var(--text-muted); }
 .poolcard__actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
-.poolcard .poolcard__start { display: inline-flex; align-items: center; gap: 8px; }
+.poolcard .poolcard__start { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); text-decoration: none; }
+.poolcard .poolcard__start:hover { text-decoration: underline; }
 .poolcard__open {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--border-strong); border-radius: 6px;
   font-size: 13px; font-weight: 600; color: var(--text); text-decoration: none; background: var(--surface); white-space: nowrap;
