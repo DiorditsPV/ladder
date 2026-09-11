@@ -3,8 +3,8 @@ import { useState, type FormEvent } from "react";
 import { api } from "../api";
 import { useT } from "../i18n";
 
-// auth-identity (#36): экран входа. Показывается AuthGate, когда /api/auth/me даёт 401.
-// Успешный логин ставит HttpOnly-cookie сессии → onLogin() переключает на доску.
+// auth-identity (#36): экран входа — маршрут #/login (без входа сайт открывается как демо,
+// spec 2026-09-11). Успешный логин ставит HttpOnly-cookie сессии → onLogin() переводит в полный режим.
 export function Login({ onLogin }: { onLogin: () => void }) {
   const t = useT();
   const [email, setEmail] = useState("");

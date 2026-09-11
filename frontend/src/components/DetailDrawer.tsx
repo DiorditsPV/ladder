@@ -15,6 +15,9 @@ interface Props {
   fullscreen: boolean;
   hidden: boolean;
   onToggleHide: (nodeId: string) => void;
+  // Правка и удаление карточки — только у ролей с правом на контент (не демо и не viewer).
+  // «Скрыть» — локальная настройка вида в браузере, остаётся у всех.
+  canEdit: boolean;
   onDelete: (nodeId: string) => void;
   onUpdate: (nodeId: string, fields: NodeUpdate) => void;
   onToggleFullscreen: () => void;
@@ -22,7 +25,7 @@ interface Props {
 }
 
 // Немодальный drawer: полный текст вопроса/ответа. Закрывается с клавиатуры (Esc).
-export function DetailDrawer({ node, pool, status, onStatus, fullscreen, hidden, onToggleHide, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
+export function DetailDrawer({ node, pool, status, onStatus, fullscreen, hidden, onToggleHide, canEdit, onDelete, onUpdate, onToggleFullscreen, onClose }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<{ title: string; difficulty: string; question: string; answer: string }>(
@@ -83,18 +86,20 @@ export function DetailDrawer({ node, pool, status, onStatus, fullscreen, hidden,
           >
             {hidden ? t("Вернуть") : t("Скрыть")}
           </button>
-          <button
-            className="drawer__delete"
-            onClick={() => {
-              if (window.confirm(t("Удалить вопрос «{name}» из банка безвозвратно?", { name: node.title || node.id }))) {
-                onDelete(node.id);
-              }
-            }}
-            title={t("Удалить вопрос из банка (необратимо)")}
-          >
-            {t("Удалить")}
-          </button>
-          {!editing && (
+          {canEdit && (
+            <button
+              className="drawer__delete"
+              onClick={() => {
+                if (window.confirm(t("Удалить вопрос «{name}» из банка безвозвратно?", { name: node.title || node.id }))) {
+                  onDelete(node.id);
+                }
+              }}
+              title={t("Удалить вопрос из банка (необратимо)")}
+            >
+              {t("Удалить")}
+            </button>
+          )}
+          {canEdit && !editing && (
             <button className="drawer__edit" onClick={startEdit} title={t("Редактировать вопрос (в банке)")}>
               {t("Редактировать")}
             </button>

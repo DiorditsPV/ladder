@@ -34,6 +34,10 @@ def _cfg(pool: PoolCfg) -> Dict:
         "description": pool.description,
         "blocks": json.loads(blocks_to_json(pool.blocks)),
         "levels": json.loads(levels_to_json(pool.levels)),
+        # Флаги демо-режима — свойство контента: sync переносит их из pool.yaml (и сбрасывает, если убраны).
+        "demo": pool.demo,
+        "lang": pool.lang,
+        "translation_of": pool.translation_of,
     }
 
 

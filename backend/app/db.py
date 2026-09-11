@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS pools (
     description TEXT NOT NULL DEFAULT '',
     blocks      TEXT NOT NULL,                 -- JSON: [{id,label,color,weight,subblocks:[{id,label}]}]
     levels      TEXT NOT NULL DEFAULT '[]',        -- JSON: [{id,label}]; '[]' → DEFAULT_LEVELS при чтении
+    demo        INTEGER NOT NULL DEFAULT 0,    -- 1 = видно без входа (демо-режим)
+    lang        TEXT NOT NULL DEFAULT 'ru',    -- язык контента направления
+    translation_of TEXT,                       -- id оригинала, если это перевод
     source      TEXT NOT NULL DEFAULT 'seed',  -- seed | user
     deleted_at  TEXT,                          -- tombstone: сид не воскрешает, id остаётся занятым
     created_at  TEXT NOT NULL,
@@ -111,6 +114,7 @@ def _row_to_pool(row: sqlite3.Row) -> Dict:
     d = dict(row)
     d["blocks"] = json.loads(d.get("blocks") or "[]")
     d["levels"] = json.loads(d.get("levels") or "[]")
+    d["demo"] = bool(d.get("demo"))
     return d
 
 
@@ -126,12 +130,20 @@ class Database:
     @staticmethod
     def _migrate_pools(conn: sqlite3.Connection) -> None:
         """Уровни как данные направления: столбец pools.levels. Старые строки получают прежнюю
-        четвёрку явно (не '[]'), чтобы ответ API не зависел от того, когда пул создан."""
+        четвёрку явно (не '[]'), чтобы ответ API не зависел от того, когда пул создан.
+        Флаги демо-режима demo/lang/translation_of — столбцы с дефолтами (не демо, ru, не перевод)."""
         from .pools import DEFAULT_LEVELS, levels_to_json
 
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(pools)").fetchall()}
         if "levels" not in cols:
             conn.execute("ALTER TABLE pools ADD COLUMN levels TEXT NOT NULL DEFAULT '[]'")
+        for col, ddl in (
+            ("demo", "ALTER TABLE pools ADD COLUMN demo INTEGER NOT NULL DEFAULT 0"),
+            ("lang", "ALTER TABLE pools ADD COLUMN lang TEXT NOT NULL DEFAULT 'ru'"),
+            ("translation_of", "ALTER TABLE pools ADD COLUMN translation_of TEXT"),
+        ):
+            if col not in cols:
+                conn.execute(ddl)
         conn.execute("UPDATE pools SET levels = ? WHERE levels = '[]'", (levels_to_json(DEFAULT_LEVELS),))
 
     @staticmethod
@@ -207,16 +219,32 @@ class Database:
             )
         return self.get_user_by_id(tenant_id, uid)
 
+    def update_password(self, tenant_id: str, user_id: str, password_hash: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?",
+                (password_hash, tenant_id, user_id),
+            )
+        return cur.rowcount == 1
+
+    def delete_user(self, tenant_id: str, user_id: str) -> bool:
+        """Удалить аккаунт вместе с его сессиями и чек-листом (одна транзакция). False — не найден."""
+        with self._conn() as conn:
+            conn.execute("DELETE FROM progress WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id))
+            conn.execute("DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id))
+            cur = conn.execute("DELETE FROM users WHERE tenant_id = ? AND id = ?", (tenant_id, user_id))
+        return cur.rowcount == 1
+
     # --- auth sessions (server-side, токен = значение cookie) ---
     def create_auth_session(self, tenant_id: str, user_id: str) -> str:
+        """Новая сессия. Несколько сессий на пользователя (устройства); отзыв — delete_user_sessions."""
         token = secrets.token_urlsafe(32)
+        # Прежние сессии вход больше не вытесняет, поэтому протухшие (старше SESSION_MAX_AGE) чистим
+        # здесь — иначе таблица росла бы без предела. Сравнение строк корректно: created_at пишет
+        # только _now(), всегда в одном формате (isoformat, секунды, +00:00).
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=SESSION_MAX_AGE)).isoformat(timespec="seconds")
         with self._conn() as conn:
-            # Повторный логин инвалидирует прежние сессии того же пользователя:
-            # один активный токен на аккаунт (старые cookie перестают работать).
-            conn.execute(
-                "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?",
-                (tenant_id, user_id),
-            )
+            conn.execute("DELETE FROM auth_sessions WHERE created_at < ?", (cutoff,))
             conn.execute(
                 "INSERT INTO auth_sessions (token, tenant_id, user_id, created_at) "
                 "VALUES (?, ?, ?, ?)",
@@ -241,6 +269,20 @@ class Database:
     def delete_auth_session(self, token: str) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+
+    def delete_user_sessions(self, tenant_id: str, user_id: str, except_token: Optional[str] = None) -> int:
+        """Отозвать сессии пользователя (кроме except_token — текущей). Возвращает число удалённых."""
+        with self._conn() as conn:
+            if except_token:
+                cur = conn.execute(
+                    "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ? AND token != ?",
+                    (tenant_id, user_id, except_token),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id)
+                )
+        return cur.rowcount
 
     # --- nodes (банк вопросов, per-tenant) ---
     def count_nodes(self, tenant_id: str, pool: Optional[str] = None) -> int:
@@ -394,20 +436,24 @@ class Database:
     def upsert_pool_seed(self, tenant_id: str, pool: Dict) -> bool:
         """Сид конфига направления: INSERT OR IGNORE — правки из UI и tombstone переживают рестарт.
 
-        `pool` — {id, label, description, blocks: list, levels?: list}. Возвращает True, если строка вставлена.
+        `pool` — {id, label, description, blocks: list, levels?: list, demo?, lang?, translation_of?}.
+        Возвращает True, если строка вставлена.
         """
         now = _now()
         with self._conn() as conn:
             cur = conn.execute(
                 """
                 INSERT OR IGNORE INTO pools (
-                    tenant_id, id, label, description, blocks, levels, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'seed', ?, ?)
+                    tenant_id, id, label, description, blocks, levels, demo, lang, translation_of,
+                    source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'seed', ?, ?)
                 """,
                 (
                     tenant_id, pool["id"], pool["label"], pool.get("description") or "",
                     json.dumps(pool["blocks"], ensure_ascii=False),
-                    json.dumps(pool.get("levels") or [], ensure_ascii=False), now, now,
+                    json.dumps(pool.get("levels") or [], ensure_ascii=False),
+                    int(bool(pool.get("demo"))), pool.get("lang") or "ru", pool.get("translation_of"),
+                    now, now,
                 ),
             )
         return cur.rowcount == 1
@@ -449,14 +495,16 @@ class Database:
         return self.get_pool(tenant_id, pool_id)
 
     def set_pool_config(self, tenant_id: str, pool_id: str, cfg: Dict) -> None:
-        """Конфиг направления из файлов (sync): label/description/blocks/levels без побочных удалений
-        вопросов — в отличие от update_pool, где смена колонок/уровней из UI режет вопросы."""
+        """Конфиг направления из файлов (sync): label/description/blocks/levels и флаги demo/lang/translation_of
+        без побочных удалений вопросов — в отличие от update_pool, где смена колонок/уровней из UI режет вопросы.
+        Флаги — свойство контента: пишет их только sync, из UI они не правятся."""
         with self._conn() as conn:
             conn.execute(
-                "UPDATE pools SET label = ?, description = ?, blocks = ?, levels = ?, updated_at = ? "
-                "WHERE tenant_id = ? AND id = ?",
+                "UPDATE pools SET label = ?, description = ?, blocks = ?, levels = ?, demo = ?, lang = ?, "
+                "translation_of = ?, updated_at = ? WHERE tenant_id = ? AND id = ?",
                 (cfg["label"], cfg.get("description") or "", json.dumps(cfg["blocks"], ensure_ascii=False),
-                 json.dumps(cfg["levels"], ensure_ascii=False), _now(), tenant_id, pool_id),
+                 json.dumps(cfg["levels"], ensure_ascii=False), int(bool(cfg.get("demo"))),
+                 cfg.get("lang") or "ru", cfg.get("translation_of"), _now(), tenant_id, pool_id),
             )
 
     def update_pool(self, tenant_id: str, pool_id: str, fields: Dict) -> Optional[Dict]:

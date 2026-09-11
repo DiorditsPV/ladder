@@ -211,3 +211,23 @@ def test_normalize_blocks_ignores_bool_weight_and_rejects_non_list_subblocks():
     assert normalize_blocks([{"id": "a", "label": "A", "color": "#111111", "weight": 4}], existing)[0]["weight"] == 4
     with pytest.raises(PoolConfigError):
         normalize_blocks([{"label": "A", "color": "#111111", "subblocks": 0}], ())
+
+
+def test_pool_flags_default_and_to_dict(tmp_path):
+    _mk(tmp_path, "demo", VALID)
+    p = load_pools(tmp_path)["demo"]
+    assert (p.demo, p.lang, p.translation_of) == (False, "ru", None)
+    d = p.to_dict()
+    assert (d["demo"], d["lang"], d["translation_of"]) == (False, "ru", None)
+
+
+def test_pool_flags_parsed(tmp_path):
+    _mk(tmp_path, "demo", VALID + "demo: true\nlang: en\ntranslation_of: demo-ru\n")
+    p = load_pools(tmp_path)["demo"]
+    assert (p.demo, p.lang, p.translation_of) == (True, "en", "demo-ru")
+
+
+@pytest.mark.parametrize("extra", ["lang: de\n", "demo: maybe later\n", "translation_of: Not An Id\n"])
+def test_pool_flags_invalid_skip_pool(tmp_path, extra):
+    _mk(tmp_path, "demo", VALID + extra)
+    assert "demo" not in load_pools(tmp_path)

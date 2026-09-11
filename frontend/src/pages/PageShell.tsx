@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { LangSwitch } from "../components/LangSwitch";
 import { useT } from "../i18n";
-import { href } from "../router";
+import { useHomeHref } from "../session";
 
 // Каркас всех страниц, кроме доски: тонкая полоса «← Меню · заголовок [· действия · RU/EN]»,
 // ниже — содержимое. Оформление (37 и альтернативы) приходит через те же токены.
@@ -15,10 +15,11 @@ export function PageShell({
   children: ReactNode;
 }) {
   const t = useT();
+  const homeHref = useHomeHref();
   return (
     <div className="page">
       <header className="pageshell">
-        <a className="pageshell__back" href={href.home}>{t("← Меню")}</a>
+        <a className="pageshell__back" href={homeHref}>{t("← Меню")}</a>
         <h1 className="pageshell__title">{title}</h1>
         <div className="pageshell__actions">
           {actions}

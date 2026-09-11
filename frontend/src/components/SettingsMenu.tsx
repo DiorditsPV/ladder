@@ -1,5 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "../i18n";
+import { href } from "../router";
+import { useSession } from "../session";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 
 // Боковая панель настроек (⚙ в шапке доски), выезжает слева — справа живут фильтры
 // и drawer вопроса. Всё, что настраивают редко — оформление, тема, холст, панели,
@@ -10,6 +13,10 @@ import { useT } from "../i18n";
 // Закрывается по ✕, Esc и клику вне; Esc глушится в capture-фазе (иначе снимет
 // выделение вопроса), mousedown слушаем в capture-фазе (канва React Flow гасит всплытие)
 // и не считаем «мимо» клики внутри .settings (панель + кнопка ⚙).
+//
+// Группа «Аккаунт» — только у вошедшего (spec 2026-09-11): «Сменить пароль», «Люди» (owner), «Выйти».
+// Модалка смены пароля — сосед панели внутри той же обёртки .settings: клик в ней не «мимо», а Esc,
+// пока она открыта, закрывает только её (панель свой Esc в это время пропускает).
 
 export type DisplaySettings = {
   design: string;
@@ -51,9 +58,12 @@ function Chip({ on, onClick, title, className = "", children }: {
 
 export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettings; onClose: () => void }) {
   const t = useT();
+  const { user, logout } = useSession();
+  const [pwOpen, setPwOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (pwOpen) return; // Esc закрывает модалку смены пароля (её обработчик), а не панель
       e.preventDefault();
       e.stopImmediatePropagation();
       onClose();
@@ -69,9 +79,10 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
       window.removeEventListener("keydown", onKey, { capture: true });
       document.removeEventListener("mousedown", onDown, { capture: true });
     };
-  }, [onClose]);
+  }, [onClose, pwOpen]);
 
   return (
+    <>
     <div className="setdrawer" role="dialog" aria-label={t("Настройки")} aria-modal="false">
       <div className="setdrawer__head">
         <strong>{t("Настройки")}</strong>
@@ -125,6 +136,18 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         <div className="settings__title">{t("Справка")}</div>
         <button className="setdrawer__act helpbtn" onClick={() => { onClose(); s.onShowHelp(); }}>{t("Горячие клавиши")}</button>
       </div>
+
+      {user && (
+        <div className="settings__group">
+          <div className="settings__title">{t("Аккаунт")}</div>
+          <div className="settings__account-email">{user.email}</div>
+          <button className="setdrawer__act settings__password" onClick={() => setPwOpen(true)}>{t("Сменить пароль")}</button>
+          {user.role === "owner" && <a className="setdrawer__act settings__people" href={href.people}>{t("Люди")}</a>}
+          <button className="setdrawer__act settings__logout" onClick={() => void logout()}>{t("Выйти")}</button>
+        </div>
+      )}
     </div>
+    {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
+    </>
   );
 }

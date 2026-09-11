@@ -12,7 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python / platform), внутри карточки ранжированы по уровням сложности — рядам, которые задаёт сам пул
 (`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
 Карточка = вопрос/задача + ответ. Рёбер/ветвления между вопросами нет — это доска,
-а не граф зависимостей. Контент импортируется из Markdown/JSON. Только локально.
+а не граф зависимостей. Контент импортируется из Markdown/JSON. Без входа сайт открывается как демо
+(два направления, RU/EN, чек-лист в браузере), полный режим — после входа; см. «Режимы и роли».
 Бэкенд **FastAPI + SQLite**, фронт **React + Vite + React Flow (@xyflow)**.
 
 ## Команды
@@ -33,7 +34,7 @@ pytest tests/test_app.py::test_name -q            # один тест
 # Фронт
 cd frontend && npm run build     # tsc --noEmit + vite build (типы проверяются здесь)
 npm run dev                      # Vite :5173, проксирует /api на :8000
-npm run smoke                    # headless playwright-smoke реального рантайма; нужен сервер :8000
+npm run smoke                    # headless playwright-smoke реального рантайма; нужен сервер :8000 (лучше на свежей БД)
 ```
 
 Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из `backend/`) + `npm run dev`.
@@ -56,13 +57,17 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - `models.py` — pydantic `Node` с `extra="forbid"`: добавление поля ноды = правка `models.py`
   **И** `frontend/src/types.ts` **И** миграция всех контент-файлов, иначе импорт падает.
 - `db.py` — SQLite: направления, банк вопросов, пользователи и чек-лист (`progress`).
-  `tenancy.py` — изоляция тенантов. `auth.py` — пароли, server-side auth-сессии, RBAC.
+  `tenancy.py` — изоляция тенантов. `auth.py` — пароли, server-side auth-сессии, RBAC;
+  `optional_user` (пользователь или None без 401) — только в `GET /api/pools` и `GET /api/graph` (демо-чтение).
 - `main.py` — FastAPI; полные схемы ручек в Swagger UI на `/docs`.
 
 **Фронт** (`frontend/src/`) — данные грузятся из `/api/graph` в рантайме:
-- `router.ts`/`Router.tsx` — hash-роутер: `#/`, `#/board/<pool>`, `#/bank/<pool>`.
+- `router.ts`/`Router.tsx` — hash-роутер: `#/`, `#/demo`, `#/login`, `#/people`, `#/board/<pool>`, `#/bank/<pool>`;
+  `redirectFor` уводит с маршрутов, недоступных режиму, языковой эффект — на пару направления.
+- `session.tsx` — контекст сессии: `useSession()` (`user | null`, `refresh`, `logout`), `useCan()` (права режима/роли),
+  `useHomeHref()`; `progressStore.ts` — чек-лист на сервере или в `localStorage`; `poolLang.ts` — `poolsForLang`, `pairOf`.
 - `pages/BoardPage.tsx` — доска пула: состояние, `buildNodes`, шапка, панель ⚙.
-- `pages/` — `HomePage`, `BankPage`, `PageShell`.
+- `pages/` — `Landing` (стартовый экран), `HomePage`, `BankPage`, `PeoplePage` (аккаунты, owner), `PageShell`.
 - `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков, под-колонок и уровней из `pool.yaml` (`levelOrder`), `subOf`.
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
   `Block = string`, перечисления `Difficulty/Kind`, `levelOrder/levelLabel/levelColor`.
@@ -76,6 +81,16 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 каждого пользователя; `PUT/DELETE /api/progress/{node_id}`, `GET /api/progress?pool=`, сводка `progress` в `/api/pools`).
 Хоткеи `1/2/3` ставят статус и ведут к следующей карточке, `n` — к следующей неразобранной.
 Статусы ставят HUD внизу доски и drawer; оценок 1–5 и режима интервью в продукте нет.
+
+**Режимы и роли** (spec 2026-09-11) — режим следует из сессии. Без входа — демо: `#/` стартовый экран,
+`#/demo` демо-главная (только направления с `demo: true`), доска и банк — только демо-направлений (остальные
+адреса → `#/demo`), чек-лист в `localStorage` (`ladder.progress.<pool>`), правок нет, экспорт HTML есть. Вход —
+`#/login`; `#/people` — аккаунты (owner): заведение с одноразовым паролем, сброс, удаление; свой пароль — «Сменить
+пароль» (меню аккаунта на главной, ⚙ на доске). Роли: owner — всё; member — ещё и правка контента; viewer —
+чтение всех направлений и свой чек-лист. Анонимно бэкенд отдаёт ровно `GET /api/pools` (демо, без `progress`) и
+`GET /api/graph?pool=<демо>`, остальное — 401. Флаги направления в `pool.yaml`: `demo` (bool), `lang` (`ru|en`),
+`translation_of` (id оригинала) — свойства контента, из UI не правятся; при EN-интерфейсе главная показывает
+перевод вместо оригинала, переключатель языка на доске ведёт на пару. Права во фронте — `useCan()`.
 
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →
@@ -91,16 +106,23 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - **Новый тип ноды на канве** = регистрация в `nodeTypes` (BoardPage.tsx).
 - **Теги — только из ~17 сквозных концептов** (architecture, orchestration, optimization, …),
   1–3 на ноду, без тех-имён (технология видна по колонке). Полный список — в `AGENTS.md`.
-- `main` — стабильная ветка, merge в неё **ничего не деплоит**; выкладка на interview.paveldiordits.site — только
+- `main` — стабильная ветка, merge в неё **ничего не деплоит**; выкладка на ladder.paveldiordits.site — только
   ручной запуск `Deploy` (см. `DEPLOY.md`). Фичи всё равно идут через `dev`.
 - **Новый пул** = каталог `content/<id>/` с `pool.yaml` (id = имя каталога); id нод уникальны в пределах
   тенанта — используйте префикс пула.
 - **Удаление seed-карточки из UI** прячет её (`hidden`, `source=user`) — файл остаётся источником;
   чтобы удалить насовсем, удали файл и сделай sync.
+- **Новое мутирующее действие в UI** — прячь по `useCan()` (`session.tsx`): в демо оно получит 401, у viewer — 403.
+  Статус карточки пиши через `useProgressStore()`, не через `api.setProgress` напрямую — иначе демо сломается.
+- **Демо-направление** = `demo: true` в `pool.yaml`; перевод — отдельный пул `<id>-en` с `lang: en` и
+  `translation_of: <id>`, id карточек = id оригинала + `-en`, колонки/уровни/теги — как у оригинала.
 
 ## Проверка изменений
 Скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →
 при правке фронта `npm run build` + `npm run i18n:check` (ключи `t("…")` есть в `src/i18n/en.ts`) + `npm run smoke` (нужен сервер) → рестарт uvicorn.
+Smoke начинается без входа (демо, EN-пара `data-engineer-en`), входит по `#/login`, в конце заводит и удаляет viewer'а —
+гоняй на свежей БД: `INTERVIEW_DB_PATH=$(mktemp -d)/s.db INTERVIEW_OWNER_PASSWORD=interview-dev uvicorn app.main:app --port 8003`
+и `SMOKE_URL=http://localhost:8003/ npm run smoke`.
 При переименовании нод/тегов/классов, на которые опирается smoke, обнови `frontend/smoke.mjs`.
 
 ## Скиллы проекта (`.claude/skills/`)

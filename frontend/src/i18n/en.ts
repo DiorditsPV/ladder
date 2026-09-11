@@ -226,4 +226,43 @@ export const EN: Record<string, string> = {
     "Delete direction “{label}”? Its questions ({nodes}) will be deleted permanently.",
   "Время на карточку · весь разбор": "Time per card · total study time",
   "Время на карточку и на весь разбор в нижней панели": "Time per card and total study time in the bottom bar",
+
+  // --- Landing: стартовый экран демо-режима (spec 2026-09-11) ---
+  "Тема разложена на колонки и ступени. Проходите карточки и отмечайте: знаю, повторить, не знаю.":
+    "Each topic is laid out in columns and rungs. Work through the cards and mark each one: know it, revisit, don't know.",
+  "Открыть демо": "Open demo",
+  "Дата-инженер и системный аналитик — на русском и английском.": "Data engineer and system analyst — in Russian and English.",
+
+  // --- AccountMenu / SettingsMenu / ChangePasswordModal: аккаунт полного режима ---
+  "Сменить пароль": "Change password",
+  "Люди": "People",
+  "Выйти": "Sign out",
+  "Аккаунт": "Account",
+  "Текущий пароль": "Current password",
+  "Новый пароль": "New password",
+  "Повторите новый пароль": "Repeat new password",
+  "Сменить": "Change",
+  "Новый пароль — не короче 8 символов": "The new password must be at least 8 characters",
+  "Пароли не совпадают": "Passwords do not match",
+  "Текущий пароль неверный": "The current password is wrong",
+  "Не удалось сменить пароль": "Could not change the password",
+  "Пароль изменён. Остальные устройства вышли из аккаунта.": "Password changed. Other devices have been signed out.",
+
+  // --- PeoplePage ---
+  "Добавить": "Add",
+  "Пароль для {email} — показывается один раз:": "Password for {email} — shown only once:",
+  "Скопировать": "Copy",
+  "Почта": "Email",
+  "Доступ": "Access",
+  "Заведён": "Added",
+  "Сбросить пароль": "Reset password",
+  "Удалить аккаунт {email} вместе с его чек-листом?": "Delete the account {email} together with its checklist?",
+  "Такой аккаунт уже есть": "This account already exists",
+  "Не удалось добавить": "Could not add",
+  "Не удалось сбросить пароль": "Could not reset the password",
+  "Не удалось удалить аккаунт": "Could not delete the account",
+  "Не удалось загрузить список": "Could not load the list",
+  "владелец": "owner",
+  "редактор": "editor",
+  "разбор": "study",
 };

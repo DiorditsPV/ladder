@@ -21,6 +21,9 @@ def resolve_tenant(request=None) -> str:
     ВНИМАНИЕ (fail-open): ручка, зовущая `resolve_tenant(request)` без зависимости
     `current_user`/`require_*`, молча получит `default` вместо 401. Каждый вызов в main.py
     обязан идти в паре с auth-зависимостью — иначе аутентификация обходится.
+
+    Исключение — демо-чтение (`auth.optional_user` в GET /api/pools и GET /api/graph): без сессии
+    там осознанно читается тенант default и только направления с demo=true (spec 2026-09-11).
     """
     if request is not None:
         tenant = getattr(request.state, "tenant", None)

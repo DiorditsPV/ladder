@@ -1,11 +1,14 @@
 import { ArrowRight, BookOpen, CircleHelp, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, type AuthUser } from "../api";
+import { api } from "../api";
+import { AccountMenu } from "../components/AccountMenu";
 import { LangSwitch } from "../components/LangSwitch";
 import { PoolFormModal } from "../components/PoolFormModal";
 import { nWord, useT } from "../i18n";
 import { poolIcon } from "../poolIcons";
+import { localSummary } from "../progressStore";
 import { href } from "../router";
+import { useCan } from "../session";
 import type { PoolConfig } from "../types";
 
 type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
@@ -15,21 +18,21 @@ type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
 // и «Банк вопросов», меню ••• (редактировать/дублировать/обновить из файлов/удалить).
 // Пулов может не быть вовсе (content/ без pool.yaml) — говорим об этом, а не рисуем пустоту.
 // onChanged — направления создаются/правятся/удаляются здесь же (pool-crud); список живёт в Router.
+// demo — без входа (spec 2026-09-11): только демо-направления, правок нет, прогресс — из браузера.
+// Действия, запрещённые роли, не показываются: правка направлений — owner/member, «Обновить из
+// файлов» — owner (ручка /api/pools/sync — owner-only).
 export function HomePage({
   pools,
+  demo = false,
   notice,
   onChanged,
-}: { pools: PoolConfig[]; notice?: string; onChanged: () => void }) {
+}: { pools: PoolConfig[]; demo?: boolean; notice?: string; onChanged: () => void }) {
   const t = useT();
+  const can = useCan();
   const [modal, setModal] = useState<PoolModal>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  // Сводка «Обновить из файлов» — полоской над списком, как notice; пункт меню виден только owner'у
-  // (ручка /api/pools/sync — owner-only).
+  // Сводка «Обновить из файлов» — полоской над списком, как notice.
   const [note, setNote] = useState<string | null>(null);
-  const [role, setRole] = useState<AuthUser["role"] | null>(null);
-  useEffect(() => {
-    api.me().then((me) => setRole(me.role)).catch(() => setRole(null));
-  }, []);
   // Меню ••• закрывается кликом мимо и Esc — как обычный dropdown.
   useEffect(() => {
     if (!menuFor) return;
@@ -100,6 +103,7 @@ export function HomePage({
       <header className="pageshell">
         <h1 className="pageshell__title">{t("Ladder · разбор тем по ступеням")}</h1>
         <div className="pageshell__actions">
+          {!demo && <AccountMenu />}
           <LangSwitch />
         </div>
       </header>
@@ -111,32 +115,39 @@ export function HomePage({
           <h2 className="home__h2">{t("Направления")}</h2>
           {/* Новое направление — из пресета (копия колонок и вопросов) или со своими колонками,
               поэтому кнопка есть и без единого пула. Тихая: не спорит с карточками. */}
-          <button className="home__add iconbtn btn--quiet" onClick={() => setModal({ mode: "create" })}>
-            {t("+ Новое направление")}
-          </button>
+          {can.editContent && (
+            <button className="home__add iconbtn btn--quiet" onClick={() => setModal({ mode: "create" })}>
+              {t("+ Новое направление")}
+            </button>
+          )}
         </div>
-        {pools.length === 0 && (
+        {can.editContent && pools.length === 0 && (
           <p className="muted">{t("Нет ни одного направления: создайте первое кнопкой «+ Новое направление» или положите каталог с `pool.yaml` в `content/`.")}</p>
         )}
         <div className="home__pools">
           {pools.map((p) => {
-            const { Icon, tint } = poolIcon(p.id);
+            // Перевод — то же направление: иконка и оттенок оригинала, чтобы RU/EN узнавались одинаково.
+            const { Icon, tint } = poolIcon(p.translation_of || p.id);
+            // Чек-лист: у вошедшего — сводка сервера, в демо — отметки из localStorage этого браузера.
+            const progress = demo ? localSummary(p.id, p.counts?.nodes ?? 0) : p.progress;
             return (
             <div key={p.id} className={`poolcard poolcard--${tint}`} data-pool={p.id}>
               {/* Меню направления лежит над «растяжкой» .poolcard__label::after (z-index), иначе клик уводит на доску. */}
-              <button
-                className="poolcard__menu iconbtn"
-                aria-label={t("Меню направления")}
-                aria-haspopup="menu"
-                aria-expanded={menuFor === p.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuFor((cur) => (cur === p.id ? null : p.id));
-                }}
-              >
-                <Ellipsis size={18} {...ICON} />
-              </button>
-              {menuFor === p.id && (
+              {can.editContent && (
+                <button
+                  className="poolcard__menu iconbtn"
+                  aria-label={t("Меню направления")}
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor === p.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuFor((cur) => (cur === p.id ? null : p.id));
+                  }}
+                >
+                  <Ellipsis size={18} {...ICON} />
+                </button>
+              )}
+              {can.editContent && menuFor === p.id && (
                 <div className="poolcard__dropdown" role="menu" onClick={(e) => e.stopPropagation()}>
                   <button className="poolcard__edit" role="menuitem" onClick={() => { setMenuFor(null); setModal({ mode: "edit", pool: p }); }}>
                     {t("Редактировать")}
@@ -144,7 +155,7 @@ export function HomePage({
                   <button className="poolcard__dup" role="menuitem" onClick={() => { setMenuFor(null); duplicate(p); }}>
                     {t("Дублировать")}
                   </button>
-                  {role === "owner" && (
+                  {can.syncFiles && (
                     <button className="poolcard__sync" role="menuitem" onClick={() => { setMenuFor(null); syncFromFiles(); }}>
                       {t("Обновить из файлов")}
                     </button>
@@ -168,17 +179,17 @@ export function HomePage({
               <div className="poolcard__meta">
                 <span className="poolcard__stat"><CircleHelp size={16} strokeWidth={2} aria-hidden="true" />{questions(p.counts?.nodes ?? 0)}</span>
               </div>
-              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user). */}
-              {p.progress && p.progress.total > 0 && (
+              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user / в демо — per-browser). */}
+              {progress && progress.total > 0 && (
                 <div className="poolcard__progress">
                   <div className="poolcard__progress-track">
                     <div
                       className="poolcard__progress-fill"
-                      style={{ width: `${Math.round((p.progress.known / p.progress.total) * 100)}%` }}
+                      style={{ width: `${Math.round((progress.known / progress.total) * 100)}%` }}
                     />
                   </div>
                   <span className="poolcard__progress-label">
-                    {t("знаю {k} из {n}", { k: p.progress.known, n: p.progress.total })}
+                    {t("знаю {k} из {n}", { k: progress.known, n: progress.total })}
                   </span>
                 </div>
               )}
