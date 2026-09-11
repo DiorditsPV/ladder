@@ -78,7 +78,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков, под-колонок и уровней из `pool.yaml` (`levelOrder`), `subOf`.
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
   `Block = string`, перечисления `Difficulty/Kind`, `levelOrder/levelLabel/levelColor`.
-- `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer.
+- `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer (открытая карточка, два режима — ниже).
 - `theme.tsx` — цветовая тема на всё приложение (светлая по умолчанию, ключ `ladder.theme`) и оформление доски
   `data-design`; выставляются до первой отрисовки (`initTheme` в `main.tsx`), переключатель `ThemeToggle` — в шапке каждой страницы.
 
@@ -89,6 +89,9 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 каждого пользователя; `PUT/DELETE /api/progress/{node_id}`, `GET /api/progress?pool=`, сводка `progress` в `/api/pools`).
 Хоткеи `1/2/3` ставят статус и ведут к следующей карточке, `n` — к следующей неразобранной.
 Статусы ставят HUD внизу доски и drawer; оценок 1–5 и режима интервью в продукте нет.
+Открытая карточка — два режима (`ladder.cardMode`, ⚙ «Карточка вопроса» или кнопка в её шапке): **по центру** (по умолчанию) —
+плавающая карточка поверх доски, ответ под «Показать ответ» / пробелом, ‹ › по матрице, HUD на это время скрыт;
+**справа** — панель, ответ сразу, ширина тянется ручкой (`ladder.drawerWidth`). Корень обоих — `.drawer` + `.drawer--center|--side`.
 
 **Режимы и роли** (spec 2026-09-11) — режим следует из сессии. Без входа — демо: `#/` стартовый экран,
 `#/demo` демо-главная (только направления с `demo: true`), доска и банк — только демо-направлений (остальные
@@ -128,6 +131,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 ## Проверка изменений
 Скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →
 при правке фронта `npm run build` + `npm run i18n:check` (ключи `t("…")` есть в `src/i18n/en.ts`) + `npm run smoke` (нужен сервер) → рестарт uvicorn.
+Smoke идёт в режиме карточки «по центру»: пока она открыта, HUD скрыт — шаги с HUD сначала закрывают её Esc.
 Smoke начинается без входа (демо, EN-пара `data-engineer-en`), входит по `#/login`, в конце заводит и удаляет viewer'а —
 гоняй на свежей БД: `INTERVIEW_DB_PATH=$(mktemp -d)/s.db INTERVIEW_OWNER_PASSWORD=interview-dev uvicorn app.main:app --port 8003`
 и `SMOKE_URL=http://localhost:8003/ npm run smoke`.

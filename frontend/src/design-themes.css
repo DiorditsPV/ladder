@@ -62,6 +62,10 @@ html[data-design="37"]:not([data-theme="dark"]) .bgroup__header {
 html[data-design="37"]:not([data-theme="dark"]) .bgroup__header { background: var(--plate) !important; color: #fff !important; }
 html[data-design="37"]:not([data-theme="dark"]) .topbar { border-bottom: 2px solid #0f0f0f; }
 html[data-design="37"]:not([data-theme="dark"]) .hud { border: 2px solid #0f0f0f; box-shadow: 2.5px 2.5px 0 #0f0f0f; }
+/* карточка по центру — язык HUD: жёсткая рамка и плоская тень (мягкая --shadow в 37 прозрачна) */
+html[data-design="37"]:not([data-theme="dark"]) .drawer--center {
+  border: 2px solid #0f0f0f; border-top-width: 4px; border-radius: 0; box-shadow: 6px 6px 0 #0f0f0f;
+}
 
 /* ============================ 56 · Атлас ============================
    Тёплая топобумага с крупной сеткой, коричневая обвязка, заголовки капителью.
@@ -87,6 +91,9 @@ html[data-design="56"]:not([data-theme="dark"]) .hud {
   border: 1.8px solid #2b2620; box-shadow: 2px 2px 0 rgba(43, 38, 32, .8); border-radius: 4px;
 }
 html[data-design="56"]:not([data-theme="dark"]) .topbar { border-bottom: 1.8px solid #2b2620; }
+html[data-design="56"]:not([data-theme="dark"]) .drawer--center {
+  border: 1.8px solid #2b2620; border-top-width: 4px; border-radius: 4px; box-shadow: 4px 4px 0 rgba(43, 38, 32, .8);
+}
 
 /* ============================ 57 · Полевой журнал ============================
    Миллиметровка: мелкая синяя сетка, синяя обвязка, всё измеряемое — моно.
@@ -113,6 +120,9 @@ html[data-design="57"]:not([data-theme="dark"]) .hud {
 }
 html[data-design="57"]:not([data-theme="dark"]) .bgroup { border-radius: 0; }
 html[data-design="57"]:not([data-theme="dark"]) .topbar { border-bottom: 1.8px solid #1e3a8a; }
+html[data-design="57"]:not([data-theme="dark"]) .drawer--center {
+  border: 1.8px solid #1e3a8a; border-top-width: 4px; border-radius: 0; box-shadow: 4px 4px 0 #1e3a8a;
+}
 
 /* ============================ 58 · Изыскания ============================
    Изолинии на зеленоватой бумаге. Единственный вариант со СВОИМИ карточками:
@@ -163,4 +173,9 @@ html[data-theme="dark"] .bgroup__header {
 }
 html[data-theme="dark"] .bgroup__header { background: var(--plate) !important; color: #fff !important; }
 html[data-theme="dark"] .hud { border: 1.5px solid var(--border); }
+/* карточка по центру: рамка + глубокая тень — над утопленной канвой она читается приподнятой */
+html[data-theme="dark"] .drawer--center {
+  border: 1.5px solid var(--border-strong); border-top-width: 4px; border-radius: 0;
+  box-shadow: 0 28px 64px -10px rgba(0, 0, 0, .75), 0 0 0 1px rgba(0, 0, 0, .35);
+}
 html[data-theme="dark"] .topbar { border-bottom: 1.5px solid var(--border); }
