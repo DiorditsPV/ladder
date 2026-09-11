@@ -1,0 +1,42 @@
+# English translation of data-engineer (demo). Card id = original id + '-en'.
+id: data-engineer-en
+label: Data Engineer
+description: Airflow and Spark, SQL and storage, Python, platform
+blocks:
+- id: frameworks
+  label: Frameworks
+  color: '#2563eb'
+  weight: 35
+  subblocks:
+  - id: airflow
+    label: Airflow
+  - id: pyspark
+    label: PySpark
+  - id: dbt
+    label: dbt
+  - id: streaming
+    label: Streaming
+- id: databases
+  label: Databases
+  color: '#16a34a'
+  weight: 30
+  subblocks:
+  - id: sql
+    label: SQL
+  - id: dbms
+    label: DBMS and engines
+  - id: storage
+    label: Storage
+  - id: formats
+    label: Formats
+- id: python
+  label: Python
+  color: '#d97706'
+  weight: 23
+- id: platform
+  label: Platform
+  color: '#9333ea'
+  weight: 12
+lang: en
+translation_of: data-engineer
+demo: true

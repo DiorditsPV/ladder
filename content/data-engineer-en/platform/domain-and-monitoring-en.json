@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "domain-01-en",
+      "kind": "question",
+      "block": "platform",
+      "topic": "domain",
+      "difficulty": "middle",
+      "weight": 3,
+      "tags": [
+        "domain"
+      ],
+      "question": "Which metrics should you use to measure demand forecast quality, and why is MAPE bad for retail? When should you use WAPE/bias?",
+      "answer": "MAPE = mean relative error, but it's bad for retail: it blows up on items with low/zero demand (division by ~0) and overweights small SKUs. WAPE (volume-weighted absolute error) is more robust — it weights the error by actual sales and reflects the impact on the business. Bias (ME) shows systematic deviation: persistent under-forecasting → shortages on the shelf, over-forecasting → write-offs/frozen working capital. In practice people look at a combination: WAPE (accuracy by volume) + bias (direction of the error) + segmentation by ABC/turnover rate. MAPE alone as the only metric for retail is an anti-pattern.",
+      "title": "Demand forecast metrics"
+    },
+    {
+      "id": "monitoring-01-en",
+      "kind": "question",
+      "block": "platform",
+      "topic": "monitoring-lineage",
+      "difficulty": "middle",
+      "weight": 2,
+      "tags": [
+        "monitoring",
+        "quality"
+      ],
+      "question": "Why do you need data lineage (OpenLineage), and how do you quickly pinpoint a broken data mart in an Airflow → Spark → Trino → ClickHouse chain?",
+      "answer": "Lineage records which datasets each job reads/writes (input→output), building a data dependency graph. OpenLineage is an open event standard; it integrates with Airflow/Spark, and the events are collected in Marquez/a data catalog. The benefit: during an incident you can see which upstream task broke the data mart and which downstream consumers will be affected (impact analysis), without manually digging through DAGs. Pinpointing a broken data mart: follow the lineage up the graph to the nearest job whose run failed/whose DQ metric dropped (freshness, row volume, non-null), and match the incident time against the runs. Lineage + DQ checks (great_expectations) + alerts on volume/freshness together give a fast root cause.",
+      "title": "Lineage and data quality"
+    }
+  ]
+}

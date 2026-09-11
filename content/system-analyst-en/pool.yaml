@@ -1,0 +1,61 @@
+# English translation of system-analyst (demo). Card id = original id + '-en'.
+id: system-analyst-en
+label: System Analyst
+description: Requirements, process and data modeling, SQL, and integrations in a product
+  IT team
+blocks:
+- id: requirements
+  label: Requirements
+  color: '#2563eb'
+  weight: 27
+  subblocks:
+  - id: elicitation
+    label: Elicitation
+  - id: analysis
+    label: Analysis and prioritization
+  - id: documentation
+    label: Documentation
+- id: modeling
+  label: Modeling
+  color: '#9333ea'
+  weight: 25
+  subblocks:
+  - id: process
+    label: Processes (BPMN)
+  - id: uml
+    label: UML and structures
+- id: data
+  label: Data
+  color: '#16a34a'
+  weight: 23
+  subblocks:
+  - id: sql
+    label: SQL
+  - id: data-model
+    label: Data model
+- id: integration
+  label: Integrations
+  color: '#d97706'
+  weight: 25
+  subblocks:
+  - id: api
+    label: APIs and contracts
+  - id: async
+    label: Async and events
+levels:
+- id: concepts
+  label: Concepts
+- id: practice
+  label: Practice
+- id: design
+  label: Design
+- id: expert
+  label: Expert
+tags:
+- requirements
+- process
+- contracts
+- stakeholders
+lang: en
+translation_of: system-analyst
+demo: true
