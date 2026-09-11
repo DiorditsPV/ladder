@@ -5,15 +5,16 @@ import { useSession } from "../session";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import type { CardMode } from "./DetailDrawer";
 
-// Боковая панель настроек (⚙ в шапке доски), выезжает слева — справа живут фильтры
-// и drawer вопроса. Всё, что настраивают редко — оформление, тема, холст, панели,
+// Боковая панель настроек (кнопка ⚙ `.setbtn` в шапке доски), выезжает слева — справа живут фильтры
+// и drawer вопроса. Всё, что настраивают редко — оформление, холст, карточка, панели,
 // справка — собрано здесь. Работа с банком — отдельная страница (#/bank/<pool>),
 // отсюда на неё только ссылка.
 //
-// `.tb__toggle`, `.themebtn`, `.helpbtn` сохранены — на них ходит smoke.mjs.
+// `.tb__toggle`, `.helpbtn` сохранены — на них ходит smoke.mjs.
 // Закрывается по ✕, Esc и клику вне; Esc глушится в capture-фазе (иначе снимет
 // выделение вопроса), mousedown слушаем в capture-фазе (канва React Flow гасит всплытие)
-// и не считаем «мимо» клики внутри .settings (панель + кнопка ⚙).
+// и не считаем «мимо» клики внутри .settings (панель) и по самой кнопке ⚙ — она переключает
+// панель сама (иначе mousedown закрыл бы, а click тут же открыл снова).
 //
 // Группа «Аккаунт» — только у вошедшего (spec 2026-09-11): «Сменить пароль», «Люди» (owner), «Выйти».
 // Модалка смены пароля — сосед панели внутри той же обёртки .settings: клик в ней не «мимо», а Esc,
@@ -39,11 +40,9 @@ export type DisplaySettings = {
   bankHref: string;
 };
 
-// Оформления доски — итог design-funnel (номера сквозные из воронки).
+// Оформления доски — итог design-funnel (номера сквозные из воронки). По умолчанию — 58 (theme.tsx).
 const DESIGNS: [string, string][] = [
   ["37", "Брутализм в цвете"],
-  ["56", "Атлас"],
-  ["57", "Полевой журнал"],
   ["58", "Изыскания"],
 ];
 
@@ -71,7 +70,7 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
     };
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null;
-      if (t && t.closest(".settings")) return;
+      if (t && t.closest(".settings, .setbtn")) return;
       onClose();
     };
     window.addEventListener("keydown", onKey, { capture: true });
@@ -94,9 +93,9 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         <div className="settings__title">{t("Оформление")}</div>
         <div className="settings__chips" role="radiogroup" aria-label={t("Оформление доски")}>
           {DESIGNS.map(([id, label]) => (
-            <button key={id} className={`tb__toggle ${s.design === id ? "tb__toggle--on" : ""}`}
+            <button key={id} className={`tb__toggle design__opt ${s.design === id ? "tb__toggle--on" : ""}`} data-design={id}
               onClick={() => s.onSetDesign(id)} role="radio" aria-checked={s.design === id}>
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
