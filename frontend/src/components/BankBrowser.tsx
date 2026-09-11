@@ -158,7 +158,11 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
       </div>
 
       <div className="bankbrowser__body">
-        {filtered.length === 0 && <p className="bankbrowser__empty">{t("Ничего не найдено")}</p>}
+        {filtered.length === 0 && (
+          <p className="bankbrowser__empty">
+            {nodes.length === 0 ? t("В направлении пока нет вопросов") : t("Ничего не найдено")}
+          </p>
+        )}
         {grouped.map((g) => (
           <section key={g.block} className="bankblock">
             <h2 className="bankblock__head" style={{ borderColor: blockColor(pool, g.block) }}>
@@ -222,7 +226,7 @@ export function BankBrowser({ nodes, pool, onClose, embedded }: Props) {
                           </section>
                           {n.rubric.length > 0 && (
                             <section>
-                              <h4>{t("Критерии оценки")}</h4>
+                              <h4>{t("Критерии самопроверки")}</h4>
                               <ul className="rubric">
                                 {n.rubric.map((r, i) => (
                                   <li key={i}>{r}</li>

@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CircleHelp, ClipboardList, Ellipsis, Play, Radio, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CircleHelp, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type AuthUser } from "../api";
 import { LangSwitch } from "../components/LangSwitch";
@@ -10,11 +10,10 @@ import type { PoolConfig } from "../types";
 
 type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
 
-// Главное меню: направления как входы на доски + разделы проведения интервью (кандидаты, сессии,
-// подключение). Карточка направления: название, описание, статистика, нейтральные чипы колонок,
-// primary «Открыть доску →» (разбор темы), secondary «Начать интервью» (проверка кандидата), меню ••• (редактировать/дублировать/удалить).
+// Главное меню: направления как входы на доски. Карточка направления: название, описание,
+// статистика, полоска чек-листа, нейтральные чипы колонок, primary «Открыть доску →»
+// и «Банк вопросов», меню ••• (редактировать/дублировать/обновить из файлов/удалить).
 // Пулов может не быть вовсе (content/ без pool.yaml) — говорим об этом, а не рисуем пустоту.
-// «Начать интервью» ведёт на экран настройки интервью (#/setup/<pool>): кандидат, разделы, уровни, набор.
 // onChanged — направления создаются/правятся/удаляются здесь же (pool-crud); список живёт в Router.
 export function HomePage({
   pools,
@@ -46,10 +45,9 @@ export function HomePage({
 
   const remove = async (p: PoolConfig) => {
     const ok = window.confirm(
-      t("Удалить направление «{label}»? Вопросы ({nodes}) будут удалены, сессии ({sessions}) останутся в истории.", {
+      t("Удалить направление «{label}»? Вопросы ({nodes}) будут удалены безвозвратно.", {
         label: p.label,
         nodes: p.counts?.nodes ?? 0,
-        sessions: p.counts?.sessions ?? 0,
       }),
     );
     if (!ok) return;
@@ -92,9 +90,8 @@ export function HomePage({
     }
   };
 
-  // Статистика направления с правильными формами числа: «61 вопрос», «25 сессий».
+  // Статистика направления с правильными формами числа: «61 вопрос».
   const questions = (n: number) => `${n} ${nWord(n, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
-  const sessions = (n: number) => `${n} ${nWord(n, ["сессия", "сессии", "сессий"], ["session", "sessions"])}`;
   // Иконки — только outline Lucide, единый stroke-width: они усиливают иерархию, а не спорят с CTA.
   const ICON = { strokeWidth: 1.75 } as const;
 
@@ -170,9 +167,8 @@ export function HomePage({
               </div>
               <div className="poolcard__meta">
                 <span className="poolcard__stat"><CircleHelp size={16} strokeWidth={2} aria-hidden="true" />{questions(p.counts?.nodes ?? 0)}</span>
-                <span className="poolcard__stat"><CalendarDays size={16} strokeWidth={2} aria-hidden="true" />{sessions(p.counts?.sessions ?? 0)}</span>
               </div>
-              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user, вне сессии). */}
+              {/* Чек-лист разбора: доля «знаю» карточек направления (per-user). */}
               {p.progress && p.progress.total > 0 && (
                 <div className="poolcard__progress">
                   <div className="poolcard__progress-track">
@@ -182,7 +178,7 @@ export function HomePage({
                     />
                   </div>
                   <span className="poolcard__progress-label">
-                    {t("разобрано {k} из {n}", { k: p.progress.known, n: p.progress.total })}
+                    {t("знаю {k} из {n}", { k: p.progress.known, n: p.progress.total })}
                   </span>
                 </div>
               )}
@@ -197,9 +193,9 @@ export function HomePage({
                   {t("Открыть доску")}
                   <ArrowRight size={16} {...ICON} aria-hidden="true" />
                 </a>
-                <a className="poolcard__start" href={href.setup(p.id)}>
-                  <Play size={15} strokeWidth={2} aria-hidden="true" />
-                  {t("Начать интервью")}
+                <a className="poolcard__start" href={href.bank(p.id)}>
+                  <BookOpen size={15} strokeWidth={2} aria-hidden="true" />
+                  {t("Банк вопросов")}
                 </a>
               </div>
             </div>
@@ -219,23 +215,6 @@ export function HomePage({
           />
         )}
 
-        <h2 className="home__h2 home__sections-head">{t("Проведение интервью")}</h2>
-        <div className="home__sections">
-          {[
-            { href: href.candidates, Icon: Users, title: t("Кандидаты"), text: t("Справочник кандидатов и интервьюеров") },
-            { href: href.sessions, Icon: ClipboardList, title: t("Сессии"), text: t("Все проведённые интервью, отчёты") },
-            { href: href.connect, Icon: Radio, title: t("Подключение"), text: t("Присоединиться к идущей live-сессии") },
-          ].map(({ href: to, Icon: I, title, text }) => (
-            <a key={to} className="menucard" href={to}>
-              <span className="menucard__icon" aria-hidden="true"><I size={22} {...ICON} /></span>
-              <span className="menucard__text">
-                <strong>{title}</strong>
-                <span>{text}</span>
-              </span>
-              <ArrowRight className="menucard__arrow" size={18} {...ICON} aria-hidden="true" />
-            </a>
-          ))}
-        </div>
       </main>
     </div>
   );

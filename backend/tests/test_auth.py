@@ -130,15 +130,13 @@ def test_relogin_invalidates_prior_session():
     assert c1.get("/api/auth/me").status_code == 401  # прежняя сессия больше не действует
 
 
-def test_session_tenant_isolation(tmp_path):
-    """DAL: get_session/list_sessions не отдают сессии чужого тенанта."""
+def test_nodes_tenant_isolation(tmp_path):
+    """DAL: ноды чужого тенанта не видны (изоляция осталась после удаления режима интервью)."""
     db = Database(tmp_path / "iso.db")
     db.ensure_tenant("t1")
     db.ensure_tenant("t2")
-    s = db.create_session("Кандидат t1", tenant_id="t1")
-    # свой тенант видит
-    assert db.get_session(s["id"], "t1") is not None
-    assert [x["id"] for x in db.list_sessions("t1")] == [s["id"]]
-    # чужой тенант — нет
-    assert db.get_session(s["id"], "t2") is None
-    assert db.list_sessions("t2") == []
+    node = {"id": "iso-01", "pool": "p", "block": "b", "topic": "t", "question": "q", "difficulty": "base"}
+    db.upsert_node("t1", node)
+    assert db.get_node("t1", "iso-01") is not None
+    assert db.get_node("t2", "iso-01") is None
+    assert db.list_nodes("t2") == []

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { hexA, lighten } from "../types";
+import { useT } from "../i18n";
 import type { Band } from "../layout";
 
 // Ruling C2: счётчик разобранных/оценённых по ряду — добавляется к Band в BoardPage
@@ -18,6 +19,7 @@ export interface BandsNodeData {
 // Левая ось сложности (junior→senior сверху вниз). Горизонтальные разделители полос
 // вынесены в GuidesNode (переключаемые направляющие).
 function BandsNodeImpl({ data }: { data: BandsNodeData }) {
+  const t = useT();
   const { bands, width, labelW, height, dark } = data;
   return (
     <div className="bands" style={{ width: labelW + width, height }}>
@@ -37,7 +39,7 @@ function BandsNodeImpl({ data }: { data: BandsNodeData }) {
             }}
           >
             <span>{b.label}</span>
-            <span className="bands__count">{b.done}/{b.count}</span>
+            <span className="bands__count" title={`${t("Знаю")} ${b.done}/${b.count}`}>{b.done}/{b.count}</span>
           </div>
         );
       })}

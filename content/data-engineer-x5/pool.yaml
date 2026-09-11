@@ -1,6 +1,6 @@
 id: data-engineer-x5
 label: Data Engineer X5
-description: Скрипт интервью — Python-лайвкодинг, SQL и индексы, Spark, Airflow, ClickHouse
+description: Python-лайвкодинг, SQL и индексы, Spark, Airflow, ClickHouse
 blocks:
   - id: python
     label: Python

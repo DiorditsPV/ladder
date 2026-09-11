@@ -100,7 +100,6 @@ def test_create_pool_from_preset_copies_blocks_and_nodes():
     assert p["id"] == "analitik-dannyh" and p["label"] == "Аналитик данных" and p["description"] == "тест"
     assert p["blocks"] == de["blocks"]
     assert p["counts"]["nodes"] == de["counts"]["nodes"] > 0
-    assert p["counts"]["sessions"] == 0
     nodes = c.get("/api/graph?pool=analitik-dannyh").json()["nodes"]
     assert len(nodes) == de["counts"]["nodes"]
     assert all(n["id"].startswith("analitik-dannyh-") and n["pool"] == "analitik-dannyh" for n in nodes)
@@ -122,7 +121,7 @@ def test_create_pool_errors():
     assert c.post("/api/pools", json={"label": "X"}).status_code == 422
 
 
-def test_update_and_delete_pool_keeps_sessions_and_blocks_reseed():
+def test_update_and_delete_pool_blocks_reseed():
     c = _client()
     p = c.post("/api/pools", json={"label": "Temp Pool", "preset": "system-analyst"}).json()
     pid = p["id"]
@@ -130,13 +129,11 @@ def test_update_and_delete_pool_keeps_sessions_and_blocks_reseed():
     assert upd["label"] == "Temp Pool 2" and upd["description"] == "d" and upd["blocks"] == p["blocks"]
     assert c.put("/api/pools/nope", json={"label": "x"}).status_code == 404
     assert c.put(f"/api/pools/{pid}", json={"label": ""}).status_code == 422
-    sid = c.post("/api/sessions", json={"candidate": "Keep Me", "pool": pid}).json()["id"]
     r = c.delete(f"/api/pools/{pid}")
     assert r.status_code == 200
-    assert r.json() == {"deleted": pid, "nodes_removed": p["counts"]["nodes"], "sessions_kept": 1}
+    assert r.json() == {"deleted": pid, "nodes_removed": p["counts"]["nodes"]}
     assert pid not in {x["id"] for x in c.get("/api/pools").json()}
     assert c.get(f"/api/graph?pool={pid}").status_code == 404
-    assert c.get(f"/api/sessions/{sid}").status_code == 200  # история осталась
     assert c.delete(f"/api/pools/{pid}").status_code == 404
     assert c.put(f"/api/pools/{pid}", json={"label": "x"}).status_code == 404
     # tombstone: то же название даёт новый id, а не воскрешает старый

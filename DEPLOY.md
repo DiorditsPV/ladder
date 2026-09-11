@@ -19,7 +19,7 @@ Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispa
 | Путь на сервере                                           | Назначение                                        | Переживает выкладку  |
 | --------------------------------------------------------- | ------------------------------------------------- | -------------------- |
 | `/opt/ladder`                                          | код + контент + `frontend/dist` + `backend/.venv` | нет (кроме venv)     |
-| `/var/lib/ladder/ladder.db`                         | SQLite: сессии, оценки, кандидаты, банк вопросов  | **да**               |
+| `/var/lib/ladder/ladder.db`                         | SQLite: направления, банк вопросов, чек-лист      | **да**               |
 | `/etc/ladder.env`                                      | owner-креды (600, root)                           | да                   |
 | `/etc/systemd/system/ladder.service`                   | uvicorn на `127.0.0.1:8770`, hardened             | да (ставит install)  |
 | `/etc/nginx/sites-available/ladder.paveldiordits.site` | фронт-дверь, TLS от certbot                       | да                   |
