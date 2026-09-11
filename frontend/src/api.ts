@@ -84,11 +84,17 @@ export interface LevelDraft {
   label: string;
 }
 
-// sync-pools: результат POST /api/pools/sync — content/ → БД без рестарта.
+// Отчёт POST /api/pools/sync: засев (по умолчанию) или явное обновление пресета из content/ (update=true);
+// dry_run — тот же прогон на копии БД, живая не меняется. nodes_changed — новые и реально переписанные карточки.
 export interface SyncReport {
+  mode: "seed" | "update";
+  dry_run: boolean;
   created: string[];
   updated: string[];
+  config_changed: string[];
   nodes_upserted: number;
+  nodes_changed: number;
+  skipped: number;
   hidden: string[];
   conflicts: string[];
   errors: { file: string; error: string }[];
@@ -112,7 +118,11 @@ export const api = {
       body: JSON.stringify(fields),
     }).then(json<PoolConfig>),
   // sync-pools: content/ → БД без рестарта (новые пулы + upsert файловых нод + скрытие исчезнувших).
-  syncPools: () => fetch(`${BASE}/pools/sync`, { method: "POST" }).then(json<SyncReport>),
+  // Явное обновление одного пресета из файлов; dryRun — предпросмотр без записи.
+  syncPool: (id: string, dryRun: boolean) =>
+    fetch(`${BASE}/pools/sync?pool=${encodeURIComponent(id)}&update=true${dryRun ? "&dry_run=true" : ""}`, {
+      method: "POST",
+    }).then(json<SyncReport>),
   deletePool: (id: string) =>
     fetch(`${BASE}/pools/${encodeURIComponent(id)}`, { method: "DELETE" }).then(
       json<{ deleted: string; nodes_removed: number }>,

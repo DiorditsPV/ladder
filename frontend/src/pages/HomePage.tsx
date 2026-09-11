@@ -21,7 +21,7 @@ type PoolModal = { mode: "create" } | { mode: "edit"; pool: PoolConfig } | null;
 // onChanged — направления создаются/правятся/удаляются здесь же (pool-crud); список живёт в Router.
 // demo — без входа (spec 2026-09-11): только демо-направления, правок нет, прогресс — из браузера.
 // Действия, запрещённые роли, не показываются: правка направлений — owner/member, «Обновить из
-// файлов» — owner (ручка /api/pools/sync — owner-only).
+// файлов» — owner (ручка /api/pools/sync — owner-only) и только у пресетов (has_files).
 export function HomePage({
   pools,
   demo = false,
@@ -73,21 +73,35 @@ export function HomePage({
     }
   };
 
-  // «Обновить из файлов» — content/ → БД без рестарта: новые направления, правки конфигов и seed-нод.
-  // Пользовательские вопросы (source=user) файлы не трогают; исчезнувшие seed-ноды прячутся.
-  const syncFromFiles = async () => {
+  // «Обновить из файлов» — явное обновление пресета из content/ (spec 2026-09-11-content-in-db): сначала прогон
+  // на копии базы и подтверждение с тем, что изменится. Правки из UI/MCP (source=user) файлы не трогают;
+  // seed-карточки, пропавшие из файлов, прячутся. Деплой сам ничего не обновляет — только засевает недостающее.
+  const syncFromFiles = async (p: PoolConfig) => {
     try {
-      const r = await api.syncPools();
-      let text = t("Обновлено из файлов: направлений {p}, вопросов {n}, скрыто {h}, конфликтов {c}", {
-        p: r.created.length + r.updated.length,
-        n: r.nodes_upserted,
+      const preview = await api.syncPool(p.id, true);
+      const errors = preview.errors.length
+        ? ". " + t("Ошибок импорта: {n}; первая — {file}: {error}", { n: preview.errors.length, file: preview.errors[0].file, error: preview.errors[0].error })
+        : "";
+      const cfg = preview.config_changed.length > 0;
+      if (!cfg && !preview.nodes_changed && !preview.hidden.length && !preview.errors.length) {
+        setNote(t("«{label}» совпадает с файлами — обновлять нечего", { label: p.label }));
+        return;
+      }
+      const ask = t("«{label}» из файлов: колонки и уровни — {cfg}, карточек изменится {n}, будет скрыто {h}, конфликтов {c}", {
+        label: p.label,
+        cfg: cfg ? t("перезапишутся") : t("без изменений"),
+        n: preview.nodes_changed,
+        h: preview.hidden.length,
+        c: preview.conflicts.length,
+      });
+      if (!confirm(`${ask}${errors}. ${t("Применить?")}`)) return;
+      const r = await api.syncPool(p.id, false);
+      setNote(t("«{label}» обновлено из файлов: карточек {n}, скрыто {h}, конфликтов {c}", {
+        label: p.label,
+        n: r.nodes_changed,
         h: r.hidden.length,
         c: r.conflicts.length,
-      });
-      if (r.errors.length) {
-        text += ". " + t("Ошибок импорта: {n}; первая — {file}: {error}", { n: r.errors.length, file: r.errors[0].file, error: r.errors[0].error });
-      }
-      setNote(text);
+      }));
       onChanged();
     } catch {
       alert(t("Не удалось обновить из файлов"));
@@ -157,8 +171,8 @@ export function HomePage({
                   <button className="poolcard__dup" role="menuitem" onClick={() => { setMenuFor(null); duplicate(p); }}>
                     {t("Дублировать")}
                   </button>
-                  {can.syncFiles && (
-                    <button className="poolcard__sync" role="menuitem" onClick={() => { setMenuFor(null); syncFromFiles(); }}>
+                  {can.syncFiles && p.has_files && (
+                    <button className="poolcard__sync" role="menuitem" onClick={() => { setMenuFor(null); syncFromFiles(p); }}>
                       {t("Обновить из файлов")}
                     </button>
                   )}

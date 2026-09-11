@@ -62,12 +62,13 @@ if ((await themeOf()) !== "light") fail("theme: переключатель в ш
 console.log("OK: theme — light by default, one theme across pages, toggle in every header");
 await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 10000 });
 if ((await page.locator('.poolcard[data-pool="system-analyst"]').count()) !== 1) fail("demo: нет системного аналитика");
-if ((await page.locator('.poolcard[data-pool="data-engineer-x5"]').count()) !== 0) fail("demo: виден не-демо пул X5");
+// В репозитории только пресеты (spec content-in-db): на демо-главной ровно два направления.
+if ((await page.locator(".poolcard").count()) !== 2) fail("demo: на главной не ровно два демо-направления");
 if ((await page.locator('.poolcard[data-pool$="-en"]').count()) !== 0) fail("demo RU: на главной видны EN-переводы");
 if ((await page.locator(".home__add, .poolcard__menu").count()) !== 0) fail("demo: видна правка направлений");
 console.log("OK: landing → demo home (DE + SA, no editing)");
 // Закрытое входом направление → демо-главная без плашки «Направления нет».
-for (const path of ["#/board/data-engineer-x5", "#/bank/data-engineer-x5"]) {
+for (const path of ["#/board/private-pool", "#/bank/private-pool"]) {
   await page.goto(URL + path, { waitUntil: "networkidle" });
   await page.waitForURL(/#\/demo$/, { timeout: 5000 }).catch(() => fail(`demo: ${path} не увёл на #/demo`));
   await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 5000 });
@@ -239,6 +240,19 @@ await dupCard.locator(".poolcard__menu").click();
 await dupCard.locator(".poolcard__delete").click();
 await page.waitForSelector(`.poolcard[data-pool="${dupId}"]`, { state: "detached", timeout: 5000 });
 console.log(`OK: duplicate — ${dupId} created with DE stats and deleted`);
+
+// 0c'''. «Обновить из файлов» — только у пресетов (has_files): у DE есть, у smoke-pool (создан в UI) нет;
+//        на свежей БД предпросмотр (dry_run) правок не находит и подтверждение не спрашивает.
+await smokeCard.locator(".poolcard__menu").click();
+if ((await smokeCard.locator(".poolcard__sync").count()) !== 0) fail("reload from files shown for a pool without files");
+await deCard.locator(".poolcard__menu").click();
+await deCard.locator(".poolcard__sync").click();
+await page.waitForFunction(
+  () => document.querySelector(".errbar--ok")?.textContent?.includes("совпадает с файлами"),
+  null,
+  { timeout: 5000 },
+);
+console.log("OK: reload from files — presets only, no-op preview on a fresh DB");
 
 page.once("dialog", (d) => d.accept());
 await smokeCard.locator(".poolcard__menu").click();
@@ -942,9 +956,9 @@ await page.waitForSelector(".poolcard", { timeout: 10000 });
 if ((await page.locator(".errbar").count()) !== 1) fail("unknown pool should show a notice on the menu");
 console.log("OK: unknown pool falls back to menu");
 
-// 25. Другие пулы рисуют СВОИ колонки: system-analyst и data-engineer-x5 (независимые пулы).
+// 25. Другой пул рисует СВОИ колонки: system-analyst (второй пресет в репозитории).
 // Регистронезависимо: оформление 37 и тёмная тема переводят .bgroup__header в uppercase CSS'ом.
-for (const [pid, needle] of [["system-analyst", "требования"], ["data-engineer-x5", "python"]]) {
+for (const [pid, needle] of [["system-analyst", "требования"]]) {
   await page.goto(URL + "#/", { waitUntil: "load" });
   await page.waitForSelector(`.poolcard[data-pool="${pid}"]`, { timeout: 10000 });
   await page.goto(URL + `#/board/${pid}`, { waitUntil: "load" });
@@ -972,7 +986,7 @@ await page.goto(URL + "#/login", { waitUntil: "networkidle" });
 await page.fill('.login__input[type="email"]', viewerEmail);
 await page.fill('.login__input[type="password"]', viewerPw);
 await page.click(".login__card button[type=submit]");
-await page.waitForSelector('.poolcard[data-pool="apache-kafka"]', { timeout: 10000 });
+await page.waitForSelector('.poolcard[data-pool="system-analyst"]', { timeout: 10000 });
 if ((await page.locator(".home__add, .poolcard__menu").count()) !== 0) fail("viewer: видна правка направлений");
 await page.click(".account__btn");
 if ((await page.locator(".account__people").count()) !== 0) fail("viewer: в меню аккаунта есть «Люди»");
@@ -985,7 +999,7 @@ await page.waitForSelector(".pwmodal__ok", { timeout: 5000 }).catch(() => fail("
 console.log("OK: viewer signs in, sees all pools read-only, changes the password");
 // Доска viewer'а: карточку открываем с клавиатуры (↓ — первая карточка матрицы, Enter — drawer),
 // правки в drawer нет, «1» пишет статус на сервер (чек-лист у любой роли).
-await page.goto(URL + "#/board/apache-kafka", { waitUntil: "networkidle" });
+await page.goto(URL + "#/board/system-analyst", { waitUntil: "networkidle" });
 await page.waitForSelector(".react-flow__node-question", { timeout: 15000 });
 await page.keyboard.press("ArrowDown");
 await page.keyboard.press("Enter");
