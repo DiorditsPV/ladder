@@ -15,7 +15,7 @@ function readLang(): Lang {
   }
 }
 
-// Модульное состояние: `t` нужна и вне React (report.ts генерирует HTML отчёта).
+// Модульное состояние: `t` нужна и вне React-компонентов (хелперы, обработчики).
 let current: Lang = readLang();
 
 export function getLang(): Lang {

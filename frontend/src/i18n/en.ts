@@ -68,8 +68,6 @@ export const EN: Record<string, string> = {
   "Неверный email или пароль": "Invalid email or password",
 
   // --- BoardPage ---
-  "Экспорт HTML": "Export HTML",
-  "Скачать банк вопросов направления в HTML": "Download this direction's question bank as HTML",
   "Ещё": "More",
   "Шпаргалка клавиш": "Keyboard cheat sheet",
   "⚠ Ошибки импорта ({n}):": "⚠ Import errors ({n}):",
@@ -91,7 +89,6 @@ export const EN: Record<string, string> = {
   // --- BankPage ---
   "Добавить вопрос": "Add question",
   "Загрузить файл": "Upload file",
-  "Скачать HTML": "Download HTML",
 
 
 
@@ -151,9 +148,8 @@ export const EN: Record<string, string> = {
   // --- SettingsMenu ---
   "Оформление": "Look",
   "Оформление доски": "Board look",
-  "Цветовая тема": "Color theme",
-  "Выбор запоминается": "Choice is remembered",
   "Тёмная тема": "Dark theme",
+  "Светлая тема": "Light theme",
   "Холст": "Canvas",
   "Отображение холста": "Canvas display",
   "Точки на фоне": "Background dots",

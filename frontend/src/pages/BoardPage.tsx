@@ -13,7 +13,6 @@ import {
   ArrowLeft,
   BookOpen,
   CircleHelp,
-  Download,
   Ellipsis,
   Settings,
   SlidersHorizontal,
@@ -24,6 +23,7 @@ import { api, type NodeUpdate } from "../api";
 import { BandsNode } from "../components/BandsNode";
 import { BlockGroupNode } from "../components/BlockGroupNode";
 import { LangSwitch } from "../components/LangSwitch";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { SettingsMenu } from "../components/SettingsMenu";
 import { nWord, useT } from "../i18n";
 import { DetailDrawer } from "../components/DetailDrawer";
@@ -31,7 +31,7 @@ import { GuidesNode } from "../components/GuidesNode";
 import { QuestionNode } from "../components/QuestionNode";
 import { ShortcutsHelp } from "../components/ShortcutsHelp";
 import { SubHeadNode } from "../components/SubHeadNode";
-import { downloadBank } from "../report";
+import { readDesign, useTheme } from "../theme";
 import {
   CARD_H,
   CARD_W,
@@ -327,11 +327,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [activeTags, setActiveTags] = useState<Record<string, boolean>>({});
   const [activeKinds, setActiveKinds] = useState<Record<string, boolean>>(ALL_KINDS);
   const [query, setQuery] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark">(
-    () =>
-      (localStorage.getItem("theme") as "light" | "dark") ||
-      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
-  );
+  // Тема — общая на всё приложение (theme.tsx), переключатель в шапке.
+  const { theme } = useTheme();
   const [bgVariant, setBgVariant] = useState<BgVariant>(
     () => (localStorage.getItem("bgVariant") === "dots" ? "dots" : "off"),
   );
@@ -341,10 +338,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [showTimer, setShowTimer] = useState<boolean>(() => localStorage.getItem("showTimer") === "1");
   // Оформление доски (итог design-funnel): дефолт — 37 «Брутализм в цвете»,
   // альтернативы переключаются в ⚙. Применяется атрибутом data-design (design-themes.css).
-  const [design, setDesign] = useState<string>(() => {
-    const v = localStorage.getItem("design");
-    return v && ["37", "56", "57", "58"].includes(v) ? v : "37";
-  });
+  const [design, setDesign] = useState<string>(readDesign);
   // Панель фильтров — popover у правого края канвы, открывается кнопкой toolbar'а; по умолчанию
   // закрыта (поверх канвы она съедает правую треть доски), выбор запоминается.
   const [filtersOpen, setFiltersOpen] = useState<boolean>(
@@ -353,10 +347,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const closeMore = useCallback(() => setMoreOpen(false), []);
   useDismiss(moreOpen, closeMore, ".tbdrop--more");
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("theme", theme);
-  }, [theme]);
   useEffect(() => localStorage.setItem("bgVariant", bgVariant), [bgVariant]);
   useEffect(() => localStorage.setItem("guidesH", guidesH ? "1" : "0"), [guidesH]);
   useEffect(() => localStorage.setItem("guidesV", guidesV ? "1" : "0"), [guidesV]);
@@ -741,15 +731,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               {t("Фильтры")}
               {anyFilterOn && <span className="filtersbtn__dot" title={t("Фильтры активны")} />}
             </button>
-            {/* Экспорт — одно действие (банк вопросов в HTML), поэтому кнопка, а не меню из одного пункта. */}
-            <button
-              className="tbbtn exportbtn"
-              onClick={() => downloadBank(graph, pool)}
-              title={t("Скачать банк вопросов направления в HTML")}
-            >
-              <Download size={16} {...ICON} aria-hidden="true" />
-              {t("Экспорт HTML")}
-            </button>
+            <ThemeToggle />
             <LangSwitch />
             <div className="tbdrop tbdrop--more">
               <button
@@ -1051,8 +1033,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
             settings={{
               design,
               onSetDesign: setDesign,
-              theme,
-              onToggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
               bgDots: bgVariant === "dots",
               onToggleBgDots: () => setBgVariant((v) => (v === "dots" ? "off" : "dots")),
               guidesV,

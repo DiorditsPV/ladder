@@ -38,7 +38,7 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
   `layout.ts` (`swimlaneLayout(nodes, pool)`, `subOf`),
   `types.ts` (`QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` и
   `levelOrder/levelLabel/levelColor` вместо констант, `Block = string`, `Difficulty/Kind`),
-  `report.ts` (HTML-экспорт банка), `styles.css` (CSS-переменные тем), `main.tsx`.
+  `theme.tsx` (тема на всё приложение, светлая по умолчанию; кнопка `ThemeToggle` в шапках), `styles.css` (CSS-переменные тем), `main.tsx`.
   `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode, BandsNode, GuidesNode) и
   оверлеи/панели (DetailDrawer, BankBrowser, UploadModal, ShortcutsHelp, AccountMenu, ChangePasswordModal).
   Тесты: `frontend/smoke.mjs`, `frontend/screenshot.mjs`.
@@ -90,7 +90,7 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 Режим следует из сессии (spec `docs/superpowers/specs/2026-09-11-demo-and-access-design.md`).
 - **Демо (без входа):** `#/` — стартовый экран, `#/demo` — демо-направления на языке интерфейса; доска и банк —
   только демо-направлений (прочие адреса → `#/demo`); чек-лист в `localStorage` (`ladder.progress.<pool>`), на сервер
-  ничего не пишется; правок нет, экспорт банка в HTML и локальное «Скрыть» остаются.
+  ничего не пишется; правок нет, локальное «Скрыть» остаётся.
 - **Вход** — `#/login` (незаметная ссылка «Вход» на стартовом экране); после входа `#/demo` и `#/login` ведут на `#/`.
 - **Роли:** owner — всё, включая `#/people` (аккаунты); member — ещё и правка контента; viewer — чтение всех направлений
   и свой чек-лист на сервере. Фронт прячет недоступные действия через `useCan()`; прогресс — `useProgressStore()`.

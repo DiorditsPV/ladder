@@ -169,7 +169,7 @@ async function main() {
     page.evaluate(
       ({ t, f }) => {
         localStorage.setItem("lang", "en");
-        localStorage.setItem("theme", t);
+        localStorage.setItem("ladder.theme", t);
         localStorage.setItem("bgVariant", "dots");
         localStorage.setItem("filtersOpen", f ? "1" : "0");
         localStorage.setItem("showTimer", "0"); // тикающий таймер ломает воспроизводимость кадра
