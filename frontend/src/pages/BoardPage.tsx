@@ -55,6 +55,7 @@ import {
   type QNode,
 } from "../types";
 import { href } from "../router";
+import { useHomeHref } from "../session";
 
 const nodeTypes = {
   question: QuestionNode,
@@ -286,6 +287,7 @@ const ALL_KINDS: Record<string, boolean> = { question: true, task: true };
 
 export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const t = useT();
+  const homeHref = useHomeHref();
   const [graph, setGraph] = useState<QNode[]>([]);
   const [errors, setErrors] = useState<ImportErr[]>([]);
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -717,7 +719,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
       <header className="topbar">
         <div className="topbar__row topbar__row--main">
           <div className="topbar__left">
-            <a className="topbar__back" href={href.home} title={t("Главное меню")}>
+            <a className="topbar__back" href={homeHref} title={t("Главное меню")}>
               <ArrowLeft size={16} {...ICON} aria-hidden="true" />
               {t("Направления")}
             </a>

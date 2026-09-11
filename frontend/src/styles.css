@@ -774,3 +774,14 @@ kbd {
   .wizard__step-name { display: none; }                      /* на узком экране — только номера шагов… */
   .wizard__step--on .wizard__step-name { display: inline; } /* …и название текущего */
 }
+
+/* Стартовый экран (демо в приоритете). Ссылка «Вход» нарочно не акцентирована. */
+.landing { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+.landing__top { display: flex; justify-content: flex-end; padding: 16px 24px; }
+.landing__main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 0 24px 12vh; text-align: center; }
+.landing__title { margin: 0; font-size: 44px; font-weight: 800; letter-spacing: -0.02em; color: var(--heading); }
+.landing__pitch { margin: 0; max-width: 520px; font-size: 17px; line-height: 1.5; color: var(--text-muted); }
+.landing__demo { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 10px; font-size: 16px; text-decoration: none; }
+.landing__note { margin: 0; font-size: 13px; color: var(--text-muted); }
+.landing__login { position: fixed; right: 16px; bottom: 12px; font-size: 12px; color: var(--text-muted); opacity: .55; text-decoration: none; }
+.landing__login:hover { opacity: .9; }

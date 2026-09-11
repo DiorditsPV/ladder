@@ -38,11 +38,18 @@ export interface AuthUser {
 // В dev /api проксируется Vite на :8000; в прод тот же origin (раздаёт FastAPI).
 const BASE = "/api";
 
-// auth-hardening (#40): 401 в середине сессии (протухла/инвалидирована) → перезагрузка,
-// AuthGate заново покажет логин. skipAuthReload — для auth-проб (login/me), которые сами
-// штатно отдают 401 (неверный пароль / нет сессии): без исключения была бы петля релоадов.
+let sessionActive = false;
+/** Сессия подтверждена /api/auth/me: только тогда 401 означает «протухла» → перезагрузка. */
+export function setSessionActive(on: boolean): void {
+  sessionActive = on;
+}
+
+// auth-hardening (#40): 401 в середине живой сессии (протухла/инвалидирована) → перезагрузка,
+// приложение откроется заново уже в демо-режиме. В демо (сессии нет) 401 значит «нельзя»,
+// а не «протухло» — перезагрузка там была бы петлёй (spec 2026-09-11). skipAuthReload — для
+// auth-проб (login/me), которые сами штатно отдают 401 (неверный пароль / нет сессии).
 async function json<T>(res: Response, opts?: { skipAuthReload?: boolean }): Promise<T> {
-  if (res.status === 401 && !opts?.skipAuthReload) {
+  if (res.status === 401 && sessionActive && !opts?.skipAuthReload) {
     window.location.reload();
     throw new Error("session expired");
   }

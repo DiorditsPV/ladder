@@ -1,43 +1,71 @@
-import { useEffect, useState } from "react";
-import { api } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import { api, type AuthUser } from "./api";
+import { Login } from "./components/Login";
 import BoardPage from "./pages/BoardPage";
 import { BankPage } from "./pages/BankPage";
 import { HomePage } from "./pages/HomePage";
-import { useRoute } from "./router";
+import { Landing } from "./pages/Landing";
+import { href, useRoute, type Route } from "./router";
+import { useSession } from "./session";
 import { useT } from "./i18n";
 import type { PoolConfig } from "./types";
 
-// Раздаёт страницы по маршруту. Список пулов грузится один раз на вход: он нужен и меню,
-// и доске (таксономия колонок), и банку. Неизвестный пул в адресе → меню с пометкой.
+// Раздаёт страницы по маршруту; режим — из сессии (spec 2026-09-11): без входа — стартовый экран
+// и демо (только демо-направления), после входа — полный режим. Список пулов грузится на вход и
+// перезагружается при смене пользователя: он нужен и меню, и доске (таксономия колонок), и банку.
+// Неизвестный (или недоступный режиму) пул в адресе → меню с пометкой.
+
+// Куда увести с маршрута, недоступного режиму (null — остаться).
+function redirectFor(route: Route, user: AuthUser | null): string | null {
+  if (user) {
+    if (route.name === "login" || route.name === "demo") return href.home;
+    if (route.name === "people" && user.role !== "owner") return href.home;
+    return null;
+  }
+  return route.name === "people" ? href.home : null;
+}
+
 export default function Router() {
   const t = useT();
   const route = useRoute();
+  const { user, refresh } = useSession();
   const [pools, setPools] = useState<PoolConfig[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const reloadPools = () => api.pools().then(setPools).catch((e) => setError(String(e)));
+  const reloadPools = useCallback(() => api.pools().then(setPools).catch((e) => setError(String(e))), []);
   useEffect(() => {
-    reloadPools();
-  }, []);
+    setPools(null);
+    setError(null);
+    void reloadPools();
+  }, [reloadPools, user?.id]);
 
+  const redirect = redirectFor(route, user);
+  useEffect(() => {
+    if (redirect) window.location.replace(redirect);
+  }, [redirect]);
+  if (redirect) return null;
+
+  if (route.name === "login") {
+    return <Login onLogin={async () => { await refresh(); window.location.replace(href.home); }} />;
+  }
+  if (!user && route.name === "home") return <Landing />;
   if (error) return <div className="loading">{t("Не удалось загрузить направления: {error}", { error })}</div>;
   if (!pools) return <div className="loading">{t("Загрузка…")}</div>;
 
+  const demo = !user;
   const poolOf = (id: string) => pools.find((p) => p.id === id) ?? null;
-
   switch (route.name) {
     case "board": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={pools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       // key — чтобы смена пула пересоздавала доску целиком (состояние, таймеры).
       return <BoardPage key={pool.id} pool={pool} />;
     }
     case "bank": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={pools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       return <BankPage key={pool.id} pool={pool} onChanged={reloadPools} />;
     }
     default:
-      return <HomePage pools={pools} onChanged={reloadPools} />;
+      return <HomePage pools={pools} demo={demo} onChanged={reloadPools} />;
   }
 }

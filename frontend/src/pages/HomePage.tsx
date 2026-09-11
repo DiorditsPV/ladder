@@ -19,7 +19,7 @@ export function HomePage({
   pools,
   notice,
   onChanged,
-}: { pools: PoolConfig[]; notice?: string; onChanged: () => void }) {
+}: { pools: PoolConfig[]; demo?: boolean; notice?: string; onChanged: () => void }) {
   const t = useT();
   const [modal, setModal] = useState<PoolModal>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);

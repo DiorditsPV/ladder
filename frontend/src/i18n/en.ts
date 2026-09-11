@@ -226,4 +226,10 @@ export const EN: Record<string, string> = {
     "Delete direction “{label}”? Its questions ({nodes}) will be deleted permanently.",
   "Время на карточку · весь разбор": "Time per card · total study time",
   "Время на карточку и на весь разбор в нижней панели": "Time per card and total study time in the bottom bar",
+
+  // --- Landing: стартовый экран демо-режима (spec 2026-09-11) ---
+  "Тема разложена на колонки и ступени. Проходите карточки и отмечайте: знаю, повторить, не знаю.":
+    "Each topic is laid out in columns and rungs. Work through the cards and mark each one: know it, revisit, don't know.",
+  "Открыть демо": "Open demo",
+  "Дата-инженер и системный аналитик — на русском и английском.": "Data engineer and system analyst — in Russian and English.",
 };
