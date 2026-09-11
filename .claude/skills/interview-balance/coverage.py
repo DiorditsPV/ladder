@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Покрытие банка вопросов: матрица subblock×difficulty, доли блоков vs веса, пробелы.
+"""Распределение вопросов: матрица subblock×difficulty и доли блоков vs веса.
+
+Пустая ячейка — сигнал для содержательного ревью, не доказательство пробела.
 
 Только stdlib. Нужен поднятый сервер. Запуск:
     python3 .claude/skills/interview-balance/coverage.py
@@ -24,42 +26,48 @@ def main():
     except Exception:
         pool = None
     weights = {b["id"]: b["weight"] for b in pool["blocks"]} if pool else {}
+    levels = [level["id"] for level in (pool.get("levels") or [])] if pool else []
+    levels = levels or DIFFS.copy()
+    levels += sorted({n["difficulty"] for n in ns} - set(levels))
 
     print(f"Пул {POOL}: всего нод {len(ns)}\n")
 
     # матрица subblock × difficulty
     cell = defaultdict(Counter)
+    for block in pool["blocks"] if pool else []:
+        for sub in block.get("subblocks") or [{"id": "-"}]:
+            cell[(block["id"], sub["id"])]
     for n in ns:
         cell[(n["block"], n.get("subblock") or "-")][n["difficulty"]] += 1
-    print("subblock                |", " ".join(f"{d:>6}" for d in DIFFS), "| итого")
+    print("subblock                |", " ".join(f"{d:>6}" for d in levels), "| итого")
     print("-" * 64)
-    gaps = []
+    empty = []
     for key in sorted(cell):
         row = cell[key]
         tot = sum(row.values())
-        cells = " ".join(f"{row.get(d, 0):>6}" for d in DIFFS)
+        cells = " ".join(f"{row.get(d, 0):>6}" for d in levels)
         print(f"{key[0][:10]:10}/{key[1][:10]:10} | {cells} | {tot:>4}")
-        for d in ("base", "senior"):
+        for d in levels:
             if row.get(d, 0) == 0:
-                gaps.append(f"{key[0]}/{key[1]}: нет вопроса уровня {d}")
+                empty.append(f"{key[0]}/{key[1]}: {d}")
 
     # доли блоков vs веса
     by_block = Counter(n["block"] for n in ns)
     print("\nБлок        | нод | факт.% | вес% | дельта")
     print("-" * 46)
     total = len(ns) or 1
-    for b in sorted(by_block, key=lambda b: -by_block[b]):
+    for b in sorted(set(by_block) | set(weights), key=lambda b: (-by_block[b], b)):
         fact = 100 * by_block[b] / total
         w = weights.get(b)
         delta = f"{fact - w:+.0f}" if w is not None else "—"
         print(f"{b:11} | {by_block[b]:>3} | {fact:5.0f}% | {('%d%%' % w) if w is not None else '  — ':>4} | {delta}")
 
-    if gaps:
-        print("\nПробелы (пустые ячейки base/senior):")
-        for g in gaps:
+    if empty:
+        print("\nПустые ячейки (допустимы; проверь существенные механизмы и предпосылки):")
+        for g in empty:
             print("  •", g)
     else:
-        print("\nПробелов по base/senior нет.")
+        print("\nПустых ячеек нет; это не доказывает содержательную полноту.")
 
 
 if __name__ == "__main__":
