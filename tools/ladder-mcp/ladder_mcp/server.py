@@ -42,7 +42,7 @@ TOOL_NAMES = [
     "add_level", "update_level", "delete_level",
     "list_topics", "rename_topic", "delete_topic",
     "list_questions", "get_question", "create_question", "create_questions", "update_question", "delete_question",
-    "list_tags",
+    "list_tags", "sync_from_files",
 ]
 
 Kind = Literal["question", "task"]
@@ -556,6 +556,20 @@ def build_server(client: LadderClient) -> MCPServer:
     async def list_tags(direction_id: Optional[str] = None) -> dict:
         """The concept tag vocabulary (use 1–3 per card) and, for a direction, the tags already used there."""
         return await api("GET", "/api/tags", pool=direction_id)
+
+    # ---------- пресеты из файлов (owner) ----------
+
+    @server.tool()
+    async def sync_from_files(
+        direction_id: Annotated[Optional[str], Field(description="Only this preset direction (content/<id>/); omitted — all presets")] = None,
+        update_existing: Annotated[bool, Field(description="false — only add what is missing (safe); true — rewrite the preset's columns/levels and untouched cards from files, hide cards whose files are gone")] = False,
+        dry_run: Annotated[bool, Field(description="Report what would change without writing (default true)")] = True,
+    ) -> dict:
+        """Owner only. Pull preset directions (has_files=true in get_direction) from the server's content/ files.
+        By default only adds missing directions and cards and never overwrites; update_existing=true is the
+        explicit preset update — run it with dry_run=true first and read `config_changed` / `nodes_changed` /
+        `hidden` before applying."""
+        return await api("POST", "/api/pools/sync", pool=direction_id, update=update_existing or None, dry_run=dry_run or None)
 
     return server
 

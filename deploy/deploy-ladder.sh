@@ -65,16 +65,44 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
-# 4) рестарт юнита (ставит install.sh) и health --------------------------------
+# 4) страховка накопленного: снимок базы и счётчики карточек до рестарта --------
+#    (ladder-backup ставит deploy/install-backup.sh; нет его — деплой идёт без страховки, с предупреждением)
+BACKUP=/usr/local/bin/ladder-backup
+SNAP=""; BEFORE=""
+if [ -x "$BACKUP" ] && [ -f "$DATA_DIR/ladder.db" ]; then
+  SNAP=$(LADDER_DB="$DATA_DIR/ladder.db" "$BACKUP" pre-deploy)
+  BEFORE=$(LADDER_DB="$DATA_DIR/ladder.db" "$BACKUP" --counts)
+  echo "→ снимок до деплоя: $SNAP"
+else
+  echo "! ladder-backup не установлен — деплой без снимка (deploy/install-backup.sh)" >&2
+fi
+
+# 5) рестарт юнита (ставит install.sh) и health --------------------------------
 systemctl enable "$SVC" >/dev/null 2>&1 || true
 systemctl restart "$SVC"
+healthy=0
 for _ in $(seq 1 15); do
   if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
-    echo "✓ $SVC активен, /api/health отвечает на :$PORT"
-    exit 0
+    healthy=1
+    break
   fi
   sleep 1
 done
-echo "✗ healthcheck не прошёл за 15 с — лог сервиса:" >&2
-journalctl -u "$SVC" -n 40 --no-pager >&2 || true
-exit 1
+if [ "$healthy" != 1 ]; then
+  echo "✗ healthcheck не прошёл за 15 с — лог сервиса:" >&2
+  journalctl -u "$SVC" -n 40 --no-pager >&2 || true
+  [ -n "$SNAP" ] && echo "  снимок базы до деплоя: $SNAP" >&2
+  exit 1
+fi
+echo "✓ $SVC активен, /api/health отвечает на :$PORT"
+
+# 6) после старта (засев из content/ уже прошёл) карточек не может стать меньше -----
+if [ -n "$BEFORE" ]; then
+  AFTER=$(LADDER_DB="$DATA_DIR/ladder.db" "$BACKUP" --counts)
+  if ! "$BACKUP" --compare "$BEFORE" "$AFTER"; then
+    echo "✗ после деплоя пропали карточки — разбирайся до следующей выкладки; снимок до деплоя: $SNAP" >&2
+    exit 1
+  fi
+  echo "✓ карточки на месте: $AFTER"
+fi
+exit 0

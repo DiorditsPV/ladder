@@ -50,10 +50,12 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   под-колонка оставляет вопросы в колонке). Редактор — `frontend/src/components/BlocksEditor.tsx`.
 - `importer.py` — парсит `content/<pool>/<block>/*.md|*.json` через `python-frontmatter` в `Node`,
   проверяя block/subblock/difficulty по `pool.yaml`; `pool` ноды ставится по каталогу, не во frontmatter.
-- `sync.py` — `content/ → БД` без рестарта: при старте и по `POST /api/pools/sync` (owner) создаёт новые
-  направления, обновляет конфиги, upsert-ит seed-ноды по id; ноды с `source='user'` (созданные или правленные
-  в UI) не трогает — конфликт id идёт в отчёт; исчезнувшие из файлов seed-ноды прячет (`hidden`), вернувшиеся
-  разворачивает; при ошибках импорта в пуле скрытие пропускает. `/api/graph` скрытые не отдаёт.
+- `sync.py` — `content/ → БД`. **Источник правды — БД**, в `content/` только пресеты (spec 2026-09-11-content-in-db).
+  По умолчанию (старт сервера, `POST /api/pools/sync`) — **засев**: создаёт направление, если его нет, и карточки с
+  id, которых нет в тенанте; существующее не перезаписывает и не прячет — деплой не затирает накопленное.
+  Явное обновление пресета — `update=true` (лучше `pool=<id>`, сначала `dry_run=true` — прогон на копии БД):
+  конфиг из `pool.yaml`, upsert seed-нод, `source='user'` не трогает (конфликт в отчёт), пропавшие из файлов
+  seed-ноды прячет. `/api/graph` скрытые не отдаёт.
 - `models.py` — pydantic `Node` с `extra="forbid"`: добавление поля ноды = правка `models.py`
   **И** `frontend/src/types.ts` **И** миграция всех контент-файлов, иначе импорт падает.
 - `db.py` — SQLite: направления, банк вопросов, пользователи и чек-лист (`progress`).
@@ -63,8 +65,8 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   `GET /api/nodes` (фильтры) и `GET /api/nodes/{id}`, `POST/PUT /api/nodes` со всеми полями и переносом,
   топики `/api/pools/{id}/topics[/{topic}]`, словарь тегов `GET /api/tags` (`tags.py`).
 
-**MCP** (`tools/ladder-mcp/`) — сервер поверх API: направления, колонки/под-колонки, уровни, топики, вопросы
-(24 инструмента). Тесты: `backend/.venv/bin/python -m pytest -q tools/ladder-mcp/tests -p no:cacheprovider`
+**MCP** (`tools/ladder-mcp/`) — сервер поверх API: направления, колонки/под-колонки, уровни, топики, вопросы,
+`sync_from_files` для пресетов (25 инструментов) — основной способ заносить и править контент. Тесты: `backend/.venv/bin/python -m pytest -q tools/ladder-mcp/tests -p no:cacheprovider`
 (нужен `pip install -r tools/ladder-mcp/requirements.txt`). Новую ручку, которую должен уметь MCP, — добавь и в
 `ladder_mcp/server.py`, и в `TOOL_NAMES`, и в тест полного цикла.
 
@@ -112,13 +114,16 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →
-`sql|dbms|storage|formats`; data-engineer-x5 — sql → `queries|indexes`; system-analyst — см. его `pool.yaml`.
+`sql|dbms|storage|formats`; system-analyst — см. его `pool.yaml`; у направлений из базы — MCP `get_direction`.
 
 ## Грабли (важно)
 - **Ground truth контента — через `cat`/`grep`/`GET /api/graph`, НЕ через Read-инструмент.**
   Контент-файлы нормализуются скриптами; Read может вернуть устаревший кэш.
-- **Правки контента — через `python-frontmatter`** (`f.write_text(frontmatter.dumps(post) + "\n")`),
-  чтобы сохранить нормализованный формат, а не ручным редактированием frontmatter.
+- **Новый контент — в живую базу через MCP/API** (`tools/ladder-mcp`, `ladder-topic --upload`), не файлами:
+  в `content/` лежат только пресеты `data-engineer`, `system-analyst` и их `-en` (`test_content_holds_only_presets`).
+- **Правки пресетов — через `python-frontmatter`** (`f.write_text(frontmatter.dumps(post) + "\n")`),
+  чтобы сохранить нормализованный формат, а не ручным редактированием frontmatter. До сервера правка доезжает
+  только явным `POST /api/pools/sync?pool=<id>&update=true` (сначала `dry_run=true`), не деплоем.
 - **Изменения `content/` не требуют пересборки фронта** (грузится из API в рантайме).
   Изменения `frontend/src/` — требуют `npm run build`.
 - **Новый тип ноды на канве** = регистрация в `nodeTypes` (BoardPage.tsx).
@@ -126,10 +131,10 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   1–3 на ноду, без тех-имён (технология видна по колонке). Полный список — в `AGENTS.md`.
 - `main` — стабильная ветка, merge в неё **ничего не деплоит**; выкладка на ladder.paveldiordits.site — только
   ручной запуск `Deploy` (см. `DEPLOY.md`). Фичи всё равно идут через `dev`.
-- **Новый пул** = каталог `content/<id>/` с `pool.yaml` (id = имя каталога); id нод уникальны в пределах
-  тенанта — используйте префикс пула.
-- **Удаление seed-карточки из UI** прячет её (`hidden`, `source=user`) — файл остаётся источником;
-  чтобы удалить насовсем, удали файл и сделай sync.
+- **Новое направление** — MCP `create_direction` или `ladder-topic --upload`; каталог `content/<id>/` с `pool.yaml`
+  (id = имя каталога) заводится только для нового пресета. id нод уникальны в пределах тенанта — используйте префикс пула.
+- **Удаление seed-карточки из UI** прячет её (`hidden`, `source=user`) — файл остаётся источником; засев её не
+  вернёт (id занят). Удалить насовсем — удали файл и сделай явное обновление пресета (`update=true`).
 - **Новое мутирующее действие в UI** — прячь по `useCan()` (`session.tsx`): в демо оно получит 401, у viewer — 403.
   Статус карточки пиши через `useProgressStore()`, не через `api.setProgress` напрямую — иначе демо сломается.
 - **Демо-направление** = `demo: true` в `pool.yaml`; перевод — отдельный пул `<id>-en` с `lang: en` и
@@ -145,5 +150,5 @@ Smoke начинается без входа (демо, EN-пара `data-engine
 При переименовании нод/тегов/классов, на которые опирается smoke, обнови `frontend/smoke.mjs`.
 
 ## Скиллы проекта (`.claude/skills/`)
-`ladder-topic` (тема → направление со своими уровнями, главный способ завести контент), `interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
+`ladder-topic` (тема → направление со своими уровнями, заносит в живую базу `--upload`), `interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
 `interview-balance` (покрытие/пробелы), `interview-verify` (полная проверка). Вызывать через Skill.

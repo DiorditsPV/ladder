@@ -105,6 +105,9 @@ ln -sf "$NGX" "/etc/nginx/sites-enabled/$DOMAIN"
 nginx -t
 systemctl reload nginx
 
+# 7) страховка контента: ladder-backup, ночной таймер снимков, deploy-ladder.sh со снимком и проверкой карточек
+bash "$HERE/install-backup.sh"
+
 cat <<MSG
 
 ✓ провижининг готов. Дальше по порядку:

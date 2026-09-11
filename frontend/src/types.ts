@@ -57,6 +57,8 @@ export interface PoolConfig {
   demo?: boolean;
   lang?: "ru" | "en";
   translation_of?: string | null;
+  // У направления есть пресет в content/ — к нему применимо «Обновить из файлов» (spec 2026-09-11-content-in-db).
+  has_files?: boolean;
 }
 
 // Статус чек-листа разбора (per-user): «знаю» / «повторить» / «не знаю».

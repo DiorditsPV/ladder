@@ -185,6 +185,15 @@ async def test_api_errors_reach_the_model():
         assert "column" in text
 
 
+async def test_sync_from_files_defaults_to_safe_dry_run():
+    async with connect() as c:
+        rep = await call(c, "sync_from_files")
+        assert rep["mode"] == "seed" and rep["dry_run"] is True and rep["hidden"] == []
+        upd = await call(c, "sync_from_files", update_existing=True)
+        assert upd["mode"] == "update" and upd["dry_run"] is True
+        assert "404" in await fails(c, "sync_from_files", direction_id="no-such-preset")
+
+
 async def test_wrong_password_is_explained():
     async with connect(password="wrong") as c:
         text = await fails(c, "list_directions")

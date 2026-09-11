@@ -44,6 +44,73 @@ def test_sync_creates_pool_and_nodes(tmp_path):
     assert db.get_node("t", "demo-01")["source"] == "seed"
 
 
+def test_seed_never_overwrites_or_hides_existing(tmp_path):
+    """Засев (по умолчанию, в том числе на старте сервера): только новое. Правки в БД, конфиг направления и
+    карточки без файлов переживают любой деплой (spec 2026-09-11-content-in-db)."""
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    sync_pools(db, "t", root)
+    db.upsert_node("t", {**db.get_node("t", "demo-01"), "title": "ПРАВКА В БД"}, source="seed")
+    _card(root, "demo-01", title="Из файла")
+    (root / "demo" / "a" / "demo-02.md").unlink()
+    _card(root, "demo-03")
+    (root / "demo" / "pool.yaml").write_text(POOL.replace("description: d1", "description: d2"), encoding="utf-8")
+    rep = sync_pools(db, "t", root)
+    assert rep["mode"] == "seed" and rep["created"] == [] and rep["updated"] == ["demo"]
+    assert rep["nodes_upserted"] == 1 and rep["skipped"] == 1 and rep["hidden"] == [] and rep["conflicts"] == []
+    assert db.get_pool("t", "demo")["description"] == "d1"
+    assert db.get_node("t", "demo-01")["title"] == "ПРАВКА В БД"
+    assert db.get_node("t", "demo-02")["hidden"] is False
+    assert db.get_node("t", "demo-03")["source"] == "seed"
+
+
+def test_seed_skips_ids_taken_in_other_pools(tmp_path):
+    """id карточки уникален в тенанте: засев не переносит чужую карточку в своё направление."""
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    db.upsert_node("t", {"id": "demo-01", "pool": "other", "block": "x", "topic": "t", "difficulty": "d",
+                         "question": "q"}, source="user")
+    rep = sync_pools(db, "t", _content(tmp_path))
+    assert rep["skipped"] == 1 and rep["nodes_upserted"] == 1
+    assert db.get_node("t", "demo-01")["pool"] == "other"
+
+
+def test_update_dry_run_reports_without_writing(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    sync_pools(db, "t", root)
+    same = sync_pools(db, "t", root, update=True, dry_run=True)
+    assert same["nodes_changed"] == 0 and same["config_changed"] == [] and same["hidden"] == []
+    (root / "demo" / "a" / "demo-02.md").unlink()
+    _card(root, "demo-01", title="Из файла")
+    (root / "demo" / "pool.yaml").write_text(POOL.replace("description: d1", "description: d2"), encoding="utf-8")
+    rep = sync_pools(db, "t", root, update=True, dry_run=True)
+    assert rep["dry_run"] is True and rep["hidden"] == ["demo-02"] and rep["config_changed"] == ["demo"]
+    assert rep["nodes_upserted"] == 1 and rep["nodes_changed"] == 1
+    assert db.get_node("t", "demo-02")["hidden"] is False
+    assert db.get_node("t", "demo-01")["title"] == "T"
+    assert db.get_pool("t", "demo")["description"] == "d1"
+
+
+def test_update_only_one_pool(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    (root / "other").mkdir()
+    (root / "other" / "pool.yaml").write_text(POOL.replace("id: demo", "id: other").replace("label: Demo", "label: Other"),
+                                             encoding="utf-8")
+    rep = sync_pools(db, "t", root, update=True, only="demo")
+    assert rep["created"] == ["demo"] and db.get_pool("t", "other") is None
+    import pytest
+
+    from app.sync import UnknownPoolError
+
+    with pytest.raises(UnknownPoolError):
+        sync_pools(db, "t", root, only="nope")
+
+
 def test_sync_updates_config_and_nodes_hides_missing_keeps_user(tmp_path):
     db = Database(tmp_path / "t.db")
     db.ensure_tenant("t")
@@ -56,15 +123,16 @@ def test_sync_updates_config_and_nodes_hides_missing_keeps_user(tmp_path):
     db.upsert_node("t", {"id": "demo-04", "pool": "demo", "block": "a", "topic": "t", "difficulty": "intro", "question": "q"}, source="user")
     _card(root, "demo-04", title="из файла")
     (root / "demo" / "pool.yaml").write_text(POOL.replace("description: d1", "description: d2"), encoding="utf-8")
-    rep = sync_pools(db, "t", root)
+    rep = sync_pools(db, "t", root, update=True)
     assert rep["updated"] == ["demo"] and rep["hidden"] == ["demo-02"] and rep["conflicts"] == ["demo-04"]
+    assert rep["config_changed"] == ["demo"]
     assert db.get_pool("t", "demo")["description"] == "d2"
     assert db.get_node("t", "demo-01")["title"] == "T2"
     assert db.get_node("t", "demo-02")["hidden"] is True
     assert db.get_node("t", "demo-03")["source"] == "seed"
     assert db.get_node("t", "demo-04")["title"] is None  # user-нода не перетёрта
     # повтор — идемпотентен: ничего нового не прячется
-    assert sync_pools(db, "t", root)["hidden"] == []
+    assert sync_pools(db, "t", root, update=True)["hidden"] == []
 
 
 def test_sync_skips_tombstone(tmp_path):
@@ -88,7 +156,7 @@ def test_sync_parse_errors_skip_hiding(tmp_path):
     (root / "demo" / "a" / "bad.md").write_text(
         "---\nid: bad\nblock: zzz\ndifficulty: intro\ntopic: t\n---\nQ", encoding="utf-8"
     )
-    rep = sync_pools(db, "t", root)
+    rep = sync_pools(db, "t", root, update=True)
     assert len(rep["errors"]) == 1 and "bad.md" in rep["errors"][0]["file"]
     assert rep["hidden"] == []
     assert db.get_node("t", "demo-02")["hidden"] is False
@@ -100,11 +168,11 @@ def test_sync_unhides_returning_seed_node(tmp_path):
     root = _content(tmp_path)
     sync_pools(db, "t", root)
     (root / "demo" / "a" / "demo-02.md").unlink()
-    rep = sync_pools(db, "t", root)
+    rep = sync_pools(db, "t", root, update=True)
     assert rep["hidden"] == ["demo-02"]
     assert db.get_node("t", "demo-02")["hidden"] is True
     _card(root, "demo-02", difficulty="deep")  # вопрос вернулся в файлы
-    sync_pools(db, "t", root)
+    sync_pools(db, "t", root, update=True)
     assert db.get_node("t", "demo-02")["hidden"] is False
 
 
@@ -149,8 +217,13 @@ def test_api_sync_requires_owner_and_returns_report():
     r = c.post("/api/pools/sync")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) >= {"created", "updated", "nodes_upserted", "hidden", "conflicts", "errors"}
-    assert body["errors"] == []
+    assert set(body) >= {"mode", "created", "updated", "nodes_upserted", "skipped", "hidden", "conflicts", "errors"}
+    assert body["errors"] == [] and body["mode"] == "seed" and body["hidden"] == []
+    dry = c.post("/api/pools/sync?pool=data-engineer&update=true&dry_run=true")
+    assert dry.status_code == 200 and dry.json()["mode"] == "update" and dry.json()["dry_run"] is True
+    # только что засеянный пресет совпадает с файлами — предпросмотр не находит правок (задачи со starterCode и rubric тоже)
+    assert dry.json()["nodes_changed"] == 0 and dry.json()["config_changed"] == [] and dry.json()["hidden"] == []
+    assert c.post("/api/pools/sync?pool=no-such-pool").status_code == 404
 
 
 def test_api_graph_include_hidden_shows_hidden_nodes():
@@ -203,7 +276,7 @@ def test_edit_node_marks_source_user_and_sync_respects_it():
         r = c.put(f"/api/nodes/{node_id}", json={"title": "ПРАВКА ИЗ UI"})
         assert r.status_code == 200
         assert main_db.get_node("default", node_id)["source"] == "user"
-        rep = sync_pools(main_db, "default", CONTENT_DIR)
+        rep = sync_pools(main_db, "default", CONTENT_DIR, update=True, only="data-engineer")
         assert main_db.get_node("default", node_id)["title"] == "ПРАВКА ИЗ UI"
         assert node_id in rep["conflicts"]
     finally:
@@ -235,7 +308,7 @@ def test_delete_seed_node_tombstones_and_sync_keeps_it_hidden():
         ids = {n["id"] for n in c.get("/api/graph?pool=data-engineer").json()["nodes"]}
         assert node_id not in ids
 
-        rep = sync_pools(main_db, "default", CONTENT_DIR)
+        rep = sync_pools(main_db, "default", CONTENT_DIR, update=True, only="data-engineer")
         again = main_db.get_node("default", node_id)
         assert again["hidden"] is True
         assert again["title"] == original["title"]  # sync не перезаписала tombstone файлом
@@ -255,7 +328,10 @@ def test_sync_carries_and_clears_flags(tmp_path):
     row = db.get_pool("t", "demo")
     assert (row["demo"], row["lang"], row["translation_of"]) == (True, "en", "demo-ru")
     (root / "demo" / "pool.yaml").write_text(POOL, encoding="utf-8")
-    sync_pools(db, "t", root)
+    sync_pools(db, "t", root)  # засев не трогает флаги существующего направления
+    row = db.get_pool("t", "demo")
+    assert (row["demo"], row["lang"], row["translation_of"]) == (True, "en", "demo-ru")
+    sync_pools(db, "t", root, update=True)
     row = db.get_pool("t", "demo")
     assert (row["demo"], row["lang"], row["translation_of"]) == (False, "ru", None)
 
