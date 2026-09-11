@@ -365,6 +365,18 @@ class Database:
             )
         return cur.rowcount > 0
 
+    def rename_topic(self, tenant_id: str, pool: str, old: str, new: str, block: Optional[str] = None) -> int:
+        """Переименовать топик у всех карточек направления (или только колонки `block`). Правка через API —
+        правка пользователя: source='user', иначе sync вернул бы старый топик из файлов. Возвращает число карточек."""
+        sql = "UPDATE nodes SET topic = ?, source = 'user', updated_at = ? WHERE tenant_id = ? AND pool = ? AND topic = ?"
+        args: list = [new, _now(), tenant_id, pool, old]
+        if block is not None:
+            sql += " AND block = ?"
+            args.append(block)
+        with self._conn() as conn:
+            cur = conn.execute(sql, args)
+        return cur.rowcount
+
     def tombstone_node(self, tenant_id: str, node_id: str) -> bool:
         """Спрятать ноду вместо удаления (source='user'): для seed-ноды, файл которой в content/
         остаётся источником — обычный DELETE её бы воскресил при следующем sync."""

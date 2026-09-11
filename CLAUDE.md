@@ -59,7 +59,14 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - `db.py` — SQLite: направления, банк вопросов, пользователи и чек-лист (`progress`).
   `tenancy.py` — изоляция тенантов. `auth.py` — пароли, server-side auth-сессии, RBAC;
   `optional_user` (пользователь или None без 401) — только в `GET /api/pools` и `GET /api/graph` (демо-чтение).
-- `main.py` — FastAPI; полные схемы ручек в Swagger UI на `/docs`.
+- `main.py` — FastAPI; полные схемы ручек в Swagger UI на `/docs`. CRUD для MCP: `GET /api/pools/{id}`,
+  `GET /api/nodes` (фильтры) и `GET /api/nodes/{id}`, `POST/PUT /api/nodes` со всеми полями и переносом,
+  топики `/api/pools/{id}/topics[/{topic}]`, словарь тегов `GET /api/tags` (`tags.py`).
+
+**MCP** (`tools/ladder-mcp/`) — сервер поверх API: направления, колонки/под-колонки, уровни, топики, вопросы
+(24 инструмента). Тесты: `backend/.venv/bin/python -m pytest -q tools/ladder-mcp/tests -p no:cacheprovider`
+(нужен `pip install -r tools/ladder-mcp/requirements.txt`). Новую ручку, которую должен уметь MCP, — добавь и в
+`ladder_mcp/server.py`, и в `TOOL_NAMES`, и в тест полного цикла.
 
 **Фронт** (`frontend/src/`) — данные грузятся из `/api/graph` в рантайме:
 - `router.ts`/`Router.tsx` — hash-роутер: `#/`, `#/demo`, `#/login`, `#/people`, `#/board/<pool>`, `#/bank/<pool>`;

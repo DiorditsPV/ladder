@@ -12,15 +12,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import (
     COOKIE_NAME,
@@ -51,6 +53,7 @@ from .pools import (
 )
 from .seed import seed_owner_if_empty
 from .sync import sync_pools
+from .tags import CONCEPT_TAGS
 from .tenancy import resolve_tenant
 
 log = logging.getLogger("ladder")
@@ -144,11 +147,19 @@ class ImportFile(BaseModel):
     pool: Optional[str] = None
 
 
+# Slug: id направлений, карточек и теги — латиница в нижнем регистре, цифры и дефис.
+_SLUG = r"^[a-z0-9][a-z0-9-]*$"
+
+
 class NodeCreate(BaseModel):
-    """Создание вопроса из UI: id генерится сервером, остальное валидируется."""
+    """Создание карточки (UI, MCP): id — явный (slug, свободный) или генерится сервером из topic/title."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     pool: Optional[str] = None
+    id: Optional[str] = Field(default=None, pattern=_SLUG, max_length=120)
     block: str = Field(min_length=1)
+    subblock: Optional[str] = None
     topic: str = Field(min_length=1)
     difficulty: str = Field(min_length=1)
     kind: Kind = "question"
@@ -156,20 +167,43 @@ class NodeCreate(BaseModel):
     question: str = Field(min_length=1)
     answer: str = ""
     tags: List[str] = Field(default_factory=list)
+    weight: int = Field(default=1, ge=0)
+    starter_code: Optional[str] = Field(default=None, alias="starterCode")
+    rubric: List[str] = Field(default_factory=list)
 
 
 class NodeUpdate(BaseModel):
-    """Структурная правка вопроса — только переданные поля (None = не менять)."""
+    """Правка карточки — только переданные поля (None = не менять). Перенос — `pool`/`block`/`subblock`/`difficulty`.
+    Пустая строка в `subblock`, `title`, `starterCode` снимает значение."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
+    pool: Optional[str] = None
+    block: Optional[str] = None
+    subblock: Optional[str] = None
+    topic: Optional[str] = None
     title: Optional[str] = None
     difficulty: Optional[str] = None
+    kind: Optional[Kind] = None
+    weight: Optional[int] = Field(default=None, ge=0)
     question: Optional[str] = None
     answer: Optional[str] = None
+    starter_code: Optional[str] = Field(default=None, alias="starterCode")
+    rubric: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+
+
+class TopicRename(BaseModel):
+    """Новый топик для всех карточек направления (или только колонки `block`)."""
+
+    topic: str = Field(min_length=1)
+    block: Optional[str] = None
 
 
 class PoolCreate(BaseModel):
     """Новое направление: из пресета (копируются колонки и вопросы) ИЛИ со своими колонками."""
 
+    id: Optional[str] = Field(default=None, pattern=_SLUG, max_length=80)  # явный id; без него — из названия
     label: str = Field(min_length=1)
     description: str = ""
     preset: Optional[str] = None  # id существующего направления
@@ -337,12 +371,105 @@ def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> 
     ]
 
 
+def _node_out(row: dict) -> dict:
+    """Карточка для API: поля Node (starterCode — по alias) + служебные hidden/source из БД."""
+    node = Node.model_validate({k: v for k, v in row.items() if k in _NODE_FIELDS})
+    return {**node.model_dump(by_alias=True), "hidden": bool(row.get("hidden")), "source": row.get("source")}
+
+
+_TAG_RE = re.compile(_SLUG)
+MAX_TAGS = 5
+
+
+def _tags_or_422(tags: List[str]) -> List[str]:
+    """Теги карточки: slug в нижнем регистре, дубли схлопываются, не больше MAX_TAGS. Словарь не навязываем —
+    у темы вне DE могут быть свои теги (pool.tags); список концептов отдаёт GET /api/tags."""
+    out: List[str] = []
+    for raw in tags:
+        # «Data Modeling» / «data_modeling» из поля UI → data-modeling; не-латиница и символы — 422.
+        tag = re.sub(r"[\s_]+", "-", (raw or "").strip().lower())
+        if not _TAG_RE.match(tag):
+            raise HTTPException(status_code=422, detail=f"tag '{raw}' must be a lowercase slug [a-z0-9-]")
+        if tag not in out:
+            out.append(tag)
+    if len(out) > MAX_TAGS:
+        raise HTTPException(status_code=422, detail=f"at most {MAX_TAGS} tags per card")
+    return out
+
+
 @app.get("/api/pools")
 def get_pools(request: Request, user: Optional[dict] = Depends(optional_user)) -> list:
     pools = _pools(request).values()
     if user is None:  # демо: тенант default, только направления с demo=true
         return [_pool_out(request, p, None) for p in pools if p.demo]
     return [_pool_out(request, p, user) for p in pools]
+
+
+@app.get("/api/pools/{pool_id}")
+def get_pool(pool_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Одно направление: структура (колонки, под-колонки, уровни), счётчик вопросов, сводка чек-листа."""
+    return _pool_out(request, _pool_or_404(request, pool_id), user)
+
+
+@app.get("/api/pools/{pool_id}/topics")
+def list_topics(
+    pool_id: str,
+    request: Request,
+    block: Optional[str] = None,
+    include_hidden: bool = False,
+    _user: dict = Depends(current_user),
+) -> list:
+    """Топики направления: `[{topic, block, count}]` в порядке колонок, внутри колонки — по алфавиту."""
+    pool = _pool_or_404(request, pool_id)
+    rows = db.list_nodes(resolve_tenant(request), pool=pool.id, include_hidden=include_hidden)
+    counts = Counter((r["block"], r["topic"]) for r in rows if block is None or r["block"] == block)
+    order = {b.id: i for i, b in enumerate(pool.blocks)}
+    ranked = sorted(counts.items(), key=lambda kv: (order.get(kv[0][0], len(order)), kv[0][0], kv[0][1]))
+    return [{"topic": topic, "block": blk, "count": n} for (blk, topic), n in ranked]
+
+
+@app.put("/api/pools/{pool_id}/topics/{topic}")
+def rename_topic(
+    pool_id: str, topic: str, body: TopicRename, request: Request, _user: dict = Depends(require_member)
+) -> dict:
+    """Переименовать топик у всех карточек направления (или только колонки `block`). 404 — таких карточек нет."""
+    pool = _pool_or_404(request, pool_id)
+    new = body.topic.strip()
+    if not new:
+        raise HTTPException(status_code=422, detail="topic must not be blank")
+    renamed = db.rename_topic(resolve_tenant(request), pool.id, topic, new, block=body.block)
+    if renamed == 0:
+        raise HTTPException(status_code=404, detail=f"no cards with topic '{topic}' in pool '{pool.id}'")
+    return {"renamed": renamed, "topic": new}
+
+
+@app.delete("/api/pools/{pool_id}/topics/{topic}")
+def delete_topic(
+    pool_id: str, topic: str, request: Request, block: Optional[str] = None, _user: dict = Depends(require_member)
+) -> dict:
+    """Удалить карточки топика (seed прячется, пользовательские удаляются — как DELETE /api/nodes/{id})."""
+    pool = _pool_or_404(request, pool_id)
+    tenant = resolve_tenant(request)
+    rows = [
+        r for r in db.list_nodes(tenant, pool=pool.id, include_hidden=False)
+        if r["topic"] == topic and (block is None or r["block"] == block)
+    ]
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"no cards with topic '{topic}' in pool '{pool.id}'")
+    for r in rows:
+        _remove_node(tenant, r)
+    return {"deleted": [r["id"] for r in rows], "count": len(rows)}
+
+
+@app.get("/api/tags")
+def list_tags(request: Request, pool: Optional[str] = None, _user: dict = Depends(current_user)) -> dict:
+    """Словарь сквозных концептов и теги, уже использованные в направлении (по частоте)."""
+    used: Counter = Counter()
+    if pool:
+        p = _pool_or_404(request, pool)
+        for r in db.list_nodes(resolve_tenant(request), pool=p.id, include_hidden=False):
+            used.update(r.get("tags") or [])
+    return {"concepts": list(CONCEPT_TAGS), "used": [{"tag": t, "count": n} for t, n in used.most_common()]}
 
 
 @app.post("/api/pools")
@@ -372,10 +499,16 @@ def create_pool(body: PoolCreate, request: Request, _user: dict = Depends(requir
         blocks = _blocks_or_422(body.blocks, ())
         levels = _levels_or_422(body.levels, ()) if body.levels is not None else json.loads(levels_to_json(DEFAULT_LEVELS))
         copy_from = None
-    base = slug_from_label(label)
-    pid, n = base, 2
-    while db.get_pool(tenant, pid) is not None:
-        pid, n = f"{base}-{n}", n + 1
+    if body.id:
+        # Явный id (MCP, скрипты): занятый — в том числе tombstone удалённого направления — 409, без суффиксов.
+        if db.get_pool(tenant, body.id) is not None:
+            raise HTTPException(status_code=409, detail=f"pool id '{body.id}' is already taken")
+        pid = body.id
+    else:
+        base = slug_from_label(label)
+        pid, n = base, 2
+        while db.get_pool(tenant, pid) is not None:
+            pid, n = f"{base}-{n}", n + 1
     try:
         row = db.create_pool(
             tenant, pid, label, body.description.strip(), blocks, copy_from=copy_from, levels=levels
@@ -512,9 +645,6 @@ def import_file(body: ImportFile, request: Request, _user: dict = Depends(requir
 # ---------- node CRUD (банк вопросов в БД) ----------
 # Источник правды для вопросов — БД (см. db.py/seed.py). CRUD пишет в БД через DAL,
 # а НЕ в content/*.md: иначе рантайм-правки затёр бы деплой (rsync --delete content/).
-import re  # noqa: E402 — локальный хелпер slug для генерации id новых нод
-
-
 def _slugify(s: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", s.strip().lower()).strip("-")
     return slug or "q"
@@ -529,67 +659,140 @@ def _unique_node_id(tenant: str, base: str) -> str:
     return f"{base}-{n:02d}"
 
 
+@app.get("/api/nodes")
+def list_nodes(
+    request: Request,
+    pool: str,
+    block: Optional[str] = None,
+    subblock: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    topic: Optional[str] = None,
+    tag: Optional[str] = None,
+    kind: Optional[Kind] = None,
+    q: Optional[str] = None,
+    include_hidden: bool = False,
+    _user: dict = Depends(current_user),
+) -> list:
+    """Карточки направления с фильтрами (все поля, как GET /api/nodes/{id}). `q` — подстрока в заголовке,
+    вопросе или ответе без учёта регистра. Скрытые (tombstone/sync) — только с include_hidden=true."""
+    p = _pool_or_404(request, pool)
+    needle = (q or "").strip().lower()
+    out = []
+    for r in db.list_nodes(resolve_tenant(request), pool=p.id, include_hidden=include_hidden):
+        if block is not None and r["block"] != block:
+            continue
+        if subblock is not None and r.get("subblock") != subblock:
+            continue
+        if difficulty is not None and r["difficulty"] != difficulty:
+            continue
+        if topic is not None and r["topic"] != topic:
+            continue
+        if tag is not None and tag not in (r.get("tags") or []):
+            continue
+        if kind is not None and r["kind"] != kind:
+            continue
+        if needle and needle not in " ".join(str(r.get(f) or "") for f in ("title", "question", "answer")).lower():
+            continue
+        out.append(_node_out(r))
+    return out
+
+
+@app.get("/api/nodes/{node_id}")
+def get_node(node_id: str, request: Request, _user: dict = Depends(current_user)) -> dict:
+    """Одна карточка со всеми полями, в том числе скрытая (поле hidden)."""
+    row = db.get_node(resolve_tenant(request), node_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
+    return _node_out(row)
+
+
 @app.post("/api/nodes")
 def add_node(body: NodeCreate, request: Request, _user: dict = Depends(require_member)) -> dict:
-    """Создать новый вопрос в банке пула (БД, source='user'). id генерится из topic/title."""
+    """Создать карточку в направлении (БД, source='user'). id — явный (409, если занят) или из topic/title.
+    Ответ — вся карточка (как GET /api/nodes/{id})."""
     tenant = resolve_tenant(request)
     pool = _pool_or_404(request, body.pool)
     _difficulty_or_422(pool, body.difficulty)
-    base = _slugify(body.topic or body.title or body.block)
-    node_id = _unique_node_id(tenant, base)
-    node = Node.model_validate({**body.model_dump(exclude={"pool"}), "pool": pool.id, "id": node_id})
+    tags = _tags_or_422(body.tags)
+    if body.id:
+        if db.get_node(tenant, body.id) is not None:
+            raise HTTPException(status_code=409, detail=f"node id '{body.id}' already exists")
+        node_id = body.id
+    else:
+        node_id = _unique_node_id(tenant, _slugify(body.topic or body.title or body.block))
+    data = body.model_dump(exclude={"pool", "id"})
+    data.update(pool=pool.id, id=node_id, tags=tags, subblock=body.subblock or None)
+    node = Node.model_validate(data)
     try:
         validate_against_pool(node, pool)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    saved = db.upsert_node(tenant, node.model_dump(by_alias=True), source="user")
-    return {"id": saved["id"], "block": saved["block"], "title": saved.get("title") or ""}
+    # model_dump() без alias: DAL читает starter_code, а не starterCode.
+    saved = db.upsert_node(tenant, node.model_dump(), source="user")
+    return _node_out(saved)
+
+
+# Пустая строка в этих полях PUT снимает значение (None в NodeUpdate значит «не менять»).
+_CLEARABLE = ("subblock", "title", "starter_code")
 
 
 @app.put("/api/nodes/{node_id}")
 def edit_node(
     node_id: str, body: NodeUpdate, request: Request, _user: dict = Depends(require_member)
 ) -> dict:
-    """Обновить структурные поля вопроса. 404 если нет, 422 если результат невалиден."""
+    """Правка карточки, в том числе перенос в другое направление/колонку/под-колонку/уровень.
+    404 — карточки или целевого направления нет, 422 — результат не проходит проверку направления."""
     tenant = resolve_tenant(request)
     existing = db.get_node(tenant, node_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
     fields = body.model_dump(exclude_none=True)
-    if "difficulty" in fields:
-        _difficulty_or_422(_pool_or_404(request, existing["pool"]), fields["difficulty"])
+    for key in _CLEARABLE:
+        if fields.get(key) == "":
+            fields[key] = None
+    if "tags" in fields:
+        fields["tags"] = _tags_or_422(fields["tags"])
+    target = _pool_or_404(request, fields.get("pool", existing["pool"]))
+    # Перенос в другую колонку/направление без явной под-колонки: прежняя под-колонка там не существует —
+    # снимаем её, а не отказываем (карточка встаёт в колонку без под-колонки).
+    moved = "block" in fields or "pool" in fields
+    if moved and "subblock" not in fields:
+        block = fields.get("block", existing["block"])
+        if existing.get("subblock") not in target.subblock_ids(block):
+            fields["subblock"] = None
     merged = {**existing, **fields}
+    _difficulty_or_422(target, merged["difficulty"])
     # existing несёт БД-поля (source/hidden/timestamps), которых нет в Node (extra=forbid):
     # валидируем только подмножество полей Node, а в БД пишем полный merged (db читает по .get).
     try:
         node = Node.model_validate({k: v for k, v in merged.items() if k in _NODE_FIELDS})
-        pools = _pools(request)
-        if merged["pool"] in pools:
-            validate_against_pool(node, pools[merged["pool"]])
+        validate_against_pool(node, target)
     except Exception as exc:  # noqa: BLE001 — pydantic ValidationError / block вне пула → 422
         raise HTTPException(status_code=422, detail=str(exc))
-    # правка из UI делает ноду пользовательской: файлы content/ её больше не перетирают (см. sync.py).
+    # правка из UI/API делает ноду пользовательской: файлы content/ её больше не перетирают (см. sync.py).
     saved = db.upsert_node(tenant, merged, source="user")
-    return {"updated": saved["id"]}
+    return {"updated": saved["id"], "node": _node_out(saved)}
+
+
+def _remove_node(tenant: str, row: dict) -> bool:
+    """Seed-нода (source='seed') — не DELETE, а tombstone (hidden=1, source='user'): файл в content/
+    остаётся источником этой ноды, и обычный DELETE её воскресил бы при следующем sync (sync
+    пропускает только user-ноды). Пользовательская нода удаляется. Возвращает True для tombstone."""
+    if row["source"] == "seed":
+        db.tombstone_node(tenant, row["id"])
+        return True
+    db.delete_node(tenant, row["id"])
+    return False
 
 
 @app.delete("/api/nodes/{node_id}")
 def remove_node(node_id: str, request: Request, _user: dict = Depends(require_member)) -> dict:
-    """Удалить вопрос из банка. 404, если нет.
-
-    Seed-нода (source='seed') — не DELETE, а tombstone (hidden=1, source='user'): файл в content/
-    остаётся источником этой ноды, и обычный DELETE её воскресил бы при следующем sync (sync
-    пропускает только user-ноды). Пользовательская нода (source='user') удаляется как раньше.
-    """
+    """Удалить вопрос из банка (seed — спрятать, см. _remove_node). 404, если нет."""
     tenant = resolve_tenant(request)
     existing = db.get_node(tenant, node_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
-    if existing["source"] == "seed":
-        db.tombstone_node(tenant, node_id)
-        return {"deleted": node_id, "tombstoned": True}
-    db.delete_node(tenant, node_id)
-    return {"deleted": node_id, "tombstoned": False}
+    return {"deleted": node_id, "tombstoned": _remove_node(tenant, existing)}
 
 
 # ---------- progress (чек-лист разбора) ----------
