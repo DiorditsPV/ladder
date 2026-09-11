@@ -32,10 +32,100 @@ def _card(i, block="ops", level="concepts", **extra):
 
 
 def _run(tmp_path, spec, *args):
+    """Режим файлов (--files) по умолчанию — для пресетов; --check передаётся явно."""
     f = tmp_path / "topic.json"
     f.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
-    return subprocess.run([sys.executable, str(SCRIPT), str(f), "--content", str(tmp_path / "content"), *args],
+    mode = [] if {"--check", "--upload"} & set(args) else ["--files"]
+    return subprocess.run([sys.executable, str(SCRIPT), str(f), *mode, "--content", str(tmp_path / "content"), *args],
                           capture_output=True, text=True)
+
+
+def _module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("write_topic", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _owner_client():
+    from fastapi.testclient import TestClient
+
+    from app.main import OWNER_EMAIL, OWNER_PASSWORD, app
+
+    c = TestClient(app)
+    assert c.post("/api/auth/login", json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD}).status_code == 200
+    return c
+
+
+def _answer(i):
+    return f"Ответ {i}: " + "механика и пример. " * 30
+
+
+def test_upload_creates_direction_then_skips_and_overwrites():
+    """--upload (spec content-in-db): направление с id из JSON, карточки с явными id; повтор — пропуск; --overwrite —
+    обновление; ничего не пишется в content/."""
+    import uuid
+
+    wt = _module()
+    pid = f"wt-{uuid.uuid4().hex[:6]}"
+    spec = _spec([_card(1, block="core", subblock="log"), _card(2, level="design")])
+    spec["pool"]["id"] = pid
+    for c in spec["cards"]:
+        c["id"] = c["id"].replace("kafka", pid)
+        c["answer"] = _answer(c["id"])
+    http = _owner_client()
+    try:
+        rep = wt.upload(spec, http)
+        assert rep["pool_created"] and rep["created"] == 2 and rep["errors"] == []
+        pool = http.get(f"/api/pools/{pid}").json()
+        assert [b["id"] for b in pool["blocks"]] == ["core", "ops"] and pool["blocks"][0]["subblocks"][0]["id"] == "log"
+        assert [lv["id"] for lv in pool["levels"]] == ["concepts", "design"]
+        node = http.get(f"/api/nodes/{pid}-core-01").json()
+        assert node["subblock"] == "log" and node["tags"] == ["streaming"]
+
+        again = wt.upload(spec, http)
+        assert not again["pool_created"] and again["skipped"] == 2 and again["created"] == 0
+
+        spec["cards"][0]["title"] = "Новый заголовок карточки"
+        over = wt.upload(spec, http, overwrite=True)
+        assert over["updated"] == 2
+        assert http.get(f"/api/nodes/{pid}-core-01").json()["title"] == "Новый заголовок карточки"
+    finally:
+        http.delete(f"/api/pools/{pid}")
+
+
+def test_upload_extends_structure_of_existing_direction():
+    import uuid
+
+    wt = _module()
+    pid = f"wt-{uuid.uuid4().hex[:6]}"
+    spec = _spec([_card(1)])
+    spec["pool"]["id"] = pid
+    spec["cards"][0]["id"] = f"{pid}-ops-01"
+    http = _owner_client()
+    try:
+        wt.upload(spec, http)
+        spec["pool"]["blocks"].append({"id": "streams", "label": "Потоки"})
+        spec["pool"]["blocks"][0]["subblocks"].append({"id": "segments", "label": "Сегменты"})
+        spec["pool"]["levels"].insert(1, {"id": "config", "label": "Настройка"})
+        spec["cards"].append({**_card(1, block="streams", level="config"), "id": f"{pid}-streams-01"})
+        rep = wt.upload(spec, http)
+        assert set(rep["structure_added"]) == {"колонка streams", "под-колонка core/segments", "уровень config"}
+        assert rep["created"] == 1 and rep["skipped"] == 1
+        pool = http.get(f"/api/pools/{pid}").json()
+        assert [b["id"] for b in pool["blocks"]] == ["core", "ops", "streams"]
+        assert [lv["id"] for lv in pool["levels"]] == ["concepts", "config", "design"]
+    finally:
+        http.delete(f"/api/pools/{pid}")
+
+
+def test_mode_is_required(tmp_path):
+    f = tmp_path / "topic.json"
+    f.write_text(json.dumps(_spec([_card(1)]), ensure_ascii=False), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(SCRIPT), str(f)], capture_output=True, text=True)
+    assert r.returncode == 2 and "--check" in r.stderr
 
 
 def test_writes_normalized_files_and_pool_yaml(tmp_path):

@@ -68,6 +68,8 @@ jobs:
           [ "$code" = 200 ] || { echo "✗ /api/pools без cookie → $code (ожидалось 200: список демо-направлений)"; exit 1; }
           code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph?pool=data-engineer")
           [ "$code" = 200 ] || { echo "✗ демо-граф без cookie → $code (ожидалось 200)"; exit 1; }
+          # data-engineer-x5 живёт только в БД (не в content/); без сессии и несуществующее направление → 401,
+          # так что удаление X5 выкладку не сломает — но проверка тогда слабее: смените на другое закрытое.
           code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph?pool=data-engineer-x5")
           [ "$code" = 401 ] || { echo "✗ не-демо граф без cookie → $code (ожидалось 401)"; exit 1; }
           echo "✓ health 200, демо 200, остальное за логином"

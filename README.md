@@ -104,9 +104,8 @@ the `known` ones.
   difficulty, `←→` between columns, `Enter` opens the drawer, `n` jumps to the next unreviewed card,
   `Esc` clears the current one, `?` shows the shortcut cheat sheet.
 
-**Keep the bank fresh.** New questions are uploaded as `.md` / `.json`, written straight in the UI,
-or added to `content/` and pulled in with "Update from files" (`POST /api/pools/sync`) without a
-restart.
+**Keep the bank fresh.** New questions go straight into the database — through the MCP server, the
+API, the UI or an `.md` / `.json` upload; `content/` in the repository holds only the preset tracks.
 
 ## Modes: demo and full access
 
@@ -134,21 +133,26 @@ checklist summary) and `GET /api/graph?pool=<demo track>`; everything else answe
 
 ## Content
 
-Questions live in track pools: `content/<pool>/pool.yaml` describes the sections (column order,
-labels, colours, sub-columns, weights) and the difficulty levels (`levels`, the matrix rows) and `content/<pool>/<block>/*.md|*.json` holds the questions
-themselves. `pool.yaml` is the seed: at runtime tracks are read from the database, so they can be
-created, edited and deleted from the UI (`POST/PUT/DELETE /api/pools`). A new track is either a copy
-of an existing one (structure and questions included) or a structure you build yourself in the
-editor.
+The database is the source of truth for questions: tracks and cards are created and edited through
+the MCP server, the API and the UI (`POST/PUT/DELETE /api/pools`, `/api/nodes`). The repository keeps
+only the presets in `content/<pool>/`: `pool.yaml` describes the sections (column order, labels,
+colours, sub-columns, weights) and the difficulty levels (`levels`, the matrix rows),
+`content/<pool>/<block>/*.md|*.json` holds the questions themselves. On start the server only
+*seeds* from these files — it creates a missing track and adds cards whose ids are free — and never
+overwrites or hides what the database already has, so a deploy cannot wipe accumulated content.
+Updating a preset from its files is explicit: `POST /api/pools/sync?pool=<id>&update=true`, after a
+`&dry_run=true` preview that runs on a copy of the database. A new track is either a copy of an
+existing one (structure and questions included) or a structure you build yourself in the editor or
+over MCP.
 
 Three optional `pool.yaml` keys drive the demo: `demo: true` makes a track readable without signing
 in, `lang` is the content language (`ru` by default, or `en`), and `translation_of: <pool id>` marks a
 translation. With the English interface the home page shows the translation instead of the original,
 and the language switch on a board jumps to the paired track; checklists of the original and the
-translation are separate. The keys are content properties: sync carries them over from the files,
+translation are separate. The keys are content properties: an explicit preset update carries them over from the files,
 tracks created in the UI are `demo: false`, `lang: ru`.
 
-The repository ships several Russian-language tracks. `data-engineer` and `system-analyst` form the
+The repository ships two Russian-language presets. `data-engineer` and `system-analyst` form the
 demo and have full English translations — `data-engineer-en` and `system-analyst-en`, where a card id
 is the original id plus `-en`. `demo/content-en` is a separate English set used for the screenshots
 above.
@@ -191,7 +195,7 @@ The answer (Markdown, code blocks supported)…
 | GET                 | `/api/pools`                       | tracks with sections, question counts and checklist summary; without a session — demo tracks only, no summary |
 | POST                | `/api/pools`                       | create a track from a preset or from your own sections                                                        |
 | PUT                 | `/api/pools/{id}`                  | rename a track or edit its sections and levels                                                                |
-| POST                | `/api/pools/sync`                  | re-read `content/` into the database (owner)                                                                  |
+| POST                | `/api/pools/sync`                  | seed missing presets from `content/` (owner); `update=true&pool=<id>` — explicit update                       |
 | GET                 | `/api/graph?pool=<id>`             | nodes plus import errors; without a session — demo tracks only                                                |
 | PUT                 | `/api/progress/{node_id}`          | set a card's status (`{status}`: known / review / unknown)                                                    |
 | GET                 | `/api/progress?pool=<id>`          | the current user's checklist for a track                                                                      |
@@ -209,16 +213,18 @@ at `/docs`.
 ### MCP server
 
 `tools/ladder-mcp` is an MCP server over this API: list and edit tracks, their sections and
-sub-columns (vertical), levels (horizontal), topics and question cards — 24 tools, from
-`get_direction` with a coverage matrix to `create_questions` in batches. It signs in as an account
-that may edit content and runs over stdio against a local container or the live site. Setup,
+sub-columns (vertical), levels (horizontal), topics and question cards — 25 tools, from
+`get_direction` with a coverage matrix to `create_questions` in batches, plus `sync_from_files` for
+the presets (a dry run unless asked otherwise). It is the main way to add content. It signs in as an
+account that may edit content and runs over stdio against a local container or the live site. Setup,
 the tool list and tests are in [tools/ladder-mcp/README.md](tools/ladder-mcp/README.md).
 
 ## Tests
 
-Back end — 144 tests: content import, node CRUD, track CRUD with levels, `content/` sync with the
-demo flags, the checklist, auth and RBAC with tenant isolation, anonymous demo access, passwords and
-accounts.
+Back end — 167 tests: content import, node CRUD, track CRUD with levels, seeding and explicit preset
+updates from `content/` with the demo flags, the checklist, auth and RBAC with tenant isolation,
+anonymous demo access, passwords and accounts, the API behind MCP, the `ladder-topic` upload script
+and the backup script.
 
 ```bash
 cd backend && . .venv/bin/activate && pytest -q
@@ -254,8 +260,9 @@ at `#/login`: `/` is the start screen now.
 
 Deploying to **https://ladder.paveldiordits.site** is a manual GitHub Actions run (*Deploy → Run workflow*);
 merging into `main` deploys nothing. The front end is
-built on the runner and shipped as one tarball to a forced-command SSH key on the server. Details and the
-one-time server setup are in `DEPLOY.md`.
+built on the runner and shipped as one tarball to a forced-command SSH key on the server. Every deploy
+snapshots the database first and fails if any track has fewer cards afterwards; a timer takes a nightly
+snapshot too. Details, restore and the one-time server setup are in `DEPLOY.md`.
 
 See `REPORT.md` for the design notes behind the architecture, and `AGENTS.md` for the repository
 map and content conventions.

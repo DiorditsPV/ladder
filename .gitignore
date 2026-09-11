@@ -26,3 +26,4 @@ last_run.json
 .superpowers/
 tools/ladder-mcp/.venv/
 tools/ladder-mcp/*.egg-info/
+tools/ladder-mcp/build/

@@ -28,8 +28,10 @@ def test_every_pool_imports_without_errors(pool_id):
     assert all(n.title and 1 <= len(n.tags) <= 3 for n in nodes)
 
 
-def test_x5_pool_present():
-    assert "data-engineer-x5" in ALL_POOLS
+def test_content_holds_only_presets():
+    """В репозитории — только пресеты (spec 2026-09-11-content-in-db): остальные направления живут в БД и
+    заносятся через MCP/API. Новый каталог в content/ — осознанное решение: добавь его сюда."""
+    assert set(ALL_POOLS) == {"data-engineer", "data-engineer-en", "system-analyst", "system-analyst-en"}
 
 
 def test_content_imports_without_errors():
