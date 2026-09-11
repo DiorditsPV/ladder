@@ -18,13 +18,13 @@ Run workflow ─▶ GitHub Actions (.github/workflows/deploy.yml, workflow_dispa
                         /api/graph?pool=data-engineer-x5 → 401 (остальное за входом)
 ```
 
-| Путь на сервере                                           | Назначение                                        | Переживает выкладку  |
-| --------------------------------------------------------- | ------------------------------------------------- | -------------------- |
-| `/opt/ladder`                                          | код + контент + `frontend/dist` + `backend/.venv` | нет (кроме venv)     |
-| `/var/lib/ladder/ladder.db`                         | SQLite: направления, банк вопросов, чек-лист      | **да**               |
-| `/etc/ladder.env`                                      | owner-креды (600, root)                           | да                   |
-| `/etc/systemd/system/ladder.service`                   | uvicorn на `127.0.0.1:8770`, hardened             | да (ставит install)  |
-| `/etc/nginx/sites-available/ladder.paveldiordits.site` | фронт-дверь, TLS от certbot                       | да                   |
+| Путь на сервере                                        | Назначение                                        | Переживает выкладку |
+|--------------------------------------------------------|---------------------------------------------------|---------------------|
+| `/opt/ladder`                                          | код + контент + `frontend/dist` + `backend/.venv` | нет (кроме venv)    |
+| `/var/lib/ladder/ladder.db`                            | SQLite: направления, банк вопросов, чек-лист      | **да**              |
+| `/etc/ladder.env`                                      | owner-креды (600, root)                           | да                  |
+| `/etc/systemd/system/ladder.service`                   | uvicorn на `127.0.0.1:8770`, hardened             | да (ставит install) |
+| `/etc/nginx/sites-available/ladder.paveldiordits.site` | фронт-дверь, TLS от certbot                       | да                  |
 
 Что лежит в `deploy/`: `ladder.service` (юнит), `nginx-ladder.conf` (server-блок),
 `deploy-ladder.sh` (forced command, принимает архив со stdin), `install.sh` (разовый провижининг),
@@ -76,10 +76,45 @@ no-X11-forwarding,no-agent-forwarding,no-pty`. Скрипт — `root:root 755`,
 Архив проверяется до любых изменений на диске: не gzip, или нет `backend/app/main.py` / `frontend/dist/index.html` /
 `content` → выход 1, `/opt` не тронут. Юнит скрипт **не ставит** (только `install.sh`) — архив не может подменить `User=`.
 
+## Контент и бэкапы
+
+Источник правды для вопросов — база на сервере (`/var/lib/ladder/ladder.db`): направления и карточки заносятся через
+MCP, API и UI. В репозитории (`content/`) — только пресеты: `data-engineer`, `system-analyst` и их `-en`. Синхронизация
+при старте сервиса только **засевает** недостающее (новое направление, карточки с новыми id) и никогда не
+перезаписывает и не прячет существующее — деплой не может затереть накопленное. Обновить пресет из файлов — явно:
+`POST /api/pools/sync?pool=<id>&update=true` (сначала `&dry_run=true`) или MCP `sync_from_files`.
+
+Страховка (`deploy/install-backup.sh`, ставится из `install.sh`, повторный запуск безопасен):
+- `ladder-backup` — согласованный снимок базы с проверкой целостности в `/var/backups/ladder` (700, root);
+- таймер `ladder-backup.timer` — снимок каждую ночь около 03:30, хранятся 14 последних;
+- `deploy-ladder.sh` перед рестартом снимает снимок `…-pre-deploy.db` (10 последних) и считает карточки по
+  направлениям, после старта сравнивает: стало меньше хоть в одном — выкладка падает с путём к снимку.
+
+Забрать копию к себе (снимок + JSON-выгрузка всех направлений, если заданы креды):
+
+```bash
+LADDER_EMAIL=<почта> LADDER_PASSWORD=<пароль> deploy/backup-pull.sh   # → ~/dev/backups/ladder/
+```
+
+Обновить серверные скрипты страховки без полного провижининга:
+
+```bash
+tar czf - -C deploy . | ssh root@37.46.132.95 'rm -rf /root/ladder-deploy && mkdir -p /root/ladder-deploy \
+  && tar xzf - -C /root/ladder-deploy && bash /root/ladder-deploy/install-backup.sh'
+```
+
+Восстановление из снимка (карточки, прогресс, аккаунты — всё в одном файле):
+
+```bash
+ssh root@37.46.132.95 'systemctl stop ladder && ladder-backup manual \
+  && install -o ladder -g ladder -m 644 /var/backups/ladder/<снимок>.db /var/lib/ladder/ladder.db \
+  && systemctl start ladder'
+```
+
 ## Откат
 
-Предыдущей копии кода на сервере нет — откат = `git revert` в `main` (выкладка идёт автоматически) либо
-*Actions → Deploy → Run workflow* на нужном коммите. БД выкладкой не трогается.
+Предыдущей копии кода на сервере нет — откат = `git revert` в `main` и ручной *Actions → Deploy → Run workflow*
+на нужном коммите. БД выкладкой не трогается; перед каждой выкладкой снимается её снимок (см. «Контент и бэкапы»).
 
 ## Диагностика
 

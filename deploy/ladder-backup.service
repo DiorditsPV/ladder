@@ -1,0 +1,7 @@
+[Unit]
+Description=Ladder: ночной снимок базы (/var/backups/ladder, 14 последних)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ladder-backup nightly
