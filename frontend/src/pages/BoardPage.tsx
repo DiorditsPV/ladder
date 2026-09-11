@@ -54,8 +54,9 @@ import {
   type Progress,
   type QNode,
 } from "../types";
+import { useProgressStore } from "../progressStore";
 import { href } from "../router";
-import { useHomeHref } from "../session";
+import { useCan, useHomeHref } from "../session";
 
 const nodeTypes = {
   question: QuestionNode,
@@ -288,6 +289,9 @@ const ALL_KINDS: Record<string, boolean> = { question: true, task: true };
 export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const t = useT();
   const homeHref = useHomeHref();
+  // Чек-лист: у вошедшего — на сервере, в демо — в localStorage (spec 2026-09-11); правка карточек — по роли.
+  const store = useProgressStore();
+  const can = useCan();
   const [graph, setGraph] = useState<QNode[]>([]);
   const [errors, setErrors] = useState<ImportErr[]>([]);
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -475,8 +479,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   }, [loadGraph]);
 
   useEffect(() => {
-    api.progress(pool.id).then(setStatuses).catch(() => setStatuses({}));
-  }, [pool.id]);
+    store.load(pool.id).then(setStatuses).catch(() => setStatuses({}));
+  }, [pool.id, store]);
 
   // question-management: удалить вопрос из банка (DELETE → перечитать граф → снять выбор).
   const deleteNode = useCallback(
@@ -538,7 +542,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         else next[nodeId] = status;
         return next;
       });
-      const request = clearing ? api.clearProgress(nodeId) : api.setProgress(nodeId, status);
+      const request = clearing ? store.clear(pool.id, nodeId) : store.set(pool.id, nodeId, status);
       request.catch(() => {
         setStatuses((s) => {
           const next = { ...s };
@@ -548,7 +552,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         });
       });
     },
-    [statuses],
+    [statuses, store, pool.id],
   );
 
   const onNodeClick = useCallback((_: unknown, node: Node) => {
@@ -1029,6 +1033,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
           fullscreen={fullscreen}
           hidden={selectedId ? hiddenIds.has(selectedId) : false}
           onToggleHide={toggleHide}
+          canEdit={can.editContent}
           onDelete={deleteNode}
           onUpdate={updateNode}
           onToggleFullscreen={() => setFullscreen((f) => !f)}

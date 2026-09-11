@@ -5,12 +5,15 @@ import { BankBrowser } from "../components/BankBrowser";
 import { UploadModal } from "../components/UploadModal";
 import { downloadBank } from "../report";
 import { useT } from "../i18n";
+import { useCan } from "../session";
 import type { PoolConfig, QNode } from "../types";
 import { PageShell } from "./PageShell";
 
 // Банк вопросов направления как страница: просмотр (BankBrowser embedded) + правки контента.
+// Добавление и импорт — только у ролей с правом на контент; экспорт в HTML — у всех (и в демо).
 export function BankPage({ pool, onChanged }: { pool: PoolConfig; onChanged: () => void }) {
   const t = useT();
+  const can = useCan();
   const [nodes, setNodes] = useState<QNode[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -27,8 +30,12 @@ export function BankPage({ pool, onChanged }: { pool: PoolConfig; onChanged: () 
       title={`${t("Банк вопросов")} · ${pool.label}`}
       actions={
         <>
-          <button className="iconbtn addbtn" onClick={() => setAddOpen(true)}>{t("Добавить вопрос")}</button>
-          <button className="iconbtn uploadbtn" onClick={() => setUploadOpen(true)}>{t("Загрузить файл")}</button>
+          {can.editContent && (
+            <>
+              <button className="iconbtn addbtn" onClick={() => setAddOpen(true)}>{t("Добавить вопрос")}</button>
+              <button className="iconbtn uploadbtn" onClick={() => setUploadOpen(true)}>{t("Загрузить файл")}</button>
+            </>
+          )}
           <button className="iconbtn bankbtn" onClick={() => downloadBank(nodes, pool)} disabled={!nodes.length}>{t("Скачать HTML")}</button>
         </>
       }

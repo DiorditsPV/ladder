@@ -5,9 +5,10 @@ import BoardPage from "./pages/BoardPage";
 import { BankPage } from "./pages/BankPage";
 import { HomePage } from "./pages/HomePage";
 import { Landing } from "./pages/Landing";
+import { pairOf, poolsForLang } from "./poolLang";
 import { href, useRoute, type Route } from "./router";
 import { useSession } from "./session";
-import { useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import type { PoolConfig } from "./types";
 
 // Раздаёт страницы по маршруту; режим — из сессии (spec 2026-09-11): без входа — стартовый экран
@@ -27,6 +28,7 @@ function redirectFor(route: Route, user: AuthUser | null): string | null {
 
 export default function Router() {
   const t = useT();
+  const [lang] = useLang();
   const route = useRoute();
   const { user, refresh } = useSession();
   const [pools, setPools] = useState<PoolConfig[] | null>(null);
@@ -42,6 +44,16 @@ export default function Router() {
   useEffect(() => {
     if (redirect) window.location.replace(redirect);
   }, [redirect]);
+  // Язык контента: доска/банк направления уходят на его пару на языке интерфейса, если пара есть
+  // (#/board/data-engineer ↔ #/board/data-engineer-en). Эффект — до ранних return (порядок хуков).
+  useEffect(() => {
+    if (!pools || (route.name !== "board" && route.name !== "bank")) return;
+    const current = pools.find((p) => p.id === route.pool);
+    const pair = current ? pairOf(pools, current, lang) : null;
+    if (pair && current && pair.id !== current.id) {
+      window.location.replace(route.name === "board" ? href.board(pair.id) : href.bank(pair.id));
+    }
+  }, [lang, pools, route]);
   if (redirect) return null;
 
   if (route.name === "login") {
@@ -52,20 +64,23 @@ export default function Router() {
   if (!pools) return <div className="loading">{t("Загрузка…")}</div>;
 
   const demo = !user;
+  // Главная показывает направления на языке интерфейса (перевод вместо оригинала, где он есть);
+  // доска и банк ищут пул по полному списку — адрес может указывать и на перевод.
+  const homePools = poolsForLang(pools, lang);
   const poolOf = (id: string) => pools.find((p) => p.id === id) ?? null;
   switch (route.name) {
     case "board": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       // key — чтобы смена пула пересоздавала доску целиком (состояние, таймеры).
       return <BoardPage key={pool.id} pool={pool} />;
     }
     case "bank": {
       const pool = poolOf(route.pool);
-      if (!pool) return <HomePage pools={pools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
+      if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       return <BankPage key={pool.id} pool={pool} onChanged={reloadPools} />;
     }
     default:
-      return <HomePage pools={pools} demo={demo} onChanged={reloadPools} />;
+      return <HomePage pools={homePools} demo={demo} onChanged={reloadPools} />;
   }
 }
