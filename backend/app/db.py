@@ -219,6 +219,22 @@ class Database:
             )
         return self.get_user_by_id(tenant_id, uid)
 
+    def update_password(self, tenant_id: str, user_id: str, password_hash: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?",
+                (password_hash, tenant_id, user_id),
+            )
+        return cur.rowcount == 1
+
+    def delete_user(self, tenant_id: str, user_id: str) -> bool:
+        """Удалить аккаунт вместе с его сессиями и чек-листом (одна транзакция). False — не найден."""
+        with self._conn() as conn:
+            conn.execute("DELETE FROM progress WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id))
+            conn.execute("DELETE FROM auth_sessions WHERE tenant_id = ? AND user_id = ?", (tenant_id, user_id))
+            cur = conn.execute("DELETE FROM users WHERE tenant_id = ? AND id = ?", (tenant_id, user_id))
+        return cur.rowcount == 1
+
     # --- auth sessions (server-side, токен = значение cookie) ---
     def create_auth_session(self, tenant_id: str, user_id: str) -> str:
         """Новая сессия. Несколько сессий на пользователя (устройства); отзыв — delete_user_sessions."""
