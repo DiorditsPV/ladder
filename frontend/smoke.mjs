@@ -628,7 +628,10 @@ console.log(`OK: answer visible right away; › / ‹ switch the card («${t1}»
 
 // 22a. Окно по центру тащится за шапку (не за кнопки): место меняется, запоминается как смещение от центра
 //      (ladder.cardPos) и переживает перезагрузку; сдвинули окно влево — после › текущая карточка доски встаёт
-//      справа от него (там свободнее); двойной клик по шапке возвращает окно в центр.
+//      справа от него (там свободнее); двойной клик по шапке возвращает окно в центр. Перетаскивание окон не
+//      доходит до канвы React Flow — вьюпорт доски стоит на месте (здесь, в 22b и 22c).
+const boardViewport = () => page.evaluate(() => document.querySelector(".react-flow__viewport")?.style.transform ?? "");
+const vpDrag0 = await boardViewport();
 const c0 = await centerCard.boundingBox();
 const head = await page.locator(".drawer--center .drawer__title").boundingBox();
 const hx = head.x + 20;
@@ -640,6 +643,7 @@ await page.mouse.move(hx - 240, hy + 20, { steps: 6 });
 await page.mouse.up();
 const c1 = await centerCard.boundingBox();
 if (Math.abs(c1.x - (c0.x - 240)) > 2 || Math.abs(c1.y - (c0.y + 20)) > 2) fail(`dragging the header did not move the window: ${JSON.stringify(c0)} → ${JSON.stringify(c1)}`);
+if ((await boardViewport()) !== vpDrag0) fail("dragging the card window panned the board");
 const cardPos = JSON.parse((await page.evaluate(() => localStorage.getItem("ladder.cardPos"))) ?? "null");
 if (!cardPos || Math.abs(cardPos.dx + 240) > 2 || Math.abs(cardPos.dy - 20) > 2) fail(`window offset not stored: ${JSON.stringify(cardPos)}`);
 await page.locator(".drawer__next").click();
@@ -661,6 +665,7 @@ console.log(`OK: card window drags by the header (${Math.round(c0.x)} → ${Math
 // 22b. Размер окна: уголок справа внизу тянет ширину и высоту (левый верхний угол стоит на месте), правый
 //      край — только ширину; размер (ladder.cardSize) переживает перезагрузку; двойной клик по уголку — размер
 //      по умолчанию min(760px, 58vw).
+const vpSize0 = await boardViewport();
 const s0 = await centerCard.boundingBox();
 const gripBox2 = await page.locator(".drawer__grip").boundingBox();
 const kx = gripBox2.x + gripBox2.width / 2;
@@ -683,6 +688,7 @@ await page.mouse.move(ex - 100, ey, { steps: 5 });
 await page.mouse.up();
 const s2 = await centerCard.boundingBox();
 if (Math.abs(s2.width - (s1.width - 100)) > 2 || Math.abs(s2.height - s1.height) > 2) fail(`right edge must change the width only: ${JSON.stringify(s1)} → ${JSON.stringify(s2)}`);
+if ((await boardViewport()) !== vpSize0) fail("resizing the card window panned the board");
 const cardSize = JSON.parse((await page.evaluate(() => localStorage.getItem("ladder.cardSize"))) ?? "null");
 if (!cardSize || Math.abs(cardSize.w - s2.width) > 1 || Math.abs(cardSize.h - s2.height) > 1) fail(`window size not stored: ${JSON.stringify(cardSize)}`);
 await page.reload({ waitUntil: "networkidle" });
@@ -763,6 +769,8 @@ const f0 = await fpanel.boundingBox();
 if (Math.abs(canvasBox.x + canvasBox.width - (f0.x + f0.width) - 15) > 2 || Math.abs(f0.y - canvasBox.y - 15) > 2) {
   fail(`filters window must start at the right edge under the board header: ${JSON.stringify(f0)} in ${JSON.stringify(canvasBox)}`);
 }
+await page.waitForTimeout(200); // открытие фильтров перецентровывает доску (centerBoard) — дождаться
+const vpFilters0 = await boardViewport();
 const fhead = await page.locator(".fp__heading").boundingBox();
 const fx = fhead.x + 10;
 const fy = fhead.y + fhead.height / 2;
@@ -773,6 +781,7 @@ await page.mouse.move(fx - 500, fy + 80, { steps: 6 });
 await page.mouse.up();
 const f1 = await fpanel.boundingBox();
 if (Math.abs(f1.x - (f0.x - 500)) > 2 || Math.abs(f1.y - (f0.y + 80)) > 2) fail(`dragging the filters header did not move the window: ${JSON.stringify(f0)} → ${JSON.stringify(f1)}`);
+if ((await boardViewport()) !== vpFilters0) fail("dragging the filters window panned the board");
 if (!(await page.evaluate(() => localStorage.getItem("ladder.filtersPos")))) fail("filters window position was not stored");
 await page.reload({ waitUntil: "networkidle" });
 await fpanel.waitFor({ timeout: 10000 }); // открытость фильтров запоминается, как раньше
