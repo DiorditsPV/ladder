@@ -2,44 +2,32 @@
    Оформления доски (итог design-funnel, сентябрь 2026).
 
    Вариант задаётся атрибутом data-design на <html> (state в BoardPage.tsx, выбор — в ⚙
-   настройках, хранится в localStorage). Дефолт — 37 «Брутализм в цвете».
+   настройках, хранится в localStorage). Вариантов два: 58 «Изыскания» (дефолт) и 37 «Брутализм
+   в цвете»; 56 «Атлас» и 57 «Полевой журнал» убраны 2026-09-11 (сохранённые 56/57 читаются как 58).
 
    Правила игры:
-   - карточка вопроса едина для 37/56/57 — жёсткая чёрная рамка с плоской тенью;
-     альтернативы меняют только фон, палитру и обвязку (шапка, HUD, заголовки);
-   - 58 «Изыскания» — исключение: у него свои карточки с тепло-бортом по сложности;
+   - у 37 карточка вопроса брутальная — жёсткая чёрная рамка с плоской тенью;
+   - у 58 свои карточки с тепло-бортом по сложности, скругления прежние;
    - оформления скоупятся на светлую тему (:not([data-theme="dark"])); тёмная схема
      одна на всех и несёт язык 37 — «тёмный брутализм», см. секцию в конце файла.
    ========================================================================== */
 
-/* ---------- карточка по умолчанию (37, 56, 57): брутальная ---------- */
-html[data-design="37"]:not([data-theme="dark"]) .qnode,
-html[data-design="56"]:not([data-theme="dark"]) .qnode,
-html[data-design="57"]:not([data-theme="dark"]) .qnode {
+/* ---------- карточка 37: брутальная ---------- */
+html[data-design="37"]:not([data-theme="dark"]) .qnode {
   border: 2px solid #0f0f0f; border-top-width: 4px; border-radius: 0;
   box-shadow: 3px 3px 0 #0f0f0f;
 }
-html[data-design="37"]:not([data-theme="dark"]) .qnode--current,
-html[data-design="56"]:not([data-theme="dark"]) .qnode--current,
-html[data-design="57"]:not([data-theme="dark"]) .qnode--current {
+html[data-design="37"]:not([data-theme="dark"]) .qnode--current {
   box-shadow: 3px 3px 0 #0f0f0f, 0 0 0 2.5px #0f0f0f;
 }
-html[data-design="37"]:not([data-theme="dark"]) .qnode--selected,
-html[data-design="56"]:not([data-theme="dark"]) .qnode--selected,
-html[data-design="57"]:not([data-theme="dark"]) .qnode--selected {
+html[data-design="37"]:not([data-theme="dark"]) .qnode--selected {
   box-shadow: 3px 3px 0 #0f0f0f, 0 0 0 3px #6e6e6e;
 }
 html[data-design="37"]:not([data-theme="dark"]) .qnode__diff,
-html[data-design="56"]:not([data-theme="dark"]) .qnode__diff,
-html[data-design="57"]:not([data-theme="dark"]) .qnode__diff,
 html[data-design="37"]:not([data-theme="dark"]) .qnode__topic,
-html[data-design="56"]:not([data-theme="dark"]) .qnode__topic,
-html[data-design="57"]:not([data-theme="dark"]) .qnode__topic,
-html[data-design="37"]:not([data-theme="dark"]) .tagchip,
-html[data-design="56"]:not([data-theme="dark"]) .tagchip,
-html[data-design="57"]:not([data-theme="dark"]) .tagchip { border-radius: 0; }
+html[data-design="37"]:not([data-theme="dark"]) .tagchip { border-radius: 0; }
 
-/* ============================ 37 · Брутализм в цвете (дефолт) ============================
+/* ============================ 37 · Брутализм в цвете ============================
    Жёсткие чёрные рамки, нулевые радиусы, плашки направлений в их семантических
    цветах (цвета блоков из pool.yaml), контрастная монохромная обвязка. */
 html[data-design="37"]:not([data-theme="dark"]) {
@@ -67,64 +55,7 @@ html[data-design="37"]:not([data-theme="dark"]) .drawer--center {
   border: 2px solid #0f0f0f; border-top-width: 4px; border-radius: 0; box-shadow: 6px 6px 0 #0f0f0f;
 }
 
-/* ============================ 56 · Атлас ============================
-   Тёплая топобумага с крупной сеткой, коричневая обвязка, заголовки капителью.
-   Карточки — дефолтные брутальные (см. блок выше). */
-html[data-design="56"]:not([data-theme="dark"]) {
-  --bg: #fbfaf6; --surface: #fffefa; --panel-bg: rgba(255, 254, 250, .97);
-  --border: #6b6350; --border-strong: #2b2620;
-  --heading: #2b2620; --text: #3b352a; --text-muted: #77705f; --text-faint: #9c957f;
-  --hover: #f0ebdd; --tag-bg: #f0ecdf; --tag-fg: #5d5640; --accent: #2b2620;
-  --shadow: rgba(43, 38, 32, 0); --shadow-strong: rgba(43, 38, 32, .35);
-}
-html[data-design="56"]:not([data-theme="dark"]) body {
-  background-image:
-    linear-gradient(rgba(70, 61, 40, .07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(70, 61, 40, .07) 1px, transparent 1px);
-  background-size: 22px 22px;
-}
-html[data-design="56"]:not([data-theme="dark"]) .bgroup__header,
-html[data-design="56"]:not([data-theme="dark"]) .subhead__name {
-  text-transform: uppercase; letter-spacing: .06em; font-weight: 800;
-}
-html[data-design="56"]:not([data-theme="dark"]) .hud {
-  border: 1.8px solid #2b2620; box-shadow: 2px 2px 0 rgba(43, 38, 32, .8); border-radius: 4px;
-}
-html[data-design="56"]:not([data-theme="dark"]) .topbar { border-bottom: 1.8px solid #2b2620; }
-html[data-design="56"]:not([data-theme="dark"]) .drawer--center {
-  border: 1.8px solid #2b2620; border-top-width: 4px; border-radius: 4px; box-shadow: 4px 4px 0 rgba(43, 38, 32, .8);
-}
-
-/* ============================ 57 · Полевой журнал ============================
-   Миллиметровка: мелкая синяя сетка, синяя обвязка, всё измеряемое — моно.
-   Карточки — дефолтные брутальные (см. блок выше). */
-html[data-design="57"]:not([data-theme="dark"]) {
-  --bg: #fbfdff; --surface: #fff; --panel-bg: rgba(255, 255, 255, .97);
-  --border: #6d83b8; --border-strong: #1e3a8a;
-  --heading: #1e3a8a; --text: #22315c; --text-muted: #5b6b8c; --text-faint: #8b98b8;
-  --hover: #e8eefb; --tag-bg: #e8eefb; --tag-fg: #1e3a8a; --accent: #1d4ed8;
-  --shadow: rgba(30, 58, 138, 0); --shadow-strong: rgba(30, 58, 138, .3);
-}
-html[data-design="57"]:not([data-theme="dark"]) body {
-  background-image:
-    linear-gradient(rgba(29, 78, 216, .10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(29, 78, 216, .10) 1px, transparent 1px);
-  background-size: 9px 9px;
-}
-html[data-design="57"]:not([data-theme="dark"]) .qnode__diff,
-html[data-design="57"]:not([data-theme="dark"]) .hud {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-html[data-design="57"]:not([data-theme="dark"]) .hud {
-  border: 1.8px solid #1e3a8a; border-radius: 0; box-shadow: 2px 2px 0 #1e3a8a;
-}
-html[data-design="57"]:not([data-theme="dark"]) .bgroup { border-radius: 0; }
-html[data-design="57"]:not([data-theme="dark"]) .topbar { border-bottom: 1.8px solid #1e3a8a; }
-html[data-design="57"]:not([data-theme="dark"]) .drawer--center {
-  border: 1.8px solid #1e3a8a; border-top-width: 4px; border-radius: 0; box-shadow: 4px 4px 0 #1e3a8a;
-}
-
-/* ============================ 58 · Изыскания ============================
+/* ============================ 58 · Изыскания (дефолт) ============================
    Изолинии на зеленоватой бумаге. Единственный вариант со СВОИМИ карточками:
    тепло сложности — левый борт и чип, скругления прежние. */
 html[data-design="58"]:not([data-theme="dark"]) {

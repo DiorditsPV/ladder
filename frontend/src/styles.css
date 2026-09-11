@@ -271,7 +271,7 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
    телефоне (≤ 820px, см. @media ниже) карточка почти во всю ширину — там 46vw уже не читается.
    Верх — там, где стояла бы по центру карточка максимальной высоты: короткая не прыгает, ответ раскрывается
    вниз. z-index выше канвы (React Flow — 0/5) и ниже ⚙ (45) и модалок (50). Цвет верхней рамки — цвет
-   колонки (inline); жёсткая тень оформлений 37/56/57 и тёмной темы — в design-themes.css. */
+   колонки (inline); жёсткая тень оформления 37 и тёмной темы — в design-themes.css. */
 .drawer--center {
   position: absolute; z-index: 20; left: 0; right: 0; margin-inline: auto;
   top: max(16px, calc((100% - 72vh) / 2));

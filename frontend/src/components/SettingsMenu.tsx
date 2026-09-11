@@ -39,11 +39,9 @@ export type DisplaySettings = {
   bankHref: string;
 };
 
-// Оформления доски — итог design-funnel (номера сквозные из воронки).
+// Оформления доски — итог design-funnel (номера сквозные из воронки). По умолчанию — 58 (theme.tsx).
 const DESIGNS: [string, string][] = [
   ["37", "Брутализм в цвете"],
-  ["56", "Атлас"],
-  ["57", "Полевой журнал"],
   ["58", "Изыскания"],
 ];
 
@@ -94,7 +92,7 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         <div className="settings__title">{t("Оформление")}</div>
         <div className="settings__chips" role="radiogroup" aria-label={t("Оформление доски")}>
           {DESIGNS.map(([id, label]) => (
-            <button key={id} className={`tb__toggle ${s.design === id ? "tb__toggle--on" : ""}`}
+            <button key={id} className={`tb__toggle design__opt ${s.design === id ? "tb__toggle--on" : ""}`} data-design={id}
               onClick={() => s.onSetDesign(id)} role="radio" aria-checked={s.design === id}>
               {label}
             </button>

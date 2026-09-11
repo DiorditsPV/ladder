@@ -383,6 +383,24 @@ const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
 
+// 6c. Оформления (решение владельца 2026-09-11): в ⚙ ровно два — «Брутализм в цвете» (37) и «Изыскания» (58);
+//     по умолчанию (чистый localStorage) активно «Изыскания». Переключение меняет data-design и запоминается.
+await openSettings();
+const designs = await page.locator(".setdrawer .design__opt").evaluateAll((els) =>
+  els.map((e) => ({ id: e.dataset.design, label: e.textContent.trim(), on: e.getAttribute("aria-checked") === "true" })));
+if (designs.map((d) => d.id).join(",") !== "37,58") fail(`⚙ must offer exactly two designs (37, 58): ${JSON.stringify(designs)}`);
+if (designs.map((d) => d.label).join(" | ") !== "Брутализм в цвете | Изыскания") fail(`design labels: ${JSON.stringify(designs)}`);
+if (designs.filter((d) => d.on).map((d) => d.id).join(",") !== "58") fail(`«Изыскания» must be active by default: ${JSON.stringify(designs)}`);
+const designOf = () => page.evaluate(() => document.documentElement.dataset.design);
+if ((await designOf()) !== "58") fail(`default data-design must be 58, got ${await designOf()}`);
+await page.locator('.setdrawer .design__opt[data-design="37"]').click();
+if ((await designOf()) !== "37" || (await page.evaluate(() => localStorage.getItem("design"))) !== "37") fail("switching to «Брутализм в цвете» did not apply/store 37");
+await page.locator('.setdrawer .design__opt[data-design="58"]').click();
+if ((await designOf()) !== "58" || (await page.evaluate(() => localStorage.getItem("design"))) !== "58") fail("switching back to «Изыскания» did not apply/store 58");
+await page.keyboard.press("Escape");
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+console.log("OK: ⚙ offers two designs, «Изыскания» (58) by default, switching applies and stores");
+
 
 // 8. Тема: переключатель в шапке доски меняет data-theme (и обратно); в ⚙ его больше нет.
 const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
@@ -522,8 +540,11 @@ console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/t
 //     ответ скрыт до «Показать ответ» / пробела и снова прячется на соседней карточке, ‹ › листают матрицу.
 //     «Справа» — панель как раньше, ответ виден сразу; ширина тянется ручкой на левом краю и переживает
 //     перезагрузку, двойной клик — ширина по умолчанию. Выбор режима — ещё и в ⚙ «Карточка вопроса».
+// Заодно — сохранённое устаревшее оформление (56 «Атлас» убрано) при загрузке превращается в «Изыскания».
+await page.evaluate(() => localStorage.setItem("design", "56"));
 await page.reload({ waitUntil: "networkidle" }); // чистый старт: карточка закрыта, вьюпорт по умолчанию
 await page.waitForSelector(".qnode", { timeout: 10000 });
+if ((await page.evaluate(() => document.documentElement.dataset.design)) !== "58") fail("stale design 56 must fall back to 58");
 await closeFiltersIfOpen();
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 const centerCard = page.locator(".drawer.drawer--center");
@@ -780,7 +801,7 @@ if ((await page.locator(".errbar").count()) !== 1) fail("unknown pool should sho
 console.log("OK: unknown pool falls back to menu");
 
 // 25. Другие пулы рисуют СВОИ колонки: system-analyst и data-engineer-x5 (независимые пулы).
-// Регистронезависимо: дефолтный дизайн 37 переводит .bgroup__header в uppercase CSS'ом.
+// Регистронезависимо: оформление 37 и тёмная тема переводят .bgroup__header в uppercase CSS'ом.
 for (const [pid, needle] of [["system-analyst", "требования"], ["data-engineer-x5", "python"]]) {
   await page.goto(URL + "#/", { waitUntil: "load" });
   await page.waitForSelector(`.poolcard[data-pool="${pid}"]`, { timeout: 10000 });

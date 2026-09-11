@@ -338,8 +338,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [guidesV, setGuidesV] = useState<boolean>(() => localStorage.getItem("guidesV") === "1");
   // Таймер в HUD по умолчанию скрыт: тикающие цифры в поле зрения давят.
   const [showTimer, setShowTimer] = useState<boolean>(() => localStorage.getItem("showTimer") === "1");
-  // Оформление доски (итог design-funnel): дефолт — 37 «Брутализм в цвете»,
-  // альтернативы переключаются в ⚙. Применяется атрибутом data-design (design-themes.css).
+  // Оформление доски (итог design-funnel): дефолт — 58 «Изыскания», альтернатива — 37 «Брутализм
+  // в цвете», переключается в ⚙. Применяется атрибутом data-design (design-themes.css).
   const [design, setDesign] = useState<string>(readDesign);
   // Панель фильтров — popover у правого края канвы, открывается кнопкой toolbar'а; по умолчанию
   // закрыта (поверх канвы она съедает правую треть доски), выбор запоминается.
