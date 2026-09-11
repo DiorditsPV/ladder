@@ -53,6 +53,10 @@ export interface PoolConfig {
   levels: LevelCfg[];
   counts?: { nodes: number };
   progress?: { known: number; review: number; unknown: number; total: number };
+  // Демо-режим (spec 2026-09-11): видно без входа; язык контента; id оригинала, если это перевод.
+  demo?: boolean;
+  lang?: "ru" | "en";
+  translation_of?: string | null;
 }
 
 // Статус чек-листа разбора (per-user): «знаю» / «повторить» / «не знаю».

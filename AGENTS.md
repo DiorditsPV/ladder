@@ -9,7 +9,8 @@
 Базы данных / Python / Платформа), внутри — карточки, ранжированные по уровням сложности, которые
 задаёт сам пул (`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
 Каждая карточка = вопрос/задача + ответ. Контент импортируется из Markdown/JSON.
-Только локально. Бэкенд: **FastAPI + SQLite**. Фронт: **React + Vite + React Flow**.
+Без входа сайт открывается как демо (два направления, RU/EN, чек-лист в браузере), полный режим — после
+входа (см. «Режимы и роли»). Бэкенд: **FastAPI + SQLite**. Фронт: **React + Vite + React Flow**.
 
 Размер банка считается на лету через `GET /api/graph` (на момент написания ~60 нод:
 frameworks 29, databases 22, python 5, platform 4) — точные числа не держим в доке, они дрейфуют.
@@ -20,27 +21,32 @@ frameworks 29, databases 22, python 5, platform 4) — точные числа �
 ./run.sh --build         # форс-пересборка фронта
 ```
 Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, venv) + `npm run dev` (из
-`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на https://interview.paveldiordits.site — только ручной запуск `Deploy`
+`frontend/`, Vite :5173 проксирует `/api` на :8000). Деплой на https://ladder.paveldiordits.site — только ручной запуск `Deploy`
 (см. `DEPLOY.md`); merge в `main` ничего не выкладывает; фичи идут через `dev`.
 
 ## Карта репозитория
 - `backend/app/` — `models.py` (pydantic `Node`, `extra="forbid"`), `importer.py` (.md+.json через
   python-frontmatter), `pools.py` (таксономия пула), `sync.py` (`content/` → БД), `db.py` (SQLite:
-  направления, банк, чек-лист), `auth.py`/`tenancy.py`, `main.py` (FastAPI).
-- `frontend/src/` — `router.ts`/`Router.tsx` (hash-роутер: `#/`, `#/board/<pool>`, `#/bank/<pool>`),
+  направления, банк, чек-лист, аккаунты), `auth.py`/`tenancy.py` (`optional_user` — только демо-чтение
+  `GET /api/pools` и `GET /api/graph`), `main.py` (FastAPI).
+- `frontend/src/` — `router.ts`/`Router.tsx` (hash-роутер: `#/`, `#/demo`, `#/login`, `#/people`,
+  `#/board/<pool>`, `#/bank/<pool>`; `redirectFor` — маршруты режима, языковой эффект — пара направления),
+  `session.tsx` (`useSession`, `useCan`, `useHomeHref`), `progressStore.ts` (чек-лист: сервер или
+  `localStorage`), `poolLang.ts` (`poolsForLang`, `pairOf`),
   `pages/BoardPage.tsx` (доска пула: состояние, `buildNodes`, шапка, панель ⚙), `pages/`
-  (`HomePage`, `BankPage`, `PageShell`), `api.ts` (обёртки над `/api`),
+  (`Landing`, `HomePage`, `BankPage`, `PeoplePage`, `PageShell`), `api.ts` (обёртки над `/api`),
   `layout.ts` (`swimlaneLayout(nodes, pool)`, `subOf`),
   `types.ts` (`QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` и
   `levelOrder/levelLabel/levelColor` вместо констант, `Block = string`, `Difficulty/Kind`),
   `report.ts` (HTML-экспорт банка), `styles.css` (CSS-переменные тем), `main.tsx`.
   `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode, BandsNode, GuidesNode) и
-  оверлеи/панели (DetailDrawer, BankBrowser, UploadModal, ShortcutsHelp).
+  оверлеи/панели (DetailDrawer, BankBrowser, UploadModal, ShortcutsHelp, AccountMenu, ChangePasswordModal).
   Тесты: `frontend/smoke.mjs`, `frontend/screenshot.mjs`.
 - `content/<pool>/pool.yaml` — таксономия и веса пула; `content/<pool>/<block>/*.md|*.json` — его вопросы.
 - `backend/tests/` — pytest (`test_app.py` импорт/API, `test_nodes.py` CRUD нод, `test_pools.py`/
   `test_pool_crud.py`/`test_levels.py` направления и уровни, `test_sync.py`, `test_progress.py`
-  чек-лист, `test_auth.py` auth/RBAC/тенант-изоляция). `Q_IDEAS.txt` — реестр вопросов + идеи.
+  чек-лист, `test_auth.py` auth/RBAC/тенант-изоляция, `test_demo_access.py` анонимное демо-чтение,
+  `test_accounts.py` пароли и аккаунты). `Q_IDEAS.txt` — реестр вопросов + идеи.
 - `REPORT.md` — отчёт-исследование и архитектурные решения. `.claude/skills/` — скиллы (ниже).
 
 ## API (FastAPI)
@@ -54,7 +60,12 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 (вопросы удаляются, id остаётся занятым tombstone'ом), `POST /api/pools/sync` (owner: перечитать
 `content/`). Чек-лист: `GET /api/progress?pool=`, `PUT/DELETE /api/progress/{node_id}`.
 Аутентификация: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`,
-`GET/POST /api/users` (owner). Служебное: `GET /api/health`. Полные схемы — Swagger UI на `/docs`.
+`POST /api/auth/password` (свой пароль: неверный текущий → 403, не 401; новый короче 8 → 422; остальные сессии
+отзываются). Аккаунты (owner): `GET /api/users`, `POST /api/users` (без `password` — одноразовый пароль в ответе,
+один раз; роль по умолчанию viewer), `POST /api/users/{id}/password` (сброс: новый одноразовый, сессии отозваны),
+`DELETE /api/users/{id}` (вместе с сессиями и чек-листом; себя — 400). Без сессии доступны только
+`GET /api/pools` (направления с `demo: true`, без `progress`) и `GET /api/graph?pool=<демо>` — остальное 401.
+Служебное: `GET /api/health`. Полные схемы — Swagger UI на `/docs`.
 
 ## Модель ноды и формат контента
 Frontmatter (ключи алфавитные, `tags` — block-style): `id`, `kind` (question|task), `block`
@@ -69,6 +80,22 @@ system-analyst: requirements|modeling|data|integration, data-engineer-x5: python
 блока в `content/<pool>/pool.yaml`: data-engineer → frameworks: `airflow|pyspark|dbt|streaming`,
 databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexes`; system-analyst — свои
 под-колонки по блокам, см. `pool.yaml`.
+
+**Флаги направления** в `pool.yaml` (необязательные): `demo: true` — видно без входа; `lang` — язык контента
+(`ru` по умолчанию или `en`); `translation_of: <id>` — это перевод. Демо сейчас — `data-engineer` и `system-analyst`
+с переводами `data-engineer-en` / `system-analyst-en` (id карточки = id оригинала + `-en`; колонки, уровни, теги —
+как у оригинала). Флаги — свойства контента: sync переносит их из файлов, из UI они не правятся.
+
+## Режимы и роли
+Режим следует из сессии (spec `docs/superpowers/specs/2026-09-11-demo-and-access-design.md`).
+- **Демо (без входа):** `#/` — стартовый экран, `#/demo` — демо-направления на языке интерфейса; доска и банк —
+  только демо-направлений (прочие адреса → `#/demo`); чек-лист в `localStorage` (`ladder.progress.<pool>`), на сервер
+  ничего не пишется; правок нет, экспорт банка в HTML и локальное «Скрыть» остаются.
+- **Вход** — `#/login` (незаметная ссылка «Вход» на стартовом экране); после входа `#/demo` и `#/login` ведут на `#/`.
+- **Роли:** owner — всё, включая `#/people` (аккаунты); member — ещё и правка контента; viewer — чтение всех направлений
+  и свой чек-лист на сервере. Фронт прячет недоступные действия через `useCan()`; прогресс — `useProgressStore()`.
+- **Язык контента:** при EN-интерфейсе главная показывает перевод вместо оригинала; переключатель на доске и в банке
+  уводит на пару (`#/board/data-engineer` ↔ `#/board/data-engineer-en`). Прогресс у оригинала и перевода раздельный.
 
 ## Конвенции и грабли (ВАЖНО)
 - **Ground truth — через `cat`/`grep`/`/api/graph`, НЕ через Read-инструмент**: контент-файлы
@@ -88,10 +115,14 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
   Статусы ставят HUD и drawer; оценок 1–5 в продукте больше нет.
 - Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником;
   чтобы удалить насовсем, удали файл и сделай sync.
+- Новое мутирующее действие в UI прячь по `useCan()`: иначе в демо оно упрётся в 401, у viewer — в 403.
+  Статус карточки — только через `useProgressStore()`, не через `api.setProgress` напрямую.
 
 ## Проверка изменений
 Используй скилл **interview-verify** (или вручную): import 0 ошибок (`/api/graph`) → `pytest` →
 при правке фронта `npm run build` + `npm run i18n:check` (ключи `t("…")` есть в `src/i18n/en.ts`) + `npm run smoke` (нужен сервер :8000) → (пере)запуск uvicorn.
+Smoke идёт от демо без входа (стартовый экран, демо-доска, EN-пара) через вход по `#/login` к полному режиму и в конце
+заводит viewer'а на «Люди», входит им и удаляет — гоняй на свежей БД (`INTERVIEW_DB_PATH` во временный файл).
 При переименовании нод/тегов/классов, на которые опирается smoke — обнови `frontend/smoke.mjs`.
 
 ## Скиллы проекта (`.claude/skills/`)
