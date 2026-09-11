@@ -52,7 +52,7 @@ from .pools import (
     slug_from_label,
 )
 from .seed import seed_owner_if_empty
-from .sync import sync_pools
+from .sync import UnknownPoolError, sync_pools
 from .tags import CONCEPT_TAGS
 from .tenancy import resolve_tenant
 
@@ -104,9 +104,10 @@ app.state.db = db  # auth-зависимости берут db отсюда (req
 _CONTENT_POOLS: Dict[str, PoolCfg] = load_pools(CONTENT_DIR)
 if not _CONTENT_POOLS:
     log.warning("no pools found in %s — /api/pools will be empty until a pool is created", CONTENT_DIR)
+# Засев: только новое из файлов (пресеты на свежей установке); накопленное в БД не перезаписывается и не прячется.
 _sync = sync_pools(db, resolve_tenant(), CONTENT_DIR)
-log.info("content sync: created=%s updated=%s nodes=%d hidden=%d conflicts=%d errors=%d",
-         _sync["created"], _sync["updated"], _sync["nodes_upserted"], len(_sync["hidden"]), len(_sync["conflicts"]), len(_sync["errors"]))
+log.info("content seed: created=%s extended=%s new_nodes=%d skipped=%d errors=%d",
+         _sync["created"], _sync["updated"], _sync["nodes_upserted"], _sync["skipped"], len(_sync["errors"]))
 if _sync["errors"]:
     log.warning("content import errors: %s", _sync["errors"])
 # Сид первого owner-аккаунта для тенанта default — иначе после включения auth некому войти.
@@ -573,9 +574,20 @@ def delete_pool(pool_id: str, request: Request, _user: dict = Depends(require_me
 
 
 @app.post("/api/pools/sync")
-def sync_content(request: Request, _owner: dict = Depends(require_owner)) -> dict:
-    """Перечитать content/: новые направления, обновлённые конфиги и seed-ноды; user-ноды не трогаются."""
-    return sync_pools(db, resolve_tenant(request), CONTENT_DIR)
+def sync_content(
+    request: Request,
+    pool: Optional[str] = None,
+    update: bool = False,
+    dry_run: bool = False,
+    _owner: dict = Depends(require_owner),
+) -> dict:
+    """content/ → БД. По умолчанию засев: новые направления и карточки, id которых нет; существующее не трогается.
+    update=true — явное обновление из файлов (конфиг из pool.yaml, seed-карточки, скрытие пропавших): лучше с
+    pool=<id> и сначала dry_run=true. dry_run — отчёт по прогону на копии БД, живая БД не меняется."""
+    try:
+        return sync_pools(db, resolve_tenant(request), CONTENT_DIR, update=update, only=pool, dry_run=dry_run)
+    except UnknownPoolError:
+        raise HTTPException(status_code=404, detail=f"pool '{pool}' has no directory in content/")
 
 
 @app.get("/api/graph", response_model=GraphResponse)
