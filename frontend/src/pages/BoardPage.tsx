@@ -26,7 +26,7 @@ import { LangSwitch } from "../components/LangSwitch";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { SettingsMenu } from "../components/SettingsMenu";
 import { nWord, useT } from "../i18n";
-import { DetailDrawer } from "../components/DetailDrawer";
+import { DetailDrawer, readCardMode, saveCardMode, type CardMode } from "../components/DetailDrawer";
 import { GuidesNode } from "../components/GuidesNode";
 import { QuestionNode } from "../components/QuestionNode";
 import { ShortcutsHelp } from "../components/ShortcutsHelp";
@@ -298,6 +298,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  // Режим открытой карточки: по центру доски (по умолчанию) или панелью справа; выбор — в ⚙ и в шапке карточки.
+  const [cardMode, setCardModeState] = useState<CardMode>(readCardMode);
   // hide-local: скрытые с доски вопросы (клиентски) + тумблер показа.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => readHiddenIds(pool.id));
   const [showHidden, setShowHidden] = useState(false);
@@ -511,11 +513,14 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   );
 
   const centerOn = useCallback(
-    (id: string) => {
+    (id: string, besideCard = false) => {
       const pos = placement?.positions[id];
-      if (pos && instance.current) {
-        instance.current.setCenter(pos.x + CARD_W / 2, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
-      }
+      if (!pos || !instance.current) return;
+      // Открытая карточка по центру закрывает середину канвы: текущую ставим левее неё (зазор 32px),
+      // чтобы на доске было видно, где ты. На узком экране (≤820px) карточка почти во всю ширину — без сдвига.
+      const vw = window.innerWidth;
+      const shift = besideCard && vw > 820 ? Math.min(600, vw * 0.46) / 2 + 32 + CARD_W / 2 : 0;
+      instance.current.setCenter(pos.x + CARD_W / 2 + shift, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
     },
     [placement],
   );
@@ -554,9 +559,12 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const moveCurrent = useCallback(
     (id: string) => {
       setCurrentId(id);
-      centerOn(id);
+      // По центру открытая карточка — единственное, что показывает текущую (HUD скрыт), поэтому она
+      // идёт за курсором: стрелки, «n», 1–3 и ‹ › листают саму карточку. Справа — как раньше.
+      if (cardMode === "center") setSelectedId((s) => (s ? id : s));
+      centerOn(id, cardMode === "center" && selectedId != null);
     },
-    [centerOn],
+    [centerOn, cardMode, selectedId],
   );
 
   // «n»: следующая НЕРАЗОБРАННАЯ карточка по порядку обхода, с переносом по кругу.
@@ -577,19 +585,52 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     }
   }, [placement, currentId, statuses, moveCurrent, visibleIds, walkOrder]);
 
-  // Хоткеи чек-листа (1-3): следующая ВИДИМАЯ карточка в порядке матрицы —
-  // следующая в колонке, затем первая следующей колонки; те же фильтры и «только
-  // неразобранное», что у nextUnresolved. Пусто после фильтра — остаёмся на месте.
+  // Хоткеи чек-листа (1-3) и ‹ › карточки: соседняя ВИДИМАЯ карточка в порядке матрицы —
+  // следующая (dir = 1) или предыдущая (dir = -1) в колонке, затем соседняя колонка; те же фильтры
+  // и «только неразобранное», что у nextUnresolved. Пусто после фильтра — остаёмся на месте.
   // Возвращает id новой текущей карточки (для drawer, п.2) или null.
-  const nextInMatrix = useCallback((): string | null => {
-    if (!placement) return null;
-    const flat = walkOrder.filter((id) => visibleIds.has(id) && (!unresolvedOnly || statuses[id] !== "known"));
-    if (!flat.length) return null;
-    const idx = currentId ? flat.indexOf(currentId) : -1;
-    const next = flat[(idx + 1 + flat.length) % flat.length];
-    if (next) moveCurrent(next);
-    return next ?? null;
-  }, [placement, currentId, moveCurrent, walkOrder, visibleIds, unresolvedOnly, statuses]);
+  const stepInMatrix = useCallback(
+    (dir: 1 | -1, from: string | null): string | null => {
+      if (!placement) return null;
+      const flat = walkOrder.filter((id) => visibleIds.has(id) && (!unresolvedOnly || statuses[id] !== "known"));
+      if (!flat.length) return null;
+      const idx = from ? flat.indexOf(from) : -1;
+      let next: string | undefined;
+      if (idx >= 0) next = flat[(idx + dir + flat.length) % flat.length];
+      else {
+        // Исходной карточки нет в срезе (например, её только что отметили «знаю» кнопкой при «только
+        // неразобранное»): сосед — ближайшая по порядку обхода в нужную сторону, а не край доски.
+        const pos = from ? walkOrder.indexOf(from) : -1;
+        const at = (id: string) => walkOrder.indexOf(id);
+        if (pos < 0) next = dir > 0 ? flat[0] : flat[flat.length - 1];
+        else if (dir > 0) next = flat.find((id) => at(id) > pos) ?? flat[0];
+        else next = [...flat].reverse().find((id) => at(id) < pos) ?? flat[flat.length - 1];
+      }
+      if (next) moveCurrent(next);
+      return next ?? null;
+    },
+    [placement, moveCurrent, walkOrder, visibleIds, unresolvedOnly, statuses],
+  );
+
+  // ‹ › в карточке по центру: шаг от открытой карточки, карточка переключается вместе с курсором.
+  const stepCard = useCallback(
+    (dir: 1 | -1) => {
+      const id = stepInMatrix(dir, selectedId ?? currentId);
+      if (id) setSelectedId(id);
+    },
+    [stepInMatrix, selectedId, currentId],
+  );
+
+  const setCardMode = useCallback(
+    (mode: CardMode) => {
+      setCardModeState(mode);
+      saveCardMode(mode);
+      setFullscreen(false);
+      // По центру открытая карточка и курсор доски — одна карточка: справа они могли разойтись (стрелки).
+      if (mode === "center" && selectedId) setCurrentId(selectedId);
+    },
+    [selectedId],
+  );
 
   // Клавиатура: 1-3 — статус чек-листа, Enter — открыть, стрелки — навигация,
   // n — следующая неразобранная, Esc — снять текущую.
@@ -608,7 +649,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         if (!currentId) return;
         setStatus(currentId, STATUS_BY_KEY[e.key]);
         // Drawer открыт — курсор должен идти вместе с ним (иначе drawer «отстаёт»).
-        const nextId = nextInMatrix();
+        const nextId = stepInMatrix(1, currentId);
         if (nextId != null && selectedId != null) setSelectedId(nextId);
         return;
       }
@@ -657,7 +698,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [placement, currentId, selectedId, moveCurrent, nextUnresolved, setStatus, nextInMatrix]);
+  }, [placement, currentId, selectedId, moveCurrent, nextUnresolved, setStatus, stepInMatrix]);
 
   const toggleBlock = (b: string) => setActiveBlocks((s) => ({ ...s, [b]: !s[b] }));
   const toggleDiff = (d: string) => setActiveDiffs((s) => ({ ...s, [d]: !s[d] }));
@@ -703,6 +744,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   );
   const currentNode = currentId ? nodeMap[currentId] : null;
   const selectedNode = selectedId ? nodeMap[selectedId] : null;
+  // Карточка по центру уже показывает заголовок и кнопки статусов — нижний HUD на это время прячем.
+  const centerOpen = cardMode === "center" && selectedNode != null;
 
   const nQuestions = `${graph.length} ${nWord(graph.length, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
 
@@ -786,7 +829,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
       )}
 
       <div className="main">
-        <div className="canvas" ref={canvasRef}>
+        <div className={`canvas ${currentNode ? "canvas--current" : ""}`} ref={canvasRef}>
           {rfNodes.length === 0 ? (
             <div className="loading">{t("Загрузка графа…")}</div>
           ) : (
@@ -942,7 +985,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
                 </Panel>
               )}
 
-              {currentNode && (
+              {currentNode && !centerOpen && (
                 <Panel position="bottom-center">
                   <div className="hud">
                     <span
@@ -1010,6 +1053,10 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         <DetailDrawer
           node={selectedNode}
           pool={pool}
+          mode={cardMode}
+          onSetMode={setCardMode}
+          onPrev={() => stepCard(-1)}
+          onNext={() => stepCard(1)}
           status={selectedId ? statuses[selectedId] : undefined}
           onStatus={setStatus}
           fullscreen={fullscreen}
@@ -1033,6 +1080,8 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
             settings={{
               design,
               onSetDesign: setDesign,
+              cardMode,
+              onSetCardMode: setCardMode,
               bgDots: bgVariant === "dots",
               onToggleBgDots: () => setBgVariant((v) => (v === "dots" ? "off" : "dots")),
               guidesV,

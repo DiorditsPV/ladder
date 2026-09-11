@@ -182,6 +182,16 @@ export const EN: Record<string, string> = {
   "Свернуть": "Collapse",
   "На весь экран": "Full screen",
   "💾 Сохранить": "💾 Save",
+  "Показать ответ": "Show answer",
+  "Предыдущая карточка": "Previous card",
+  "Следующая карточка": "Next card",
+  "Потяните, чтобы изменить ширину; двойной клик — ширина по умолчанию": "Drag to change the width; double-click for the default width",
+  // --- режим карточки: DetailDrawer (кнопка в шапке) + SettingsMenu (чипы в ⚙) ---
+  "Карточка вопроса": "Question card",
+  "По центру": "Center",
+  "Справа": "Side",
+  "Показывать карточку по центру доски": "Show the card in the middle of the board",
+  "Показывать карточку в панели справа": "Show the card in a panel on the right",
 
   // --- BankBrowser ---
   "Все вопросы": "All questions",
@@ -214,6 +224,7 @@ export const EN: Record<string, string> = {
   // --- ShortcutsHelp: подписи приходят через t(desc), i18n-check их не видит ---
   "знаю · повторить · не знаю": "known · review · don't know",
   "открыть карточку текущего вопроса": "open the current question's card",
+  "показать ответ в карточке по центру": "show the answer in the centered card",
   "перейти к следующему неразобранному": "go to the next unreviewed question",
   "навигация по сетке вопросов": "navigate the question grid",
   "снять выделение / закрыть эту шпаргалку": "clear selection / close this cheat sheet",

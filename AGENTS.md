@@ -40,7 +40,8 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
   `levelOrder/levelLabel/levelColor` вместо констант, `Block = string`, `Difficulty/Kind`),
   `theme.tsx` (тема на всё приложение, светлая по умолчанию; кнопка `ThemeToggle` в шапках), `styles.css` (CSS-переменные тем), `main.tsx`.
   `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode, BandsNode, GuidesNode) и
-  оверлеи/панели (DetailDrawer, BankBrowser, UploadModal, ShortcutsHelp, AccountMenu, ChangePasswordModal).
+  оверлеи/панели (DetailDrawer — открытая карточка по центру или справа, BankBrowser, UploadModal, ShortcutsHelp,
+  AccountMenu, ChangePasswordModal).
   Тесты: `frontend/smoke.mjs`, `frontend/screenshot.mjs`.
 - `content/<pool>/pool.yaml` — таксономия и веса пула; `content/<pool>/<block>/*.md|*.json` — его вопросы.
 - `backend/tests/` — pytest (`test_app.py` импорт/API, `test_nodes.py` CRUD нод, `test_pools.py`/
@@ -127,6 +128,9 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 - Чек-лист разбора: статусы `known|review|unknown` в таблице `progress` (per-user), хоткеи `1/2/3`,
   `n` — следующая неразобранная карточка. Счётчики колонок и рядов (уровней) — по `known`.
   Статусы ставят HUD и drawer; оценок 1–5 в продукте больше нет.
+- Открытая карточка — два режима (`ladder.cardMode`): по центру (по умолчанию; ответ под «Показать ответ» / пробелом,
+  ‹ › по той же матрице, что 1/2/3, HUD скрыт, пока она открыта) и справа (панель, ширина — ручкой, `ladder.drawerWidth`).
+  Корень обоих — `.drawer` + модификатор `.drawer--center|--side`; smoke идёт по центру и перед шагами с HUD закрывает её Esc.
 - Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником;
   чтобы удалить насовсем, удали файл и сделай sync.
 - Новое мутирующее действие в UI прячь по `useCan()`: иначе в демо оно упрётся в 401, у viewer — в 403.
