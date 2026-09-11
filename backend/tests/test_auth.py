@@ -119,15 +119,50 @@ def test_session_ttl_expires_to_401():
     assert c.get("/api/auth/me").status_code == 401
 
 
-def test_relogin_invalidates_prior_session():
-    """Повторный логин того же пользователя инвалидирует прежнюю сессию."""
+def test_relogin_keeps_prior_session():
+    """Несколько устройств: повторный вход не выбивает прежнюю сессию (spec 2026-09-11)."""
     c1 = _anon()
     assert _login(c1, OWNER_EMAIL, OWNER_PASSWORD).status_code == 200
-    assert c1.get("/api/auth/me").status_code == 200
     c2 = _anon()
     assert _login(c2, OWNER_EMAIL, OWNER_PASSWORD).status_code == 200
+    assert c1.get("/api/auth/me").status_code == 200
     assert c2.get("/api/auth/me").status_code == 200
-    assert c1.get("/api/auth/me").status_code == 401  # прежняя сессия больше не действует
+
+
+def test_viewer_keeps_checklist_but_cannot_edit():
+    viewer = _user("viewer-progress@interview.local", "viewer-progress-pw", "viewer")
+    owner = _owner()
+    nid = owner.post("/api/nodes", json=_VALID_NODE).json()["id"]
+    try:
+        assert viewer.put(f"/api/progress/{nid}", json={"status": "known"}).status_code == 200
+        assert viewer.delete(f"/api/progress/{nid}").status_code == 200
+        assert viewer.post("/api/nodes", json=_VALID_NODE).status_code == 403
+    finally:
+        owner.delete(f"/api/nodes/{nid}")
+
+
+def test_delete_user_sessions_keeps_current(tmp_path):
+    """Отзыв сессий пользователя: except_token (текущая) остаётся, чужие сессии не трогаются."""
+    db = Database(tmp_path / "s.db")
+    db.ensure_tenant("t")
+    cur, other_device, foreign = (db.create_auth_session("t", u) for u in ("u1", "u1", "u2"))
+    assert db.delete_user_sessions("t", "u1", except_token=cur) == 1
+    assert db.get_auth_session(cur) is not None and db.get_auth_session(other_device) is None
+    assert db.delete_user_sessions("t", "u1") == 1
+    assert db.get_auth_session(cur) is None and db.get_auth_session(foreign) is not None
+
+
+def test_login_purges_expired_sessions(tmp_path):
+    """Повторный вход больше не вытесняет прежние сессии — протухшие чистит сам вход, таблица не растёт."""
+    db = Database(tmp_path / "s.db")
+    db.ensure_tenant("t")
+    old, fresh = db.create_auth_session("t", "u1"), db.create_auth_session("t", "u2")
+    with db._conn() as conn:
+        conn.execute("UPDATE auth_sessions SET created_at = ? WHERE token = ?", ("2000-01-01T00:00:00+00:00", old))
+    new = db.create_auth_session("t", "u3")  # вход другого пользователя тоже чистит протухшие
+    with db._conn() as conn:
+        tokens = {r["token"] for r in conn.execute("SELECT token FROM auth_sessions").fetchall()}
+    assert tokens == {fresh, new}
 
 
 def test_nodes_tenant_isolation(tmp_path):

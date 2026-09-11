@@ -244,3 +244,35 @@ def test_delete_seed_node_tombstones_and_sync_keeps_it_hidden():
         restore = {k: v for k, v in original.items() if k in Node.model_fields}
         main_db.upsert_node("default", restore, source="seed")
         main_db.set_node_hidden("default", node_id, False)
+
+
+def test_sync_carries_and_clears_flags(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    (root / "demo" / "pool.yaml").write_text(POOL + "demo: true\nlang: en\ntranslation_of: demo-ru\n", encoding="utf-8")
+    sync_pools(db, "t", root)
+    row = db.get_pool("t", "demo")
+    assert (row["demo"], row["lang"], row["translation_of"]) == (True, "en", "demo-ru")
+    (root / "demo" / "pool.yaml").write_text(POOL, encoding="utf-8")
+    sync_pools(db, "t", root)
+    row = db.get_pool("t", "demo")
+    assert (row["demo"], row["lang"], row["translation_of"]) == (False, "ru", None)
+
+
+def test_db_migration_adds_pool_flags(tmp_path):
+    """Старая БД без столбцов demo/lang/translation_of: миграция добавляет их с дефолтами, повтор — no-op."""
+    path = tmp_path / "t.db"
+    db = Database(path)
+    db.ensure_tenant("t")
+    with db._conn() as conn:  # строка pools как в БД до миграции
+        for col in ("demo", "lang", "translation_of"):
+            conn.execute(f"ALTER TABLE pools DROP COLUMN {col}")
+        conn.execute(
+            "INSERT INTO pools (tenant_id, id, label, description, blocks, levels, source, created_at, updated_at) "
+            "VALUES ('t', 'old', 'Old', '', '[]', '[]', 'seed', 'x', 'x')"
+        )
+    row = Database(path).get_pool("t", "old")
+    assert (row["demo"], row["lang"], row["translation_of"]) == (False, "ru", None)
+    row = Database(path).get_pool("t", "old")  # повторное открытие не падает и ничего не меняет
+    assert (row["demo"], row["lang"], row["translation_of"]) == (False, "ru", None)

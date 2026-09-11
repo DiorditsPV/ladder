@@ -64,6 +64,10 @@ jobs:
           base=https://ladder.paveldiordits.site
           code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/health")
           [ "$code" = 200 ] || { echo "✗ /api/health → $code"; exit 1; }
-          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph")
-          [ "$code" = 401 ] || { echo "✗ /api/graph без cookie → $code (ожидалось 401: сервис за логином)"; exit 1; }
-          echo "✓ health 200, graph 401 — сервис на месте и за логином"
+          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/pools")
+          [ "$code" = 200 ] || { echo "✗ /api/pools без cookie → $code (ожидалось 200: список демо-направлений)"; exit 1; }
+          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph?pool=data-engineer")
+          [ "$code" = 200 ] || { echo "✗ демо-граф без cookie → $code (ожидалось 200)"; exit 1; }
+          code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$base/api/graph?pool=data-engineer-x5")
+          [ "$code" = 401 ] || { echo "✗ не-демо граф без cookie → $code (ожидалось 401)"; exit 1; }
+          echo "✓ health 200, демо 200, остальное за логином"
