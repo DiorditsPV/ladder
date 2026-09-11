@@ -9,7 +9,10 @@ const OWNER_PASSWORD = process.env.SMOKE_OWNER_PASSWORD || "interview-dev";
 const fail = (m) => { console.error("FAIL:", m); process.exit(1); };
 
 const browser = await chromium.launch();
-const page = await browser.newPage();
+// 1440×900 — опорный размер владельца. Окно карточки по центру шириной min(760px, 58vw): рядом с ним
+// текущая карточка доски (280px) помещается только от ~1330px ширины — на 1280 проверка «не под окном»
+// по месту по умолчанию была бы невыполнима по построению.
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 // У «Failed to load resource» адрес запроса — в location(): по нему отличаем штатный 401 проверки
 // сессии (/api/auth/me без входа — демо-режим) от настоящих ошибок.
@@ -17,16 +20,13 @@ page.on("console", (m) => m.type() === "error" && errors.push(`${m.text()} @ ${m
 page.on("pageerror", (e) => errors.push(String(e)));
 const unexpectedErrors = () => errors.filter((e) => !(e.includes("status of 401") && e.includes("/api/auth/me")));
 
-// topbar-settings: тумблеры отображения — в боковой панели (.setdrawer) под ⚙, а ⚙ (.setbtn) —
-// пункт меню «•••» toolbar'а (board-toolbar). Каждое переключение = ••• → Настройки → чип → Esc.
-// Пункт меню закрывает «•••» сам; Esc закрывает панель (перехватывается в capture-фазе внутри
-// SettingsMenu), поэтому дожидаемся её исчезновения перед следующим шагом.
+// topbar-settings: тумблеры отображения — в боковой панели (.setdrawer) под ⚙; кнопка ⚙ (.setbtn) — в шапке
+// доски рядом с темой (решение владельца 2026-09-11). Каждое переключение = ⚙ → чип → Esc.
+// Esc закрывает панель (перехватывается в capture-фазе внутри SettingsMenu), поэтому дожидаемся её
+// исчезновения перед следующим шагом.
 async function openSettings() {
-  await page.locator(".morebtn").click();
-  await page.waitForSelector(".moremenu", { timeout: 3000 });
-  await page.locator(".moremenu .setbtn").click();
+  await page.locator(".topbar .setbtn").click();
   await page.waitForSelector(".setdrawer", { timeout: 3000 });
-  await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
 }
 async function toggleSetting(label) {
   await openSettings();
@@ -292,13 +292,14 @@ const box = await page.locator(".qnode").first().boundingBox();
 if (!box || box.y < 0 || box.x < 0) fail(`first node off-screen: ${JSON.stringify(box)}`);
 console.log(`OK: first node in viewport at (${Math.round(box.x)}, ${Math.round(box.y)})`);
 
-// 3. Клик по карточке открывает её — по умолчанию по центру доски (режим center). Ответ там скрыт
-//    до «Показать ответ»: раскрываем и читаем тело целиком, как раньше из панели.
+// 3. Клик по карточке открывает её — по умолчанию по центру доски (режим center). Ответ виден сразу
+//    (решение владельца 2026-09-11: «Показать ответ» убрано) — читаем тело целиком, как из панели.
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 await page.waitForSelector(".drawer", { timeout: 5000 });
 if ((await page.locator(".drawer.drawer--center").count()) !== 1) fail("card must open in the center by default");
-await page.locator(".drawer__reveal").click();
-await page.waitForSelector(".drawer__answer", { timeout: 3000 });
+if ((await page.locator(".drawer__answer").count()) !== 1 || (await page.locator(".drawer__reveal").count()) !== 0) {
+  fail("center card must show the answer right away, without «Показать ответ»");
+}
 const drawerText = await page.locator(".drawer__body").innerText();
 if (drawerText.length < 50) fail("drawer body too short");
 console.log("OK: drawer opened with content");
@@ -362,13 +363,14 @@ const afterNext = await page.locator(".hud__title").innerText();
 if (afterNext === beforeNext) fail("«n» stuck on the current card");
 console.log("OK: «n» advances to the next unreviewed card");
 
-// 6b. Настройки отображения (topbar-settings): панель под ⚙ (пункт «•••») открывается и содержит
-// тумблеры направляющих, точек-фона, скрытых и таймера.
+// 6b. Настройки отображения (topbar-settings): панель под ⚙ (кнопка в шапке) открывается и содержит
+// тумблеры направляющих, точек-фона, скрытых и таймера; повторный клик по ⚙ её закрывает.
 await openSettings();
 const tbBtns = await page.locator(".setdrawer .tb__toggle").count();
 if (tbBtns < 6) fail(`display toggles missing in settings drawer (got ${tbBtns})`);
-await page.keyboard.press("Escape");
-await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+await page.locator(".topbar .setbtn").click();
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 })
+  .catch(() => fail("second click on ⚙ must close the settings drawer"));
 const vBefore = await page.locator(".guides__v").count();
 if (vBefore !== 0) fail(`vertical guides should be off by default (got ${vBefore})`);
 await toggleSetting("Верт"); // включить вертикальные
@@ -382,6 +384,24 @@ await page.waitForTimeout(200);
 const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
+
+// 6c. Оформления (решение владельца 2026-09-11): в ⚙ ровно два — «Брутализм в цвете» (37) и «Изыскания» (58);
+//     по умолчанию (чистый localStorage) активно «Изыскания». Переключение меняет data-design и запоминается.
+await openSettings();
+const designs = await page.locator(".setdrawer .design__opt").evaluateAll((els) =>
+  els.map((e) => ({ id: e.dataset.design, label: e.textContent.trim(), on: e.getAttribute("aria-checked") === "true" })));
+if (designs.map((d) => d.id).join(",") !== "37,58") fail(`⚙ must offer exactly two designs (37, 58): ${JSON.stringify(designs)}`);
+if (designs.map((d) => d.label).join(" | ") !== "Брутализм в цвете | Изыскания") fail(`design labels: ${JSON.stringify(designs)}`);
+if (designs.filter((d) => d.on).map((d) => d.id).join(",") !== "58") fail(`«Изыскания» must be active by default: ${JSON.stringify(designs)}`);
+const designOf = () => page.evaluate(() => document.documentElement.dataset.design);
+if ((await designOf()) !== "58") fail(`default data-design must be 58, got ${await designOf()}`);
+await page.locator('.setdrawer .design__opt[data-design="37"]').click();
+if ((await designOf()) !== "37" || (await page.evaluate(() => localStorage.getItem("design"))) !== "37") fail("switching to «Брутализм в цвете» did not apply/store 37");
+await page.locator('.setdrawer .design__opt[data-design="58"]').click();
+if ((await designOf()) !== "58" || (await page.evaluate(() => localStorage.getItem("design"))) !== "58") fail("switching back to «Изыскания» did not apply/store 58");
+await page.keyboard.press("Escape");
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+console.log("OK: ⚙ offers two designs, «Изыскания» (58) by default, switching applies and stores");
 
 
 // 8. Тема: переключатель в шапке доски меняет data-theme (и обратно); в ⚙ его больше нет.
@@ -496,42 +516,60 @@ await page.keyboard.press("Escape");
 await page.waitForSelector(".help-modal", { state: "detached", timeout: 3000 });
 console.log("OK: shortcuts help overlay (? opens, Esc closes)");
 
-// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, тема, RU/EN, •••;
-//     прогресса нет; ⚙ — пункт меню •••; экспорта и кнопок банка в шапке нет.
+// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, тема, ⚙, RU/EN, •••;
+//     прогресса нет; ⚙ — кнопка в шапке, в ••• только шпаргалка и банк; экспорта и кнопок банка в шапке нет.
 const topRows = await page.locator(".topbar > .topbar__row").count();
 if (topRows !== 1) fail(`expected exactly 1 topbar row, got ${topRows}`);
 if ((await page.locator(".topbar .topbar__back").count()) !== 1) fail("back-to-menu link missing");
 if (!(await page.locator(".topbar .appname").innerText()).includes("Дата-инженер")) fail("pool label missing in topbar");
-for (const sel of [".filtersbtn", ".themebtn", ".langswitch", ".morebtn"]) {
+for (const sel of [".filtersbtn", ".themebtn", ".setbtn", ".langswitch", ".morebtn"]) {
   if ((await page.locator(`.topbar ${sel}`).count()) !== 1) fail(`toolbar element ${sel} missing`);
 }
 if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must not be in the toolbar");
-if ((await page.locator(".topbar .setbtn").count()) !== 0) fail("settings must live inside the ••• menu, not in the toolbar");
 if ((await page.locator(".topbar .addbtn, .topbar .bankbtn, .topbar .exportbtn").count()) !== 0) fail("export/bank buttons must not be in the topbar");
 await page.locator(".topbar .morebtn").click();
 await page.waitForSelector(".moremenu", { timeout: 3000 });
-if ((await page.locator(".moremenu .setbtn").count()) !== 1) fail("settings item missing in ••• menu");
+if ((await page.locator(".moremenu .setbtn").count()) !== 0) fail("settings must not be in the ••• menu (⚙ lives in the toolbar)");
+if ((await page.locator(".moremenu .tbmenu__item").count()) !== 2) fail("••• menu must hold only the cheat sheet and the bank link");
 if ((await page.locator(".moremenu .helpbtn").count()) !== 1) fail("shortcuts item missing in ••• menu");
 if (!(await page.locator(".moremenu .bankLink").getAttribute("href"))?.startsWith("#/bank/data-engineer")) fail("••• menu must link to the question bank");
 await page.keyboard.press("Escape");
 await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
-console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/•••)`);
+console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/⚙/•••; ••• = cheat sheet + bank)`);
 
-// 22. Карточка вопроса — два режима (решение владельца 2026-09-11). По умолчанию — по центру доски:
-//     уже половины экрана, доска вокруг видна и кликается (клик по другой карточке переключает её),
-//     ответ скрыт до «Показать ответ» / пробела и снова прячется на соседней карточке, ‹ › листают матрицу.
-//     «Справа» — панель как раньше, ответ виден сразу; ширина тянется ручкой на левом краю и переживает
-//     перезагрузку, двойной клик — ширина по умолчанию. Выбор режима — ещё и в ⚙ «Карточка вопроса».
+// 22. Карточка вопроса — два режима (решение владельца 2026-09-11). По умолчанию — окно по центру доски
+//     шириной min(760px, 58vw), под ним лёгкий скрим, доска вокруг видна и кликается (клик по другой
+//     карточке переключает её), ответ виден сразу, ‹ › листают матрицу и ставят текущую карточку доски
+//     сбоку от окна. Окно тащится за шапку и тянется уголком / правым краем (22a, 22b).
+//     «Справа» — панель как раньше; ширина тянется ручкой на левом краю и переживает перезагрузку,
+//     двойной клик — ширина по умолчанию. Выбор режима — ещё и в ⚙ «Карточка вопроса».
+// Заодно — сохранённое устаревшее оформление (56 «Атлас» убрано) при загрузке превращается в «Изыскания».
+await page.evaluate(() => localStorage.setItem("design", "56"));
 await page.reload({ waitUntil: "networkidle" }); // чистый старт: карточка закрыта, вьюпорт по умолчанию
 await page.waitForSelector(".qnode", { timeout: 10000 });
+if ((await page.evaluate(() => document.documentElement.dataset.design)) !== "58") fail("stale design 56 must fall back to 58");
 await closeFiltersIfOpen();
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 const centerCard = page.locator(".drawer.drawer--center");
 await centerCard.waitFor({ timeout: 3000 });
 const vp = page.viewportSize();
 const cardBox = await centerCard.boundingBox();
-if (!(cardBox.width < vp.width / 2)) fail(`center card must be narrower than half the screen: ${Math.round(cardBox.width)} of ${vp.width}`);
+const defaultCardW = Math.min(760, vp.width * 0.58);
+if (Math.abs(cardBox.width - defaultCardW) > 2) fail(`center card default width must be min(760, 58vw) = ${defaultCardW}, got ${Math.round(cardBox.width)}`);
+if (Math.abs(cardBox.x + cardBox.width / 2 - vp.width / 2) > 2) fail(`center card must start centered: x=${Math.round(cardBox.x)}`);
 if ((await page.locator(".hud").count()) !== 0) fail("HUD must be hidden while the center card is open");
+// Скрим под окном: лёгкий (~10% в светлой) и не ловит указатель — доска кликается сквозь него.
+const scrim = await page.evaluate(() => {
+  const el = document.querySelector(".cardscrim");
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  const alpha = Number((cs.backgroundColor.match(/rgba?\(([^)]+)\)/)?.[1] ?? "").split(",")[3] ?? 1);
+  return { pe: cs.pointerEvents, alpha, z: Number(cs.zIndex), cardZ: Number(getComputedStyle(document.querySelector(".drawer--center")).zIndex) };
+});
+if (!scrim) fail("no scrim under the center card");
+if (scrim.pe !== "none") fail(`scrim must not catch the pointer (pointer-events: ${scrim.pe})`);
+if (!(scrim.alpha >= 0.05 && scrim.alpha <= 0.15)) fail(`light-theme scrim must be ~10%, got ${scrim.alpha}`);
+if (!(scrim.z < scrim.cardZ)) fail(`scrim must lie under the card window (z ${scrim.z} vs ${scrim.cardZ})`);
 // Карточки доски вне центральной: целиком на канве, не погашены и не перекрыты (elementFromPoint
 // в их центре попадает в саму карточку — значит, видны и кликабельны).
 const around = await page.evaluate(() => {
@@ -552,7 +590,7 @@ const around = await page.evaluate(() => {
   return hits;
 });
 if (around.length < 3) fail(`board cards around the center card are not visible (${around.length})`);
-console.log(`OK: center card ${Math.round(cardBox.width)}px of ${vp.width} (< half), ${around.length} board cards visible around it, HUD hidden`);
+console.log(`OK: center card ${Math.round(cardBox.width)}px of ${vp.width} (min(760, 58vw)), scrim ${scrim.alpha}, ${around.length} board cards visible around it, HUD hidden`);
 const openTitle = await page.locator(".drawer__title").innerText();
 const other = around.find((o) => o.title && o.title !== openTitle);
 if (!other) fail("no other board card to click around the center card");
@@ -560,33 +598,120 @@ await page.mouse.click(other.x, other.y);
 await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent === t, other.title, { timeout: 3000 })
   .catch(() => fail(`click on a board card did not switch the center card to «${other.title}»`));
 console.log(`OK: board stays clickable — «${other.title}» replaced «${openTitle}» in the center card`);
-// «Показать ответ»: до нажатия ответа нет, после — есть, кнопка уходит.
-if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden until revealed");
-await page.locator(".drawer__reveal").click();
-await page.waitForSelector(".drawer__answer", { timeout: 3000 });
-if ((await page.locator(".drawer__reveal").count()) !== 0) fail("reveal button must go away once the answer is shown");
-// › — соседняя карточка по матрице, ответ снова скрыт; пробел раскрывает его (и не жмёт кнопку в фокусе);
-// ‹ — обратно, ответ опять скрыт.
+// Ответ виден сразу и на соседних карточках; › / ‹ листают матрицу, а текущая карточка доски после
+// перехода стоит сбоку от окна — прямоугольники не пересекаются (setCenter анимируется 400 мс).
+if ((await page.locator(".drawer__answer").count()) !== 1) fail("answer must be visible right away");
+const besideWindow = () => page.evaluate(() => {
+  const a = document.querySelector(".qnode--current")?.getBoundingClientRect();
+  const w = document.querySelector(".drawer--center")?.getBoundingClientRect();
+  if (!a || !w) return null;
+  const hit = !(a.right <= w.left || a.left >= w.right || a.bottom <= w.top || a.top >= w.bottom);
+  return { hit, side: a.right <= w.left ? "left" : a.left >= w.right ? "right" : "under" };
+});
 const t1 = await page.locator(".drawer__title").innerText();
 await page.locator(".drawer__next").click();
 await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent !== t, t1, { timeout: 3000 })
   .catch(() => fail("› did not switch the card"));
 const t2 = await page.locator(".drawer__title").innerText();
-if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden again on the next card");
-await page.keyboard.press(" ");
-await page.waitForSelector(".drawer__answer", { timeout: 3000 }).catch(() => fail("Space did not reveal the answer"));
-if ((await page.locator(".drawer__title").innerText()) !== t2) fail("Space must reveal the answer, not switch the card");
+if ((await page.locator(".drawer__answer").count()) !== 1) fail("answer must be visible on the next card right away");
+await page.waitForTimeout(700);
+const besideNext = await besideWindow();
+if (!besideNext || besideNext.hit) fail(`after › the current board card is under the window: ${JSON.stringify(besideNext)}`);
 await page.locator(".drawer__prev").click();
 await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent === t, t1, { timeout: 3000 })
   .catch(() => fail("‹ did not return to the previous card"));
-if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden after ‹ as well");
-console.log(`OK: «Показать ответ» and Space reveal the answer; › / ‹ switch the card («${t1}» → «${t2}» → back)`);
+if ((await page.locator(".drawer__answer").count()) !== 1) fail("answer must be visible after ‹ as well");
+await page.waitForTimeout(700);
+const besidePrev = await besideWindow();
+if (!besidePrev || besidePrev.hit) fail(`after ‹ the current board card is under the window: ${JSON.stringify(besidePrev)}`);
+console.log(`OK: answer visible right away; › / ‹ switch the card («${t1}» → «${t2}» → back), current board card beside the window (${besideNext.side}, ${besidePrev.side})`);
+
+// 22a. Окно по центру тащится за шапку (не за кнопки): место меняется, запоминается как смещение от центра
+//      (ladder.cardPos) и переживает перезагрузку; сдвинули окно влево — после › текущая карточка доски встаёт
+//      справа от него (там свободнее); двойной клик по шапке возвращает окно в центр. Перетаскивание окон не
+//      доходит до канвы React Flow — вьюпорт доски стоит на месте (здесь, в 22b и 22c).
+const boardViewport = () => page.evaluate(() => document.querySelector(".react-flow__viewport")?.style.transform ?? "");
+const vpDrag0 = await boardViewport();
+const c0 = await centerCard.boundingBox();
+const head = await page.locator(".drawer--center .drawer__title").boundingBox();
+const hx = head.x + 20;
+const hy = head.y + head.height / 2;
+await page.mouse.move(hx, hy);
+await page.mouse.down();
+await page.mouse.move(hx - 120, hy + 10, { steps: 6 });
+await page.mouse.move(hx - 240, hy + 20, { steps: 6 });
+await page.mouse.up();
+const c1 = await centerCard.boundingBox();
+if (Math.abs(c1.x - (c0.x - 240)) > 2 || Math.abs(c1.y - (c0.y + 20)) > 2) fail(`dragging the header did not move the window: ${JSON.stringify(c0)} → ${JSON.stringify(c1)}`);
+if ((await boardViewport()) !== vpDrag0) fail("dragging the card window panned the board");
+const cardPos = JSON.parse((await page.evaluate(() => localStorage.getItem("ladder.cardPos"))) ?? "null");
+if (!cardPos || Math.abs(cardPos.dx + 240) > 2 || Math.abs(cardPos.dy - 20) > 2) fail(`window offset not stored: ${JSON.stringify(cardPos)}`);
+await page.locator(".drawer__next").click();
+await page.waitForTimeout(700);
+const besideMoved = await besideWindow();
+if (!besideMoved || besideMoved.hit || besideMoved.side !== "right") fail(`window moved left → the current card must go right of it: ${JSON.stringify(besideMoved)}`);
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector(".qnode", { timeout: 10000 });
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await centerCard.waitFor({ timeout: 3000 });
+const c2 = await centerCard.boundingBox();
+if (Math.abs(c2.x - c1.x) > 1 || Math.abs(c2.y - c1.y) > 1) fail(`window position did not survive reload: ${JSON.stringify(c1)} → ${JSON.stringify(c2)}`);
+await page.locator(".drawer--center .drawer__title").dblclick();
+await page.waitForFunction((x) => Math.abs(document.querySelector(".drawer--center").getBoundingClientRect().x - x) <= 1, c0.x, { timeout: 3000 })
+  .catch(() => fail("double click on the header did not return the window to the center"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.cardPos"))) !== null) fail("centered window must drop the stored offset");
+console.log(`OK: card window drags by the header (${Math.round(c0.x)} → ${Math.round(c1.x)}), survives reload, current card goes right of it, double click re-centers`);
+
+// 22b. Размер окна: уголок справа внизу тянет ширину и высоту (левый верхний угол стоит на месте), правый
+//      край — только ширину; размер (ladder.cardSize) переживает перезагрузку; двойной клик по уголку — размер
+//      по умолчанию min(760px, 58vw).
+const vpSize0 = await boardViewport();
+const s0 = await centerCard.boundingBox();
+const gripBox2 = await page.locator(".drawer__grip").boundingBox();
+const kx = gripBox2.x + gripBox2.width / 2;
+const ky = gripBox2.y + gripBox2.height / 2;
+await page.mouse.move(kx, ky);
+await page.mouse.down();
+await page.mouse.move(kx + 100, ky + 20, { steps: 6 });
+await page.mouse.move(kx + 200, ky + 40, { steps: 6 });
+await page.mouse.up();
+const s1 = await centerCard.boundingBox();
+if (Math.abs(s1.width - (s0.width + 200)) > 2 || Math.abs(s1.height - (s0.height + 40)) > 2) fail(`corner grip did not resize: ${JSON.stringify(s0)} → ${JSON.stringify(s1)}`);
+if (Math.abs(s1.x - s0.x) > 1 || Math.abs(s1.y - s0.y) > 1) fail(`resizing moved the top-left corner: ${JSON.stringify(s0)} → ${JSON.stringify(s1)}`);
+const edgeBox = await page.locator(".drawer__edge").boundingBox();
+const ex = edgeBox.x + edgeBox.width / 2;
+const ey = edgeBox.y + edgeBox.height / 2;
+await page.mouse.move(ex, ey);
+await page.mouse.down();
+await page.mouse.move(ex - 50, ey, { steps: 5 });
+await page.mouse.move(ex - 100, ey, { steps: 5 });
+await page.mouse.up();
+const s2 = await centerCard.boundingBox();
+if (Math.abs(s2.width - (s1.width - 100)) > 2 || Math.abs(s2.height - s1.height) > 2) fail(`right edge must change the width only: ${JSON.stringify(s1)} → ${JSON.stringify(s2)}`);
+if ((await boardViewport()) !== vpSize0) fail("resizing the card window panned the board");
+const cardSize = JSON.parse((await page.evaluate(() => localStorage.getItem("ladder.cardSize"))) ?? "null");
+if (!cardSize || Math.abs(cardSize.w - s2.width) > 1 || Math.abs(cardSize.h - s2.height) > 1) fail(`window size not stored: ${JSON.stringify(cardSize)}`);
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector(".qnode", { timeout: 10000 });
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await centerCard.waitFor({ timeout: 3000 });
+const s3 = await centerCard.boundingBox();
+if (Math.abs(s3.width - s2.width) > 1 || Math.abs(s3.height - s2.height) > 1) fail(`window size did not survive reload: ${JSON.stringify(s2)} → ${JSON.stringify(s3)}`);
+await page.locator(".drawer__grip").dblclick();
+await page.waitForFunction((w) => Math.abs(document.querySelector(".drawer--center").getBoundingClientRect().width - w) <= 1, defaultCardW, { timeout: 3000 })
+  .catch(() => fail("double click on the grip did not restore the default size"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.cardSize"))) !== null) fail("default size must drop the stored value");
+await page.locator(".drawer--center .drawer__title").dblclick(); // ресайз сдвигал окно — вернуть в центр
+await page.waitForFunction((x) => Math.abs(document.querySelector(".drawer--center").getBoundingClientRect().x - x) <= 1, c0.x, { timeout: 3000 })
+  .catch(() => fail("window did not re-center after the size reset"));
+console.log(`OK: card window resizes — grip ${Math.round(s0.width)}×${Math.round(s0.height)} → ${Math.round(s1.width)}×${Math.round(s1.height)}, edge → ${Math.round(s2.width)}, same after reload, double click → ${Math.round(defaultCardW)}`);
 // «Справа»: панель как раньше — ответ сразу, без «Показать ответ» и ‹ ›; режим запомнен, ⚙ его показывает.
 await page.locator(".drawer__mode").click();
 const sideCard = page.locator(".drawer.drawer--side");
 await sideCard.waitFor({ timeout: 3000 });
 if ((await page.locator(".drawer__answer").count()) !== 1) fail("side: the answer must be visible right away");
-if ((await page.locator(".drawer__reveal, .drawer__prev, .drawer__next").count()) !== 0) fail("side: no reveal / ‹ › in the side panel");
+if ((await page.locator(".drawer__prev, .drawer__next").count()) !== 0) fail("side: no ‹ › in the side panel");
+if ((await page.locator(".cardscrim").count()) !== 0) fail("side: no scrim over the board");
 if ((await page.evaluate(() => localStorage.getItem("ladder.cardMode"))) !== "side") fail("card mode was not stored");
 await page.waitForSelector(".hud", { timeout: 3000 }); // справа HUD — как раньше
 await openSettings();
@@ -630,7 +755,45 @@ await page.waitForSelector(".drawer.drawer--center", { timeout: 3000 }).catch(()
 if ((await page.evaluate(() => localStorage.getItem("ladder.cardMode"))) !== "center") fail("⚙: center mode was not stored");
 await page.keyboard.press("Escape"); // закрыть карточку
 await page.waitForSelector(".drawer", { state: "detached", timeout: 3000 });
+if ((await page.locator(".cardscrim").count()) !== 0) fail("scrim must go away with the card");
 console.log("OK: ⚙ «Карточка вопроса» switches the open card back to the center");
+
+// 22c. Окно фильтров — плавающее (решение владельца 2026-09-11): по умолчанию у правого края под шапкой доски,
+//      тащится за шапку (не за ✕), место (ladder.filtersPos) переживает перезагрузку, двойной клик по шапке
+//      возвращает его на место.
+await page.locator(".topbar .filtersbtn").click();
+const fpanel = page.locator(".filterpanel");
+await fpanel.waitFor({ timeout: 3000 });
+const canvasBox = await page.locator(".canvas").boundingBox();
+const f0 = await fpanel.boundingBox();
+if (Math.abs(canvasBox.x + canvasBox.width - (f0.x + f0.width) - 15) > 2 || Math.abs(f0.y - canvasBox.y - 15) > 2) {
+  fail(`filters window must start at the right edge under the board header: ${JSON.stringify(f0)} in ${JSON.stringify(canvasBox)}`);
+}
+await page.waitForTimeout(200); // открытие фильтров перецентровывает доску (centerBoard) — дождаться
+const vpFilters0 = await boardViewport();
+const fhead = await page.locator(".fp__heading").boundingBox();
+const fx = fhead.x + 10;
+const fy = fhead.y + fhead.height / 2;
+await page.mouse.move(fx, fy);
+await page.mouse.down();
+await page.mouse.move(fx - 250, fy + 40, { steps: 6 });
+await page.mouse.move(fx - 500, fy + 80, { steps: 6 });
+await page.mouse.up();
+const f1 = await fpanel.boundingBox();
+if (Math.abs(f1.x - (f0.x - 500)) > 2 || Math.abs(f1.y - (f0.y + 80)) > 2) fail(`dragging the filters header did not move the window: ${JSON.stringify(f0)} → ${JSON.stringify(f1)}`);
+if ((await boardViewport()) !== vpFilters0) fail("dragging the filters window panned the board");
+if (!(await page.evaluate(() => localStorage.getItem("ladder.filtersPos")))) fail("filters window position was not stored");
+await page.reload({ waitUntil: "networkidle" });
+await fpanel.waitFor({ timeout: 10000 }); // открытость фильтров запоминается, как раньше
+const f2 = await fpanel.boundingBox();
+if (Math.abs(f2.x - f1.x) > 1 || Math.abs(f2.y - f1.y) > 1) fail(`filters window position did not survive reload: ${JSON.stringify(f1)} → ${JSON.stringify(f2)}`);
+await page.locator(".fp__heading").dblclick();
+await page.waitForFunction((x) => Math.abs(document.querySelector(".filterpanel").getBoundingClientRect().x - x) <= 1, f0.x, { timeout: 3000 })
+  .catch(() => fail("double click on the filters header did not put the window back"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.filtersPos"))) !== null) fail("filters window back in place must drop the stored offset");
+await page.locator(".fp__close").click();
+await fpanel.waitFor({ state: "detached", timeout: 3000 });
+console.log(`OK: filters window drags by its header (${Math.round(f0.x)} → ${Math.round(f1.x)}), survives reload, double click puts it back`);
 
 // Работа с банком — страница #/bank/<pool> (pools-main-menu).
 await page.goto(URL + "#/bank/data-engineer", { waitUntil: "load" });
@@ -780,7 +943,7 @@ if ((await page.locator(".errbar").count()) !== 1) fail("unknown pool should sho
 console.log("OK: unknown pool falls back to menu");
 
 // 25. Другие пулы рисуют СВОИ колонки: system-analyst и data-engineer-x5 (независимые пулы).
-// Регистронезависимо: дефолтный дизайн 37 переводит .bgroup__header в uppercase CSS'ом.
+// Регистронезависимо: оформление 37 и тёмная тема переводят .bgroup__header в uppercase CSS'ом.
 for (const [pid, needle] of [["system-analyst", "требования"], ["data-engineer-x5", "python"]]) {
   await page.goto(URL + "#/", { waitUntil: "load" });
   await page.waitForSelector(`.poolcard[data-pool="${pid}"]`, { timeout: 10000 });
