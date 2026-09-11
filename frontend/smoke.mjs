@@ -50,7 +50,16 @@ await page.waitForSelector(".landing__demo", { timeout: 10000 });
 const loginFont = await page.$eval(".landing__login", (el) => parseFloat(getComputedStyle(el).fontSize));
 if (loginFont > 13) fail(`landing: «Вход» слишком заметен (font-size ${loginFont}px)`);
 console.log(`OK: landing — demo first, «Вход» is quiet (${loginFont}px)`);
+const themeOf = () => page.evaluate(() => document.documentElement.dataset.theme);
+if ((await themeOf()) !== "light") fail(`theme: по умолчанию должна быть светлая, а не ${await themeOf()}`);
+await page.locator(".landing .themebtn").click();
+if ((await themeOf()) !== "dark") fail("theme: переключатель на стартовом экране не включил тёмную");
 await page.click(".landing__demo");
+await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 10000 });
+if ((await themeOf()) !== "dark") fail("theme: на демо-главной тема не совпала со стартовым экраном");
+await page.locator(".pageshell .themebtn").click();
+if ((await themeOf()) !== "light") fail("theme: переключатель в шапке главной не вернул светлую");
+console.log("OK: theme — light by default, one theme across pages, toggle in every header");
 await page.waitForSelector('.poolcard[data-pool="data-engineer"]', { timeout: 10000 });
 if ((await page.locator('.poolcard[data-pool="system-analyst"]').count()) !== 1) fail("demo: нет системного аналитика");
 if ((await page.locator('.poolcard[data-pool="data-engineer-x5"]').count()) !== 0) fail("demo: виден не-демо пул X5");
@@ -363,25 +372,19 @@ const bgDots = await page.locator(".react-flow__background").count();
 if (bgDots < 1) fail("dots background not shown after toggling icon");
 console.log(`OK: settings drawer (${tbBtns} toggles) switches guides + dots grid (default off)`);
 
-// 7. Экспорт — одна кнопка toolbar'а (без выпадающего меню), сразу отдаёт банк вопросов.
-const expBtn = page.locator(".topbar .exportbtn");
-if ((await expBtn.count()) !== 1) fail("toolbar must offer exactly one export control");
-if ((await expBtn.getAttribute("aria-haspopup")) !== null) fail("export control must not be a dropdown");
-if ((await page.locator(".exportmenu").count()) !== 0) fail("export dropdown menu must be gone");
-const [dlToolbar] = await Promise.all([page.waitForEvent("download"), expBtn.click()]);
-const toolbarFn = dlToolbar.suggestedFilename();
-if (!toolbarFn.includes("bank") || !toolbarFn.endsWith(".html")) fail(`toolbar export wrong file: ${toolbarFn}`);
-console.log(`OK: toolbar export is a single button (${toolbarFn})`);
 
-// 8. Тёмная тема: переключатель в настройках меняет data-theme и тёмный фон.
+// 8. Тема: переключатель в шапке доски меняет data-theme (и обратно); в ⚙ его больше нет.
 const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
-await openSettings();
-await page.locator(".setdrawer .themebtn").click();
-await page.keyboard.press("Escape");
-await page.waitForTimeout(200);
+await page.locator(".topbar .themebtn").click();
 const after = await page.evaluate(() => document.documentElement.dataset.theme);
 if (after === before) fail(`theme toggle did not change theme (${before} → ${after})`);
-console.log(`OK: theme toggles (${before} → ${after})`);
+await page.locator(".topbar .themebtn").click();
+if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== before) fail("theme toggle did not switch back");
+await openSettings();
+if ((await page.locator(".setdrawer .themebtn").count()) !== 0) fail("theme toggle must live in the header, not in ⚙");
+await page.keyboard.press("Escape");
+await page.waitForTimeout(200);
+console.log(`OK: theme toggles in the header (${before} → ${after} → ${before})`);
 
 // --- Накопленные проверки фич. Порядок важен: локально-стейтовые (таймер/поиск/чек-лист)
 //  идут до шага 21, который делает page.reload() и стирает накопленное состояние.
@@ -478,18 +481,18 @@ await page.keyboard.press("Escape");
 await page.waitForSelector(".help-modal", { state: "detached", timeout: 3000 });
 console.log("OK: shortcuts help overlay (? opens, Esc closes)");
 
-// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, экспорт, RU/EN, •••;
-//     прогресса нет; ⚙ — пункт меню •••; кнопок банка/темы в шапке нет.
+// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, тема, RU/EN, •••;
+//     прогресса нет; ⚙ — пункт меню •••; экспорта и кнопок банка в шапке нет.
 const topRows = await page.locator(".topbar > .topbar__row").count();
 if (topRows !== 1) fail(`expected exactly 1 topbar row, got ${topRows}`);
 if ((await page.locator(".topbar .topbar__back").count()) !== 1) fail("back-to-menu link missing");
 if (!(await page.locator(".topbar .appname").innerText()).includes("Дата-инженер")) fail("pool label missing in topbar");
-for (const sel of [".filtersbtn", ".exportbtn", ".langswitch", ".morebtn"]) {
+for (const sel of [".filtersbtn", ".themebtn", ".langswitch", ".morebtn"]) {
   if ((await page.locator(`.topbar ${sel}`).count()) !== 1) fail(`toolbar element ${sel} missing`);
 }
 if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must not be in the toolbar");
 if ((await page.locator(".topbar .setbtn").count()) !== 0) fail("settings must live inside the ••• menu, not in the toolbar");
-if ((await page.locator(".topbar .addbtn, .topbar .bankbtn, .topbar .themebtn").count()) !== 0) fail("bank/theme buttons must leave the topbar");
+if ((await page.locator(".topbar .addbtn, .topbar .bankbtn, .topbar .exportbtn").count()) !== 0) fail("export/bank buttons must not be in the topbar");
 await page.locator(".topbar .morebtn").click();
 await page.waitForSelector(".moremenu", { timeout: 3000 });
 if ((await page.locator(".moremenu .setbtn").count()) !== 1) fail("settings item missing in ••• menu");
@@ -497,20 +500,15 @@ if ((await page.locator(".moremenu .helpbtn").count()) !== 1) fail("shortcuts it
 if (!(await page.locator(".moremenu .bankLink").getAttribute("href"))?.startsWith("#/bank/data-engineer")) fail("••• menu must link to the question bank");
 await page.keyboard.press("Escape");
 await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
-console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/export/•••)`);
+console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/•••)`);
 
 // Работа с банком — страница #/bank/<pool> (pools-main-menu).
 await page.goto(URL + "#/bank/data-engineer", { waitUntil: "load" });
 await page.waitForSelector(".bankbrowser--embedded", { timeout: 10000 });
 
-// 12. Экспорт банка вопросов: кнопка отдаёт ladder_bank_*.html (всегда активна, без reload).
-const [dlBank] = await Promise.all([
-  page.waitForEvent("download"),
-  page.locator(".pageshell .bankbtn").click(),
-]);
-const bankFn = dlBank.suggestedFilename();
-if (!bankFn.includes("bank") || !bankFn.endsWith(".html")) fail(`bank export wrong file: ${bankFn}`);
-console.log(`OK: question bank export (${bankFn})`);
+// 12. Экспорта банка нет (удалён по решению владельца 2026-09-11).
+if ((await page.locator(".pageshell .bankbtn").count()) !== 0) fail("bank export button must be gone");
+console.log("OK: no bank export");
 
 // 14. Загрузка вопросов: открыть модалку, загрузить НЕвалидный .md → показана ошибка (файл не пишется).
 await page.locator(".uploadbtn").click();

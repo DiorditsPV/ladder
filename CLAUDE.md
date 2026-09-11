@@ -72,7 +72,8 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
   `Block = string`, перечисления `Difficulty/Kind`, `levelOrder/levelLabel/levelColor`.
 - `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer.
-- `report.ts` — клиентская генерация самодостаточного HTML-экспорта банка вопросов.
+- `theme.tsx` — цветовая тема на всё приложение (светлая по умолчанию, ключ `ladder.theme`) и оформление доски
+  `data-design`; выставляются до первой отрисовки (`initTheme` в `main.tsx`), переключатель `ThemeToggle` — в шапке каждой страницы.
 
 **Уровни** — `levels` в `pool.yaml` (`[{id, label}]`, порядок = по возрастанию); `difficulty` карточки должна быть
 одним из их `id`, иначе импорт падает. Хелперы фронта — `levelOrder/levelLabel/levelColor` рядом с `blockOrder`.
@@ -84,7 +85,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 
 **Режимы и роли** (spec 2026-09-11) — режим следует из сессии. Без входа — демо: `#/` стартовый экран,
 `#/demo` демо-главная (только направления с `demo: true`), доска и банк — только демо-направлений (остальные
-адреса → `#/demo`), чек-лист в `localStorage` (`ladder.progress.<pool>`), правок нет, экспорт HTML есть. Вход —
+адреса → `#/demo`), чек-лист в `localStorage` (`ladder.progress.<pool>`), правок нет. Вход —
 `#/login`; `#/people` — аккаунты (owner): заведение с одноразовым паролем, сброс, удаление; свой пароль — «Сменить
 пароль» (меню аккаунта на главной, ⚙ на доске). Роли: owner — всё; member — ещё и правка контента; viewer —
 чтение всех направлений и свой чек-лист. Анонимно бэкенд отдаёт ровно `GET /api/pools` (демо, без `progress`) и

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { LangSwitch } from "../components/LangSwitch";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { useT } from "../i18n";
 import { useHomeHref } from "../session";
 
@@ -23,6 +24,7 @@ export function PageShell({
         <h1 className="pageshell__title">{title}</h1>
         <div className="pageshell__actions">
           {actions}
+          <ThemeToggle />
           <LangSwitch />
         </div>
       </header>
