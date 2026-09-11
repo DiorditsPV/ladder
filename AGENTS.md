@@ -26,7 +26,8 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 
 ## Карта репозитория
 - `backend/app/` — `models.py` (pydantic `Node`, `extra="forbid"`), `importer.py` (.md+.json через
-  python-frontmatter), `pools.py` (таксономия пула), `sync.py` (`content/` → БД), `db.py` (SQLite:
+  python-frontmatter), `pools.py` (таксономия пула), `sync.py` (засев пресетов `content/` → БД; явное
+  обновление — `update=true`), `db.py` (SQLite:
   направления, банк, чек-лист, аккаунты), `auth.py`/`tenancy.py` (`optional_user` — только демо-чтение
   `GET /api/pools` и `GET /api/graph`), `main.py` (FastAPI).
 - `frontend/src/` — `router.ts`/`Router.tsx` (hash-роутер: `#/`, `#/demo`, `#/login`, `#/people`,
@@ -43,14 +44,22 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
   оверлеи/панели (DetailDrawer — открытая карточка по центру или справа, BankBrowser, UploadModal, ShortcutsHelp,
   AccountMenu, ChangePasswordModal).
   Тесты: `frontend/smoke.mjs`, `frontend/screenshot.mjs`.
-- `content/<pool>/pool.yaml` — таксономия и веса пула; `content/<pool>/<block>/*.md|*.json` — его вопросы.
-- `backend/tests/` — pytest (`test_app.py` импорт/API, `test_nodes.py` CRUD нод, `test_pools.py`/
-  `test_pool_crud.py`/`test_levels.py` направления и уровни, `test_sync.py`, `test_progress.py`
+- `content/` — **только пресеты** (`data-engineer`, `system-analyst` и их `-en`; spec
+  `docs/superpowers/specs/2026-09-11-content-in-db-design.md`): `content/<pool>/pool.yaml` — таксономия и веса,
+  `content/<pool>/<block>/*.md|*.json` — вопросы. Остальные направления (Kafka, Spark, X5, новые) живут только в БД
+  и заносятся через MCP/API; источник правды — база на сервере.
+- `backend/tests/` — pytest (`test_app.py` импорт/API и состав `content/`, `test_nodes.py` CRUD нод, `test_pools.py`/
+  `test_pool_crud.py`/`test_levels.py` направления и уровни, `test_sync.py` засев/обновление, `test_progress.py`
   чек-лист, `test_auth.py` auth/RBAC/тенант-изоляция, `test_demo_access.py` анонимное демо-чтение,
-  `test_accounts.py` пароли и аккаунты). `Q_IDEAS.txt` — реестр вопросов + идеи.
+  `test_accounts.py` пароли и аккаунты, `test_write_topic.py` скрипт `ladder-topic`, `test_backup_script.py`
+  снимки и счётчики `deploy/ladder-backup.py`). `Q_IDEAS.txt` — реестр вопросов + идеи.
+- `deploy/` — выкладка и страховка контента (см. `DEPLOY.md`, «Контент и бэкапы»): `deploy-ladder.sh` (снимок до
+  рестарта, сверка карточек после), `ladder-backup.py` + `ladder-backup.{service,timer}` (ночные снимки),
+  `install-backup.sh`, `backup-pull.sh` (снимок и JSON к себе), `export_json.py` (выгрузка направлений через API).
 - `backend/tests/test_api_crud.py` — CRUD API для MCP (направление по id, карточки со всеми полями и переносом,
   фильтры, топики, теги, права).
-- `tools/ladder-mcp/` — MCP-сервер поверх API (`ladder_mcp/server.py` — 24 инструмента, `client.py` — HTTP-клиент
+- `tools/ladder-mcp/` — MCP-сервер поверх API (`ladder_mcp/server.py` — 25 инструментов, включая `sync_from_files`
+  для пресетов, `client.py` — HTTP-клиент
   с логином, `structure.py` — read-modify-write колонок и уровней); тесты `tools/ladder-mcp/tests` (in-process
   против настоящего FastAPI), проверка по stdio — `scripts/stdio_smoke.py`. Подробно — его README.
 - `REPORT.md` — отчёт-исследование и архитектурные решения. `.claude/skills/` — скиллы (ниже).
@@ -63,8 +72,10 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 `[{id?, label, color, subblocks?: [{id?, label}]}]` — у существующих колонок id передаётся как есть,
 новые получают id из названия; колонка, которой нет в списке, удаляется вместе с вопросами,
 исчезнувшая под-колонка оставляет вопросы в колонке без под-колонки), `DELETE /api/pools/{id}`
-(вопросы удаляются, id остаётся занятым tombstone'ом), `POST /api/pools/sync` (owner: перечитать
-`content/`). Чек-лист: `GET /api/progress?pool=`, `PUT/DELETE /api/progress/{node_id}`.
+(вопросы удаляются, id остаётся занятым tombstone'ом), `POST /api/pools/sync` (owner: засев из `content/` —
+только недостающие направления и карточки; `update=true` — явное обновление пресета из файлов, `pool=<id>` — одно
+направление, 404 без каталога; `dry_run=true` — прогон на копии БД, ответ — отчёт `created/updated/config_changed/
+nodes_upserted/skipped/hidden/conflicts/errors`). Чек-лист: `GET /api/progress?pool=`, `PUT/DELETE /api/progress/{node_id}`.
 Аутентификация: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`,
 `POST /api/auth/password` (свой пароль: неверный текущий → 403, не 401; новый короче 8 → 422; остальные сессии
 отзываются). Аккаунты (owner): `GET /api/users`, `POST /api/users` (без `password` — одноразовый пароль в ответе,
@@ -84,8 +95,8 @@ Dev (hot reload): `uvicorn app.main:app --reload --port 8000` (из `backend/`, 
 
 ## Модель ноды и формат контента
 Frontmatter (ключи алфавитные, `tags` — block-style): `id`, `kind` (question|task), `block`
-(значения — блоки из `content/<pool>/pool.yaml` того пула; data-engineer: frameworks|databases|python|platform,
-system-analyst: requirements|modeling|data|integration, data-engineer-x5: python|sql|spark|airflow|clickhouse|ai),
+(значения — колонки направления; у пресетов — из `content/<pool>/pool.yaml`: data-engineer:
+frameworks|databases|python|platform, system-analyst: requirements|modeling|data|integration; у остальных — MCP `get_direction`),
 `subblock`, `topic`, `title` (короткий заголовок карточки),
 `difficulty` (один из `levels[].id` пула; по умолчанию base|junior|middle|senior), `weight`, `tags` (1–3), для `task` — `starterCode`, `rubric`.
 Тело: `## Вопрос` / `## Ответ` (для задач — `## Задача` / `## Эталон`). Не начинай строки тела с `#`
@@ -93,13 +104,13 @@ system-analyst: requirements|modeling|data|integration, data-engineer-x5: python
 
 **Под-колонки** внутри блока задаются полем `subblock`, порядок и подписи — в `subblocks` соответствующего
 блока в `content/<pool>/pool.yaml`: data-engineer → frameworks: `airflow|pyspark|dbt|streaming`,
-databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexes`; system-analyst — свои
-под-колонки по блокам, см. `pool.yaml`.
+databases: `sql|dbms|storage|formats`; system-analyst — свои под-колонки по блокам, см. `pool.yaml`.
 
 **Флаги направления** в `pool.yaml` (необязательные): `demo: true` — видно без входа; `lang` — язык контента
 (`ru` по умолчанию или `en`); `translation_of: <id>` — это перевод. Демо сейчас — `data-engineer` и `system-analyst`
 с переводами `data-engineer-en` / `system-analyst-en` (id карточки = id оригинала + `-en`; колонки, уровни, теги —
-как у оригинала). Флаги — свойства контента: sync переносит их из файлов, из UI они не правятся.
+как у оригинала). Флаги — свойства контента: из файлов их переносит явное обновление пресета (`update=true`), из UI
+они не правятся.
 
 ## Режимы и роли
 Режим следует из сессии (spec `docs/superpowers/specs/2026-09-11-demo-and-access-design.md`).
@@ -115,8 +126,11 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 ## Конвенции и грабли (ВАЖНО)
 - **Ground truth — через `cat`/`grep`/`/api/graph`, НЕ через Read-инструмент**: контент-файлы
   нормализуются скриптами, и Read может отдать устаревший кэш.
-- **Правки контента — через `python-frontmatter`** (`backend/.venv`), запись
-  `f.write_text(frontmatter.dumps(post) + "\n")` — сохраняет нормализованный формат.
+- **Новый контент — в живую базу через MCP/API** (`tools/ladder-mcp`, `ladder-topic --upload`), не файлами; каталог
+  в `content/` — только для пресета (`test_content_holds_only_presets` фиксирует состав).
+- **Правки пресетов — через `python-frontmatter`** (`backend/.venv`), запись
+  `f.write_text(frontmatter.dumps(post) + "\n")` — сохраняет нормализованный формат. На сервер правка попадает
+  только явным `POST /api/pools/sync?pool=<id>&update=true` (сначала `dry_run=true`) — деплой лишь засевает.
 - **Рёбер/ветвления нет** — поле `edges` удалено из модели; не добавляй.
 - **Теги — только из 17 сквозных концептов**, 1–3 на ноду, без тех-имён (технология видна по колонке):
   architecture, orchestration, optimization, partitioning, deployment, storage, streaming, consistency,
@@ -131,8 +145,8 @@ databases: `sql|dbms|storage|formats`; data-engineer-x5 → sql: `queries|indexe
 - Открытая карточка — два режима (`ladder.cardMode`): по центру (по умолчанию; ответ под «Показать ответ» / пробелом,
   ‹ › по той же матрице, что 1/2/3, HUD скрыт, пока она открыта) и справа (панель, ширина — ручкой, `ladder.drawerWidth`).
   Корень обоих — `.drawer` + модификатор `.drawer--center|--side`; smoke идёт по центру и перед шагами с HUD закрывает её Esc.
-- Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником;
-  чтобы удалить насовсем, удали файл и сделай sync.
+- Удаление seed-карточки из UI прячет её (`hidden`, `source=user`) — файл остаётся источником, засев её не вернёт;
+  чтобы удалить насовсем, удали файл и сделай явное обновление пресета (`update=true`).
 - Новое мутирующее действие в UI прячь по `useCan()`: иначе в демо оно упрётся в 401, у viewer — в 403.
   Статус карточки — только через `useProgressStore()`, не через `api.setProgress` напрямую.
 
@@ -146,13 +160,13 @@ Smoke идёт от демо без входа (стартовый экран, �
 ## Скиллы проекта (`.claude/skills/`)
 Каждый скилл = `SKILL.md` (+ при необходимости sibling-скрипт на stdlib). Вызывай через Skill-инструмент.
 
-| Скилл                  | Когда                                                | Что делает                                                                                                                                                   |
-|------------------------|------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **ladder-topic**       | «разложи тему X / заведи направление / пересобери X» | тема → колонки × свои уровни → карточки в `content/<slug>/` → sync. Скрипт `write_topic.py` (JSON → файлы, матрица покрытия, `--fresh`/дополнение, `--sync`) |
-| **interview-ideas**    | «добавь/допиши/реализуй идею»                        | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр                                            |
-| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк»      | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py`                                                                        |
-| **interview-balance**  | «оцени покрытие/где пробелы»                         | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py`                                                                                          |
-| **interview-verify**   | «проверь, что не сломалось»                          | import + pytest + build + smoke + рестарт. Скрипт `check_import.py`                                                                                          |
+| Скилл                  | Когда                                                | Что делает                                                                                                                                                                       |
+|------------------------|------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **ladder-topic**       | «разложи тему X / заведи направление / пересобери X» | тема → колонки × свои уровни → карточки JSON → живая база. Скрипт `write_topic.py` (`--check` матрица покрытия, `--upload` через API, `--overwrite`; `--files` — только пресеты) |
+| **interview-ideas**    | «добавь/допиши/реализуй идею»                        | работа с `Q_IDEAS.txt`: add / expand / реализовать `[ ]`→ноды `[x]`. Скрипт `regen_ledger.py` пересобирает реестр                                                                |
+| **interview-refactor** | «отрефактори/пересмотри сложность/почисти банк»      | ревизия существующих вопросов по сложности/актуальности/подаче. Скрипт `inventory.py`                                                                                            |
+| **interview-balance**  | «оцени покрытие/где пробелы»                         | матрица subblock×сложность vs веса, поиск дыр. Скрипт `coverage.py`                                                                                                              |
+| **interview-verify**   | «проверь, что не сломалось»                          | import + pytest + build + smoke + рестарт. Скрипт `check_import.py`                                                                                                              |
 
 ## Учёт фич
 Каталог фич и бэклог ведутся в **GitHub Issues** репозитория (а не в файлах репо). Реализованные
