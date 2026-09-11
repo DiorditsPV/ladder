@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Что это
 Локальная доска самоподготовки по темам — **Ladder**: тема раскладывается на колонки × свои уровни (ступени),
-карточки разбираются чек-листом «знаю / повторить / не знаю»; проверка кандидата на той же доске — второй режим. Ядро —
+карточки разбираются чек-листом «знаю / повторить / не знаю». Ядро —
 **swimlane-доска вопросов**: вертикальные колонки по направлениям (frameworks / databases /
 python / platform), внутри карточки ранжированы по уровням сложности — рядам, которые задаёт сам пул
 (`levels` в `pool.yaml`, 2–8; без `levels` — base → junior → middle → senior).
-Карточка = вопрос/задача + ответ + оценка 1–5. Рёбер/ветвления между вопросами нет — это доска,
+Карточка = вопрос/задача + ответ. Рёбер/ветвления между вопросами нет — это доска,
 а не граф зависимостей. Контент импортируется из Markdown/JSON. Только локально.
 Бэкенд **FastAPI + SQLite**, фронт **React + Vite + React Flow (@xyflow)**.
 
@@ -40,7 +40,7 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 
 ## Архитектура
 
-**Бэкенд** (`backend/app/`) — поток данных «контент-файлы → импорт → in-memory граф → API → SQLite-сессии»:
+**Бэкенд** (`backend/app/`) — поток данных «контент-файлы → импорт → БД → API → доска»:
 - `pools.py` — читает `content/<pool>/pool.yaml` (блоки, под-колонки, цвета, веса, уровни `levels`) — таксономия пула.
   `pool.yaml` — сид таблицы `pools` (как контент для `nodes`); в рантайме направления читаются из БД
   (`db.list_pools`), создаются/правятся/удаляются через `POST/PUT/DELETE /api/pools`. Колонки —
@@ -55,28 +55,27 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
   разворачивает; при ошибках импорта в пуле скрытие пропускает. `/api/graph` скрытые не отдаёт.
 - `models.py` — pydantic `Node` с `extra="forbid"`: добавление поля ноды = правка `models.py`
   **И** `frontend/src/types.ts` **И** миграция всех контент-файлов, иначе импорт падает.
-- `sampler.py` — собирает набор вопросов пропорционально весам блоков пула.
-- `db.py` — SQLite: сессии кандидатов и оценки. `tenancy.py` — изоляция тенантов. `hub.py` — SSE.
+- `db.py` — SQLite: направления, банк вопросов, пользователи и чек-лист (`progress`).
+  `tenancy.py` — изоляция тенантов. `auth.py` — пароли, server-side auth-сессии, RBAC.
 - `main.py` — FastAPI; полные схемы ручек в Swagger UI на `/docs`.
 
 **Фронт** (`frontend/src/`) — данные грузятся из `/api/graph` в рантайме:
-- `router.ts`/`Router.tsx` — hash-роутер: `#/`, `#/board/<pool>`, `#/bank/<pool>`, `#/candidates`,
-  `#/sessions`, `#/connect`.
+- `router.ts`/`Router.tsx` — hash-роутер: `#/`, `#/board/<pool>`, `#/bank/<pool>`.
 - `pages/BoardPage.tsx` — доска пула: состояние, `buildNodes`, шапка, панель ⚙.
-- `pages/` — `HomePage`, `BankPage`, `CandidatesPage`, `SessionsPage`, `ConnectPage`.
+- `pages/` — `HomePage`, `BankPage`, `PageShell`.
 - `layout.ts` — `swimlaneLayout(nodes, pool)`: порядок блоков, под-колонок и уровней из `pool.yaml` (`levelOrder`), `subOf`.
 - `types.ts` — `QNode`, `PoolConfig` + `blockOrder/blockLabel/blockColor/subLabel` вместо констант,
   `Block = string`, перечисления `Difficulty/Kind`, `levelOrder/levelLabel/levelColor`.
 - `components/` — узлы канвы (QuestionNode, BlockGroupNode, SubHeadNode …) + DetailDrawer.
-- `report.ts` — клиентская генерация самодостаточного HTML-отчёта по сессии («📥 Скачать»).
+- `report.ts` — клиентская генерация самодостаточного HTML-экспорта банка вопросов.
 
 **Уровни** — `levels` в `pool.yaml` (`[{id, label}]`, порядок = по возрастанию); `difficulty` карточки должна быть
 одним из их `id`, иначе импорт падает. Хелперы фронта — `levelOrder/levelLabel/levelColor` рядом с `blockOrder`.
 
-**Чек-лист разбора** — вне сессии карточка имеет статус `known | review | unknown` (таблица `progress`, своя у
+**Чек-лист разбора** — карточка имеет статус `known | review | unknown` (таблица `progress`, своя у
 каждого пользователя; `PUT/DELETE /api/progress/{node_id}`, `GET /api/progress?pool=`, сводка `progress` в `/api/pools`).
-Хоткеи `1/2/3` ставят статус и ведут к следующей карточке; в сессии `1–5` — оценка, статусы не показываются.
-Вне сессии HUD и drawer ставят статусы; оценки — только в сессии; черновых оценок без сессии больше нет.
+Хоткеи `1/2/3` ставят статус и ведут к следующей карточке, `n` — к следующей неразобранной.
+Статусы ставят HUD внизу доски и drawer; оценок 1–5 и режима интервью в продукте нет.
 
 **Под-колонки** внутри блока задаются полем `subblock` во frontmatter, порядок и подписи — в `subblocks`
 соответствующего блока в `pool.yaml`: data-engineer — frameworks → `airflow|pyspark|dbt|streaming`; databases →
@@ -105,5 +104,5 @@ Dev hot-reload вручную: `uvicorn app.main:app --reload --port 8000` (из
 При переименовании нод/тегов/классов, на которые опирается smoke, обнови `frontend/smoke.mjs`.
 
 ## Скиллы проекта (`.claude/skills/`)
-`interview-topic` (тема → направление со своими уровнями, главный способ завести контент), `interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
+`ladder-topic` (тема → направление со своими уровнями, главный способ завести контент), `interview-ideas` (работа с `Q_IDEAS.txt`), `interview-refactor` (ревизия вопросов),
 `interview-balance` (покрытие/пробелы), `interview-verify` (полная проверка). Вызывать через Skill.

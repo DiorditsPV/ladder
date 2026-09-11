@@ -1,4 +1,4 @@
-"""Тесты импортёра, sampler и API."""
+"""Тесты импортёра и API."""
 
 import json
 from pathlib import Path
@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from app.importer import load_pool_content
 from app.models import Node
 from app.pools import load_pools
-from app.sampler import build_interview
 
 CONTENT_ROOT = Path(__file__).resolve().parent.parent.parent / "content"
 CONTENT = CONTENT_ROOT / "data-engineer"   # каталог пула по умолчанию
@@ -68,13 +67,6 @@ def test_task_node_has_starter_and_rubric():
     assert len(task.rubric) >= 2
 
 
-def test_build_interview_respects_count_and_balance():
-    nodes, _ = load_pool_content(_de())
-    order = build_interview(nodes, count=10, seed=42)
-    assert 1 <= len(order) <= 10
-    assert len(order) == len(set(order))
-
-
 def test_node_requires_pool():
     with pytest.raises(Exception):
         Node.model_validate({"id": "x", "block": "python", "topic": "t", "question": "q"})  # нет pool
@@ -98,131 +90,6 @@ def test_api_graph():
     assert len(data["nodes"]) >= 15
 
 
-def test_api_session_flow():
-    c = _client()
-    s = c.post("/api/sessions", json={"candidate": "Иванов"}).json()
-    sid = s["id"]
-    r = c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 4})
-    assert r.status_code == 200
-    session = r.json()
-    assert session["scores"]["sql-01"]["score"] == 4
-    # повторная оценка перезаписывает
-    c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 2})
-    session = c.get(f"/api/sessions/{sid}").json()
-    assert session["scores"]["sql-01"]["score"] == 2
-
-
-def test_api_list_sessions():
-    c = _client()
-    c.post("/api/sessions", json={"candidate": "Сидоров"})
-    rows = c.get("/api/sessions").json()
-    assert isinstance(rows, list) and len(rows) >= 1
-    assert all({"id", "candidate", "created_at"} <= set(r) for r in rows)
-
-
-def test_api_session_carries_pool():
-    c = _client()
-    s = c.post("/api/sessions", json={"candidate": "Пулов", "pool": "data-engineer"}).json()
-    assert s["pool"] == "data-engineer"
-    default = c.post("/api/sessions", json={"candidate": "Дефолтов"}).json()
-    assert default["pool"] == "data-engineer"
-    assert c.post("/api/sessions", json={"candidate": "X", "pool": "nope"}).status_code == 404
-    rows = c.get("/api/sessions?pool=data-engineer").json()
-    assert all(r["pool"] == "data-engineer" for r in rows)
-    assert c.get("/api/sessions?pool=nope").status_code == 404
-
-
-def test_api_session_events_snapshot():
-    # Бесконечный SSE-поток нельзя гонять через TestClient.iter_lines (зависает на close),
-    # поэтому тянем первый кадр напрямую из генератора StreamingResponse.
-    import asyncio
-
-    from starlette.requests import Request
-
-    from app.main import session_events
-
-    c = _client()
-    sid = c.post("/api/sessions", json={"candidate": "Петров"}).json()["id"]
-    c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 3})
-
-    async def first_frame() -> str:
-        async def receive():
-            return {"type": "http.request"}
-
-        req = Request({"type": "http", "method": "GET", "headers": []}, receive)
-        resp = await session_events(sid, req)
-        agen = resp.body_iterator
-        try:
-            return await agen.__anext__()
-        finally:
-            await agen.aclose()
-
-    frame = asyncio.run(first_frame())
-    assert frame.startswith("event: snapshot")
-    data = json.loads(frame.split("data: ", 1)[1].strip())
-    assert data["scores"]["sql-01"]["score"] == 3
-
-
-def test_api_session_events_404():
-    with _client().stream("GET", "/api/sessions/999999/events") as r:
-        assert r.status_code == 404
-
-
-def test_api_score_note_synced_over_sse():
-    # Заметка (note) синхронизируется наравне с баллом: бэкенд хранит её и отдаёт в снимке,
-    # который рассылается подписчикам (интервьюер + HR). UI заметок нет — это backend-only.
-    import asyncio
-
-    from starlette.requests import Request
-
-    from app.main import session_events
-
-    c = _client()
-    sid = c.post("/api/sessions", json={"candidate": "Заметкин"}).json()["id"]
-    note = "путается в оконных функциях, но базу знает"
-    c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 4, "note": note})
-
-    async def first_frame() -> str:
-        async def receive():
-            return {"type": "http.request"}
-
-        req = Request({"type": "http", "method": "GET", "headers": []}, receive)
-        resp = await session_events(sid, req)
-        agen = resp.body_iterator
-        try:
-            return await agen.__anext__()
-        finally:
-            await agen.aclose()
-
-    data = json.loads(asyncio.run(first_frame()).split("data: ", 1)[1].strip())
-    assert data["scores"]["sql-01"]["score"] == 4
-    assert data["scores"]["sql-01"]["note"] == note
-
-
-def test_session_hub_publish():
-    import asyncio
-
-    from app.hub import SessionHub
-
-    async def scenario():
-        hub = SessionHub()
-        q = hub.subscribe(7)
-        hub.publish(7, {"ok": 1})
-        got = await asyncio.wait_for(q.get(), timeout=1)
-        hub.unsubscribe(7, q)
-        # после отписки последнего подписчика сессия выкидывается из реестра
-        hub.publish(7, {"ok": 2})  # никому не уходит, без ошибок
-        return got
-
-    assert asyncio.run(scenario()) == {"ok": 1}
-
-
-def test_api_interview():
-    r = _client().post("/api/interview", json={"count": 8, "seed": 1})
-    assert r.status_code == 200
-    assert len(r.json()["order"]) <= 8
-
-
 # --- pools ---
 def test_api_pools_lists_data_engineer_with_counts():
     r = _client().get("/api/pools")
@@ -233,7 +100,6 @@ def test_api_pools_lists_data_engineer_with_counts():
     assert [b["id"] for b in de["blocks"]] == ["frameworks", "databases", "python", "platform"]
     assert de["blocks"][0]["subblocks"][0] == {"id": "airflow", "label": "Airflow"}
     assert de["counts"]["nodes"] >= 15
-    assert isinstance(de["counts"]["sessions"], int)
     assert "dir" not in de
 
 
@@ -247,36 +113,6 @@ def test_api_graph_default_pool_is_data_engineer():
 
 def test_api_graph_unknown_pool_404():
     assert _client().get("/api/graph?pool=nope").status_code == 404
-
-
-def test_api_interview_pool_scoped():
-    c = _client()
-    r = c.post("/api/interview", json={"count": 8, "seed": 1, "pool": "data-engineer"})
-    assert r.status_code == 200
-    ids = r.json()["order"]
-    assert 0 < len(ids) <= 8
-    pool_ids = {n["id"] for n in c.get("/api/graph?pool=data-engineer").json()["nodes"]}
-    assert set(ids) <= pool_ids
-    assert c.post("/api/interview", json={"count": 3, "pool": "nope"}).status_code == 404
-
-
-def test_api_list_sessions_for_resume():
-    c = _client()
-    sid = c.post("/api/sessions", json={"candidate": "Resume"}).json()["id"]
-    c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 5})
-    sessions = c.get("/api/sessions").json()
-    assert any(x["id"] == sid and x["candidate"] == "Resume" for x in sessions)
-    # деталь сессии содержит восстановимые оценки
-    detail = c.get(f"/api/sessions/{sid}").json()
-    assert detail["scores"]["sql-01"]["score"] == 5
-
-
-def test_api_score_note_persists():
-    c = _client()
-    sid = c.post("/api/sessions", json={"candidate": "Notes"}).json()["id"]
-    c.post(f"/api/sessions/{sid}/score", json={"nodeId": "sql-01", "score": 4, "note": "хороший ответ"})
-    detail = c.get(f"/api/sessions/{sid}").json()
-    assert detail["scores"]["sql-01"]["note"] == "хороший ответ"
 
 
 def _delete_node(node_id: str):

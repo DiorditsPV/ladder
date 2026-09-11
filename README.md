@@ -1,47 +1,36 @@
 # Ladder
 
 A self-hosted board for studying a technology topic by rungs: a topic is split into columns and its own difficulty
-levels, every cell holds question cards, and you mark each one as known / review / unknown. Running a technical
-interview on the same board is the second mode. The heart of it is an interactive
-**question matrix** on a canvas: one column per section (Frameworks / Databases / Python /
+levels, every cell holds question cards, and you mark each one as known / review / unknown. The heart of it is an
+interactive **question matrix** on a canvas: one column per section (Frameworks / Databases / Python /
 Platform), cards inside a column ranked by the pool's own difficulty levels (`levels` in `pool.yaml`, 2–8;
 base → junior → middle → senior by default).
-A card is a question or a hands-on task plus a reference answer, a 1–5 score and the
-interviewer's note. Content lives in Markdown/JSON and is imported into the question bank.
+A card is a question or a hands-on task plus a reference answer. Content lives in Markdown/JSON and
+is imported into the question bank.
 
-One screen carries the whole interview: pick the area, generate the question set, score with the
-keyboard, watch coverage in real time, and finish with a verdict and a self-contained HTML report.
+One screen carries the whole study session: filter the area, walk the matrix with the keyboard,
+mark every card as known / review / unknown, and watch each track's coverage grow on the home page.
 
 Stack: **FastAPI + SQLite** on the back end, **React + Vite + React Flow** on the front. Runs
 locally behind a login (local accounts, `owner` / `member` / `viewer` roles), Russian and English UI.
 
 ## What it looks like
 
-Tracks are the entry point: question and session counts, sections, and the two things you actually
-do — start an interview or open the question bank.
+Tracks are the entry point: the question count, how much of the track is already reviewed, its
+sections, and the two things you actually do — open the board or open the question bank.
 
 ![Tracks](docs/screenshots/01-home.png)
 
-|                                                                                                                                                                                                                                                                                          |                                                                                                                                                                                                                                                                          |
-|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Interview setup.** Candidate, sections and sub-columns, levels, and how the set is built: auto-pick N questions by section weights, or take everything that matches in matrix order.<br><br>[![Interview setup](docs/screenshots/02-setup.png)](docs/screenshots/02-setup.png)         | **The matrix during a session.** The plan drives the board: questions outside the set are dimmed, the header shows the candidate, live sync and progress against the plan.<br><br>[![Question matrix](docs/screenshots/03-board.png)](docs/screenshots/03-board.png)     |
-| **Scoring from the keyboard.** `1–5` score the current question, `n` jumps to the next unscored one; the HUD at the bottom keeps the current card, its position in the plan and an optional timer.<br><br>[![Scoring](docs/screenshots/04-scoring.png)](docs/screenshots/04-scoring.png) | **Full text next to the board.** A non-modal drawer: question, reference answer with syntax highlighting, score and the interviewer's note, while the board stays interactive.<br><br>[![Answer drawer](docs/screenshots/05-drawer.png)](docs/screenshots/05-drawer.png) |
-| **Hands-on tasks.** Besides questions the bank holds tasks: a statement, starter code, a reference solution and scoring criteria.<br><br>[![Task](docs/screenshots/06-task.png)](docs/screenshots/06-task.png)                                                                           | **Question bank.** Full-text search and filters over the whole bank; questions are edited and added straight from the UI.<br><br>[![Question bank](docs/screenshots/07-bank.png)](docs/screenshots/07-bank.png)                                                          |
-| **Verdict.** Finishing an interview records a decision (hire / no hire / hold) and an overall comment; the session moves to *finished* and the verdict travels into the report.<br><br>[![Verdict](docs/screenshots/08-verdict.png)](docs/screenshots/08-verdict.png)                    | **Track editor.** Sections and sub-columns are data: rename, reorder by drag and drop, pick a colour from a fixed palette, preview the structure before saving.<br><br>[![Track editor](docs/screenshots/10-structure.png)](docs/screenshots/10-structure.png)           |
-
-**The report** is generated client-side as one self-contained HTML file: candidate and interviewer,
-the verdict with strong and weak sections, average score and coverage per section, and a table of
-scored questions with notes. Open it in a browser, print it to PDF, send it as is.
-
-![Interview report](docs/screenshots/09-report.png)
+|                                                                                                                                                                                                                                                     |                                                                                                                                                                                                                                          |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **The matrix.** A column per section, sub-columns inside it, cards ranked by the track's own levels; the filter panel dims every card that does not match the tag, level or search.<br><br>[![Question matrix](docs/screenshots/03-board.png)](docs/screenshots/03-board.png)                          | **The checklist from the keyboard.** `1 / 2 / 3` mark the current card known / review / unknown and move on, `n` jumps to the next unreviewed one; the HUD keeps the current card, its level and the running count, a dot on every card shows its status.<br><br>[![Checklist](docs/screenshots/04-checklist.png)](docs/screenshots/04-checklist.png) |
+| **Full text next to the board.** A non-modal drawer: question, reference answer with syntax highlighting and the three status buttons, while the board stays interactive.<br><br>[![Answer drawer](docs/screenshots/05-drawer.png)](docs/screenshots/05-drawer.png) | **Hands-on tasks.** Besides questions the bank holds tasks: a statement, starter code, a reference solution and criteria to check yourself against.<br><br>[![Task](docs/screenshots/06-task.png)](docs/screenshots/06-task.png)          |
+| **Question bank.** Full-text search and filters over the whole bank, any row expands to the full question and answer; questions are added and edited straight from the UI, and "Download HTML" saves the bank as one self-contained file.<br><br>[![Question bank](docs/screenshots/07-bank.png)](docs/screenshots/07-bank.png) | **Track editor.** Sections, sub-columns and levels are data: rename, reorder by drag and drop, pick a colour from a fixed palette, preview the structure before saving.<br><br>[![Track editor](docs/screenshots/10-structure.png)](docs/screenshots/10-structure.png) |
 
 Dark theme is a toggle in the settings panel and is remembered per browser; the system preference
 is the default.
 
 ![Dark theme](docs/screenshots/11-board-dark.png)
-
-> Screenshots are rebuilt with `npm run shots` from `frontend/` against the English demo content in
-> `demo/content-en` — see [Tests](#tests).
 
 ## Quick start
 
@@ -75,7 +64,7 @@ docker compose up -d`; changing them on a running instance requires recreating t
 If `:8000` is taken (say `./run.sh` already runs there), use
 `INTERVIEW_PORT=8080 docker compose up -d`.
 
-The layout inside the container mirrors the server one from `deploy/interview.service`: code in `/app`,
+The layout inside the container mirrors the server one from `deploy/ladder.service`: code in `/app`,
 content in `/app/content`, database in a named volume on `/data`. Rebuilding the image does not
 touch the data, and `content/` can stay read-only — the back end never writes there (uploads are
 parsed in a temp directory and stored in the database).
@@ -92,38 +81,31 @@ cd backend && . .venv/bin/activate && uvicorn app.main:app --reload --port 8000
 cd frontend && npm run dev      # http://localhost:5173
 ```
 
-## Running an interview
+## Studying a track
 
-**Set up.** "Start interview" on a track card opens the setup screen: pick or create a candidate,
-choose sections and sub-columns, levels, and the mode. *Auto-pick* samples N questions
-proportionally to section weights; *all matching* takes every question that fits, in matrix order.
-The resulting set is stored with the session as its plan. Starting from the board carries the
-current board filters into the setup screen.
+**Open the board.** A track card on the home page opens the matrix. The layout is **swimlanes**: a
+column per section with a coloured translucent background, questions ranked top to bottom by
+difficulty (base → junior → middle → senior by default, the left axis). A section splits into
+**sub-columns** through the `subblock` field. A card shows a short `title` and tags; the full text
+opens in the drawer. There are no edges between questions — it is a board of cards grouped by
+section and difficulty, not a dependency graph.
 
-**Score.** The board layout is **swimlanes**: a column per section with a coloured translucent
-background, questions ranked top to bottom by difficulty (base → junior → middle → senior, the
-left axis). A section splits into **sub-columns** through the `subblock` field. A card shows a
-short `title` and tags; the full text opens in the drawer. There are no edges between questions —
-it is a board of cards grouped by section and difficulty, not a dependency graph.
+**Work through it.** Every card carries a status of its own — `known`, `review` or `unknown` — kept
+per user in the database. Column and level counters, and the progress bar on the home page, count
+the `known` ones.
 
 - **Click a card** — opens the drawer and makes the card current.
-- **HUD at the bottom** — current question, position in the plan, 1–5 score, "Next →", timer.
-- **Filters** — sections, difficulty, kind and tags, plus full-text search; "unscored only" appears
-  inside a session.
-- **Checklist (outside a session):** each card gets a status — `1` known, `2` review, `3` unknown — kept per user;
-  column counters and the home page show how much of a track is covered.
-- **Keyboard:** `1–5` score the current card (in a session), `↑↓` move by difficulty, `←→` between columns,
-  `Enter` opens the drawer, `n` goes to the next unscored question, `Esc` clears the current one,
-  `?` shows the shortcut cheat sheet.
+- **HUD at the bottom** — current card, how much of the track is reviewed, the three status buttons
+  and an optional timer.
+- **Filters** — sections, difficulty, kind and tags, full-text search, and "unreviewed only", which
+  dims everything already marked as known.
+- **Keyboard:** `1 / 2 / 3` set the status of the current card and move to the next one, `↑↓` move by
+  difficulty, `←→` between columns, `Enter` opens the drawer, `n` jumps to the next unreviewed card,
+  `Esc` clears the current one, `?` shows the shortcut cheat sheet.
 
-**Invite a colleague.** A session can be shared by link: pick a role (interviewer who can score, or
-observer who only watches) and a lifetime (1 hour, 24 hours, 7 days). The guest joins through
-`#/join/<token>` with no account and sees only that session; scores sync live over SSE. Links are
-listed with their expiry and can be revoked — a revoked or expired link drops the guest on the next
-request.
-
-**Finish.** "Finish" records the decision and an overall comment. The session gets the *finished*
-status, and "Export" produces the HTML report described above.
+**Keep the bank fresh.** New questions are uploaded as `.md` / `.json`, written straight in the UI,
+or added to `content/` and pulled in with "Update from files" (`POST /api/pools/sync`) without a
+restart. "Export" on the bank page saves the whole bank as one self-contained HTML file.
 
 ## Content
 
@@ -134,8 +116,8 @@ created, edited and deleted from the UI (`POST/PUT/DELETE /api/pools`). A new tr
 of an existing one (structure and questions included) or a structure you build yourself in the
 editor.
 
-The repository ships two Russian-language pools used in real interviews plus a
-`demo/content-en` set in English used for the screenshots above.
+The repository ships three Russian-language tracks plus a `demo/content-en` set in English used
+for the screenshots above.
 
 ### Markdown format
 
@@ -172,31 +154,30 @@ The answer (Markdown, code blocks supported)…
 
 | method | path                        | purpose                                                |
 |--------|-----------------------------|--------------------------------------------------------|
-| GET    | `/api/pools`                | tracks with sections and counts                        |
+| GET    | `/api/pools`                | tracks with sections, question counts and checklist summary |
 | POST   | `/api/pools`                | create a track from a preset or from your own sections |
+| PUT    | `/api/pools/{id}`           | rename a track or edit its sections and levels         |
+| POST   | `/api/pools/sync`           | re-read `content/` into the database (owner)           |
 | GET    | `/api/graph?pool=<id>`      | nodes plus import errors                               |
-| POST   | `/api/sessions`             | create a session, optionally with an interview `plan`  |
-| POST   | `/api/sessions/{id}/score`  | score a question (`{nodeId, score, note?}`)            |
-| POST   | `/api/sessions/{id}/finish` | record the verdict (`{decision, summary}`)             |
-| POST   | `/api/sessions/{id}/invite` | link for a colleague (`{role, expires_hours}`)         |
-| GET    | `/api/sessions/{id}/events` | live updates over SSE                                  |
+| PUT    | `/api/progress/{node_id}`   | set a card's status (`{status}`: known / review / unknown) |
+| GET    | `/api/progress?pool=<id>`   | the current user's checklist for a track               |
 
-That is the core. The full list (candidates and interviewers, node CRUD on `/api/nodes`, import on
-`/api/import`, invite management, question sampling on `/api/interview`) and the schemas are in the
-Swagger UI at `/docs`.
+That is the core. The full list (node CRUD on `/api/nodes`, import on `/api/import`, auth on
+`/api/auth/*`, user management on `/api/users`) and the schemas are in the Swagger UI at `/docs`.
 
 ## Tests
 
-Back end — 122 tests: content import, sampler and interview plans, node CRUD, candidates and
-interviewers with tenant isolation, auth and RBAC, track CRUD, session verdicts, guest invites.
+Back end — 119 tests: content import, node CRUD, track CRUD with levels, `content/` sync, the
+checklist, auth and RBAC with tenant isolation.
 
 ```bash
 cd backend && . .venv/bin/activate && pytest -q
 ```
 
-Front end — a headless smoke test of the real runtime: the matrix renders, a card opens the drawer,
-a session starts from the setup screen and follows its plan, the verdict lands in the header, a
-guest joins by invite link. It needs a running server on `:8000`:
+Front end — a headless smoke test of the real runtime: the track wizard and structure editor, the
+matrix rendering, a card opening the drawer, the checklist (including persistence across a reload),
+filters and search, and the question bank with upload, edit and export. It needs a running server
+on `:8000`:
 
 ```bash
 cd frontend && npm run build     # tsc --noEmit + vite build
@@ -204,18 +185,8 @@ npm run i18n:check               # every t("…") key exists in src/i18n/en.ts
 npm run smoke
 ```
 
-Screenshots for this README are the same Playwright setup over a live server: it signs in as the
-owner, seeds two demo sessions through the API and captures the screens into `docs/screenshots`.
-The demo candidates are synthetic but written to the same database, so run the server on a separate
-one — and on the English content:
-
-```bash
-INTERVIEW_CONTENT_DIR=$PWD/demo/content-en \
-INTERVIEW_DB_PATH=$PWD/backend/demo.db \
-INTERVIEW_OWNER_PASSWORD=interview-dev ./run.sh --build
-
-cd frontend && npm run shots     # in a second terminal
-```
+`frontend/shots.mjs` (the README screenshots) still drives the removed interview mode and is
+currently out of date — see the note under the screenshots.
 
 ## Configuration (env)
 

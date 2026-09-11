@@ -32,9 +32,6 @@ html[data-design="57"]:not([data-theme="dark"]) .qnode--selected {
 html[data-design="37"]:not([data-theme="dark"]) .qnode__diff,
 html[data-design="56"]:not([data-theme="dark"]) .qnode__diff,
 html[data-design="57"]:not([data-theme="dark"]) .qnode__diff,
-html[data-design="37"]:not([data-theme="dark"]) .qnode__grade,
-html[data-design="56"]:not([data-theme="dark"]) .qnode__grade,
-html[data-design="57"]:not([data-theme="dark"]) .qnode__grade,
 html[data-design="37"]:not([data-theme="dark"]) .qnode__topic,
 html[data-design="56"]:not([data-theme="dark"]) .qnode__topic,
 html[data-design="57"]:not([data-theme="dark"]) .qnode__topic,
@@ -108,8 +105,6 @@ html[data-design="57"]:not([data-theme="dark"]) body {
   background-size: 9px 9px;
 }
 html[data-design="57"]:not([data-theme="dark"]) .qnode__diff,
-html[data-design="57"]:not([data-theme="dark"]) .qnode__grade,
-html[data-design="57"]:not([data-theme="dark"]) .progress__label,
 html[data-design="57"]:not([data-theme="dark"]) .hud {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -156,7 +151,6 @@ html[data-theme="dark"] .qnode {
 html[data-theme="dark"] .qnode--current { box-shadow: 0 0 0 2.5px var(--accent); }
 html[data-theme="dark"] .qnode--selected { box-shadow: 0 0 0 3px #7e90a7; }
 html[data-theme="dark"] .qnode__diff,
-html[data-theme="dark"] .qnode__grade,
 html[data-theme="dark"] .qnode__topic,
 html[data-theme="dark"] .tagchip,
 html[data-theme="dark"] button,

@@ -1,0 +1,67 @@
+# Направление «Apache Kafka» — сгенерировано скиллом ladder-topic.
+# levels — ряды матрицы сверху вниз (первый — самый лёгкий, верхний ряд); weight блоков ∝ числу карточек.
+id: apache-kafka
+label: Apache Kafka
+description: Распределённый лог, клиенты, эксплуатация кластера, потоковая обработка
+  и проектирование обмена событиями
+blocks:
+- id: core
+  label: Ядро
+  color: '#2563eb'
+  weight: 18
+  subblocks:
+  - id: log
+    label: Лог и партиции
+  - id: brokers
+    label: Брокеры и репликация
+- id: clients
+  label: Продюсеры и консьюмеры
+  color: '#16a34a'
+  weight: 24
+  subblocks:
+  - id: producer
+    label: Продюсер
+  - id: consumer
+    label: Консьюмер и группы
+  - id: schemas
+    label: Схемы и Schema Registry
+- id: ops
+  label: Эксплуатация
+  color: '#d97706'
+  weight: 25
+  subblocks:
+  - id: config
+    label: Конфигурация
+  - id: monitoring
+    label: Мониторинг
+  - id: failures
+    label: Отказы и восстановление
+- id: streaming
+  label: Потоковая обработка
+  color: '#9333ea'
+  weight: 16
+  subblocks:
+  - id: streams
+    label: Kafka Streams и ksqlDB
+  - id: connect
+    label: Connect и интеграции
+- id: design
+  label: Проектирование
+  color: '#dc2626'
+  weight: 18
+  subblocks:
+  - id: guarantees
+    label: Гарантии доставки
+  - id: patterns
+    label: 'Паттерны: события, CDC, outbox'
+levels:
+- id: concepts
+  label: Понятия
+- id: config
+  label: Конфигурация
+- id: ops
+  label: Эксплуатация
+- id: internals
+  label: Внутренности
+- id: design
+  label: Проектирование

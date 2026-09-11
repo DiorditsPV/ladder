@@ -4,9 +4,8 @@
 // Ключ, встречающийся в нескольких файлах, лежит в группе «Общие» (в литерале объекта
 // один ключ может быть только один раз).
 export const EN: Record<string, string> = {
-  // --- Общие (несколько файлов) ---
   // --- LevelsEditor / PoolFormModal: уровни направления ---
-  "Уровни — ряды матрицы снизу вверх: первый в списке самый лёгкий. От 2 до 8.": "Levels are the matrix rows, bottom to top: the first one is the easiest. From 2 to 8.",
+  "Уровни — ряды матрицы сверху вниз: первый в списке самый лёгкий и рисуется верхним рядом. От 2 до 8.": "Levels are the matrix rows, top to bottom: the first one is the easiest and is drawn as the top row. From 2 to 8.",
   "Название уровня": "Level name",
   "Удалить уровень «{label}» и его вопросы ({n})?": "Delete level “{label}” and its questions ({n})?",
   "Убрать уровень": "Remove level",
@@ -31,45 +30,26 @@ export const EN: Record<string, string> = {
   "Заголовок": "Title",
   "Сложность": "Difficulty",
   "Тип": "Type",
-  "Оценка": "Score",
-  "Оценено": "Scored",
   "Стартовый код": "Starter code",
-  "Критерии оценки": "Scoring criteria",
-  "{n} вопросов": "{n} questions",
-  "Кандидат": "Candidate",
-  "Кандидаты": "Candidates",
-  "Сессии": "Sessions",
-  "Имя": "Name",
-  "Позиция": "Position",
-  "Грейд": "Grade",
+  "Критерии самопроверки": "Self-check criteria",
   "Банк вопросов": "Question bank",
   "Горячие клавиши": "Keyboard shortcuts",
   "Настройки": "Settings",
-  "Начать интервью": "Start interview",
-  "Агенда": "Agenda",
   "Направления": "Tracks",
   "Открыть вопросы": "Open questions",
 
-  // --- index.html / LangProvider (заголовок вкладки) ---
 
   // --- HomePage ---
   "Ladder · разбор тем по ступеням": "Ladder · topics by rungs",
   "Открыть доску": "Open the board",
   "+ Новое направление": "+ New track",
   "Меню направления": "Track menu",
-  "Проведение интервью": "Interviewing",
   "Нет ни одного направления: создайте первое кнопкой «+ Новое направление» или положите каталог с `pool.yaml` в `content/`.":
     "No tracks yet: create the first one with “+ New track” or put a directory with `pool.yaml` into `content/`.",
-  "Удалить направление «{label}»? Вопросы ({nodes}) будут удалены, сессии ({sessions}) останутся в истории.":
-    "Delete track “{label}”? Its questions ({nodes}) will be deleted; sessions ({sessions}) stay in history.",
   "Не удалось удалить направление": "Could not delete track",
   "Дублировать": "Duplicate",
   "{label} (копия)": "{label} (copy)",
   "Не удалось дублировать направление": "Could not duplicate track",
-  "Справочник кандидатов и интервьюеров": "Directory of candidates and interviewers",
-  "Все проведённые интервью, отчёты": "All past interviews, reports",
-  "Подключение": "Connect",
-  "Присоединиться к идущей live-сессии": "Join a live session in progress",
 
   // --- PageShell / LangSwitch ---
   "← Меню": "← Menu",
@@ -88,22 +68,10 @@ export const EN: Record<string, string> = {
   "Неверный email или пароль": "Invalid email or password",
 
   // --- BoardPage ---
-  "Экспорт": "Export",
-  "Отчёт по сессии (HTML)": "Session report (HTML)",
-  "Банк вопросов (HTML)": "Question bank (HTML)",
+  "Экспорт HTML": "Export HTML",
+  "Скачать банк вопросов направления в HTML": "Download this direction's question bank as HTML",
   "Ещё": "More",
   "Шпаргалка клавиш": "Keyboard cheat sheet",
-  "Кандидат: {name} · Сессия #{id}": "Candidate: {name} · Session #{id}",
-  "Оценено по текущему набору фильтров": "Scored within the current filter set",
-  "оценено {done} / {total} ({pct}%)": "scored {done} / {total} ({pct}%)",
-  "Live: изменения синхронизируются с HR": "Live: changes sync with HR",
-  "Подключение к live…": "Connecting to live…",
-  "Выйти из сессии": "Leave session",
-  "Выйти": "Leave",
-  "Начать интервью →": "Start interview →",
-  "Сначала выставьте оценки": "Score something first",
-  "Все вопросы оценены — скачать итоговый отчёт": "All questions scored — download the final report",
-  "Завершить · Скачать отчёт": "Finish · Download report",
   "⚠ Ошибки импорта ({n}):": "⚠ Import errors ({n}):",
   "Загрузка графа…": "Loading board…",
   "Фильтры вопросов": "Question filters",
@@ -114,11 +82,8 @@ export const EN: Record<string, string> = {
   "Поиск по вопросам": "Search questions",
   "Блоки": "Blocks",
   "Прогресс": "Progress",
-  "Только неоценённые": "Unscored only",
   "Теги": "Tags",
   "сбросить": "reset",
-  "Время на вопрос · вся сессия": "Time per question · whole session",
-  "Дальше →": "Next →",
   "Снять выбор (Esc)": "Clear selection (Esc)",
   "Не удалось удалить вопрос": "Could not delete question",
   "Не удалось сохранить изменения": "Could not save changes",
@@ -128,26 +93,8 @@ export const EN: Record<string, string> = {
   "Загрузить файл": "Upload file",
   "Скачать HTML": "Download HTML",
 
-  // --- CandidatesPage ---
-  "Кандидаты и интервьюеры": "Candidates and interviewers",
-  "Контакт": "Contact",
-  "Добавить": "Add",
-  "Изменить": "Edit",
-  "Интервьюеры": "Interviewers",
-  "Роль": "Role",
 
-  // --- SessionsPage ---
-  "Направление": "Track",
-  "Интервьюер": "Interviewer",
-  "Дата": "Date",
-  "Отчёт": "Report",
-  "Сессий пока нет — начните интервью с главной.": "No sessions yet — start an interview from the main menu.",
 
-  // --- ConnectPage ---
-  "Подключиться к сессии": "Join a session",
-  "Откроется доска направления с оценками этой сессии; дальнейшие оценки синхронизируются live.":
-    "Opens the track's board with this session's scores; further scores sync live.",
-  "Нет сессий, к которым можно подключиться.": "No sessions to join.",
 
   // --- AddQuestionModal ---
   "Не удалось создать вопрос": "Could not create question",
@@ -193,67 +140,7 @@ export const EN: Record<string, string> = {
   "+ Добавить подкатегорию": "+ Add subcategory",
   "+ Добавить раздел": "+ Add section",
 
-  // --- FinishModal / SessionsPage / отчёт: итог сессии ---
-  "Нанимать": "Hire",
-  "Не нанимать": "No hire",
-  "Подумать": "Hold",
-  "Итог интервью · {name}": "Interview verdict · {name}",
-  "оценено {done} / {total}": "scored {done} / {total}",
-  "Общий комментарий": "Overall comment",
-  "Сильные и слабые стороны, что перепроверить…": "Strengths, weaknesses, what to double-check…",
-  "Сохранить итог": "Save verdict",
-  "Завершить интервью": "Finish interview",
-  "Завершить": "Finish",
-  "Итог": "Verdict",
-  "Завершена": "Finished",
-  "Идёт": "In progress",
-  "Все": "All",
-  "Идут": "In progress",
-  "Завершены": "Finished",
-  "Статус": "Status",
-  "Решение": "Decision",
-  "Не удалось завершить интервью": "Could not finish the interview",
-  "Итог интервью": "Interview verdict",
-  "Сильные разделы": "Strong sections",
-  "Слабые разделы": "Weak sections",
-  "Комментарий интервьюера": "Interviewer's comment",
-  "Решение: {decision}": "Decision: {decision}",
-  "Интервью завершено": "Interview finished",
-  // --- приглашение в сессию ---
-  "Ссылка для коллеги": "Link for a colleague",
-  "Интервьюер — может оценивать": "Interviewer — can score",
-  "Наблюдатель — только смотрит": "Observer — view only",
-  "Скопировать": "Copy",
-  "Другая ссылка": "Another link",
-  "Не удалось создать ссылку": "Could not create the link",
-  "Срок ссылки": "Link lifetime",
-  "1 час": "1 hour",
-  "24 часа": "24 hours",
-  "7 дней": "7 days",
-  "Действующие ссылки": "Active links",
-  "Наблюдатель": "Observer",
-  "до {when}": "until {when}",
-  "Отозвать": "Revoke",
-  "Не удалось отозвать ссылку": "Could not revoke the link",
-  "Ссылка отозвана или её срок истёк": "The link was revoked or has expired",
-  "Ссылка недействительна": "The link is invalid",
-  // --- SetupPage (настройка интервью) ---
-  "Настройка интервью · {pool}": "Interview setup · {pool}",
-  "Разделы": "Sections",
   "Уровни": "Levels",
-  "Автоподбор по весам разделов": "Auto-pick by section weights",
-  "Все подходящие в порядке матрицы": "All matching, in matrix order",
-  "В интервью войдёт {n}": "The interview will include {n}",
-  "Под выбранные условия нет вопросов": "No questions match the selected conditions",
-  "подходит {n}": "{n} match",
-  // --- StartSessionForm ---
-  "Не удалось начать сессию": "Could not start session",
-  "Выбрать существующего кандидата": "Pick an existing candidate",
-  "Новый кандидат…": "New candidate…",
-  "Кандидат…": "Candidate…",
-  "Позиция (опц.)": "Position (optional)",
-  "Грейд (опц.)": "Grade (optional)",
-  "Начать": "Start",
 
   // --- UploadModal ---
   "Загрузить вопросы": "Upload questions",
@@ -272,25 +159,15 @@ export const EN: Record<string, string> = {
   "Точки на фоне": "Background dots",
   "Границы блоков": "Block boundaries",
   "Вертикальные направляющие": "Vertical guides",
-  "Уровни Base / Junior / Middle / Senior": "Base / Junior / Middle / Senior levels",
+  "Ряды уровней направления": "The direction's level rows",
   "Горизонтальные направляющие": "Horizontal guides",
   "Панели": "Panels",
-  "Сайдбар со списком вопросов": "Sidebar with the question list",
   "Показывать вопросы, убранные с доски": "Show questions removed from the board",
   "Скрытые вопросы": "Hidden questions",
-  "Время на вопрос и на сессию в нижней панели": "Time per question and per session in the bottom bar",
   "Таймер": "Timer",
   "Открыть банк направления →": "Open the track's question bank →",
   "Справка": "Help",
 
-  // --- ShortcutsHelp ---
-  "оценить текущий вопрос (в сессии)": "score the current question (in a session)",
-  "знаю · повторить · не знаю (вне сессии)": "known · review · unknown (outside a session)",
-  "открыть карточку текущего вопроса": "open the current question's card",
-  "перейти к следующему неоценённому": "go to the next unscored question",
-  "навигация по сетке вопросов": "navigate the question grid",
-  "снять выделение / закрыть эту шпаргалку": "clear selection / close this cheat sheet",
-  "показать / скрыть эту шпаргалку": "show / hide this cheat sheet",
 
   // --- DetailDrawer ---
   "Детали вопроса": "Question details",
@@ -309,8 +186,6 @@ export const EN: Record<string, string> = {
   "Свернуть": "Collapse",
   "На весь экран": "Full screen",
   "💾 Сохранить": "💾 Save",
-  "Оценка {n}": "Score {n}",
-  "Заметка интервьюера…": "Interviewer's note…",
 
   // --- BankBrowser ---
   "Все вопросы": "All questions",
@@ -319,28 +194,36 @@ export const EN: Record<string, string> = {
   "Развернуть всё": "Expand all",
   "Свернуть всё": "Collapse all",
   "Ничего не найдено": "Nothing found",
+  "Всё разобрано": "All done",
+  "Показать все": "Show all",
+  "В направлении пока нет вопросов": "This direction has no questions yet",
 
   // --- QuestionNode ---
   "скрыт · ": "hidden · ",
 
   // --- report.ts ---
-  "Нет оценённых вопросов — выставьте оценки и скачайте отчёт снова.": "No scored questions — set some scores and download the report again.",
-  "Результаты интервью": "Interview results",
-  "направление": "track",
-  "интервьюер": "interviewer",
-  "Средний балл": "Average score",
   "Сгенерировано локальным сервисом «Ladder»": "Generated by the local Ladder service",
   "Заготовка кода": "Starter code",
   "Критерии": "Criteria",
   "Банк пуст.": "The bank is empty.",
-  "Банк вопросов · интервью": "Question bank · interview",
-  "кандидат": "candidate",
 
   // --- study-progress: чек-лист разбора (статусы вне сессии) ---
   "Знаю (1)": "Know it (1)",
-  "Повторить (2)": "Review (2)",
+  "Повторить (2)": "Revisit (2)",
   "Не знаю (3)": "Don't know (3)",
   "Только неразобранное": "Unresolved only",
-  "разобрано {k} из {n}": "{k} of {n} reviewed",
+  "знаю {k} из {n}": "{k} of {n} known",
   "Разобрано": "Reviewed",
+  "Знаю": "Known",
+  // --- ShortcutsHelp: подписи приходят через t(desc), i18n-check их не видит ---
+  "знаю · повторить · не знаю": "known · review · don't know",
+  "открыть карточку текущего вопроса": "open the current question's card",
+  "перейти к следующему неразобранному": "go to the next unreviewed question",
+  "навигация по сетке вопросов": "navigate the question grid",
+  "снять выделение / закрыть эту шпаргалку": "clear selection / close this cheat sheet",
+  "показать / скрыть эту шпаргалку": "show / hide this cheat sheet",
+  "Удалить направление «{label}»? Вопросы ({nodes}) будут удалены безвозвратно.":
+    "Delete direction “{label}”? Its questions ({nodes}) will be deleted permanently.",
+  "Время на карточку · весь разбор": "Time per card · total study time",
+  "Время на карточку и на весь разбор в нижней панели": "Time per card and total study time in the bottom bar",
 };

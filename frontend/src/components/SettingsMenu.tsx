@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import { useT } from "../i18n";
 
 // Боковая панель настроек (⚙ в шапке доски), выезжает слева — справа живут фильтры
-// и drawer вопроса. Шапка оставляет себе ход интервью; всё, что настраивают редко —
-// оформление, тема, холст, панели, справка — собрано здесь. Работа с банком — отдельная
-// страница (#/bank/<pool>), отсюда на неё только ссылка.
+// и drawer вопроса. Всё, что настраивают редко — оформление, тема, холст, панели,
+// справка — собрано здесь. Работа с банком — отдельная страница (#/bank/<pool>),
+// отсюда на неё только ссылка.
 //
 // `.tb__toggle`, `.themebtn`, `.helpbtn` сохранены — на них ходит smoke.mjs.
 // Закрывается по ✕, Esc и клику вне; Esc глушится в capture-фазе (иначе снимет
@@ -22,8 +22,6 @@ export type DisplaySettings = {
   onToggleGuidesV: () => void;
   guidesH: boolean;
   onToggleGuidesH: () => void;
-  agendaOpen: boolean;
-  onToggleAgenda: () => void;
   showHidden: boolean;
   onToggleHidden: () => void;
   hiddenCount: number;
@@ -104,18 +102,17 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
         <div className="settings__chips" role="group" aria-label={t("Отображение холста")}>
           <Chip on={s.bgDots} onClick={s.onToggleBgDots}>{t("Точки на фоне")}</Chip>
           <Chip on={s.guidesV} onClick={s.onToggleGuidesV} title={t("Границы блоков")}>{t("Вертикальные направляющие")}</Chip>
-          <Chip on={s.guidesH} onClick={s.onToggleGuidesH} title={t("Уровни Base / Junior / Middle / Senior")}>{t("Горизонтальные направляющие")}</Chip>
+          <Chip on={s.guidesH} onClick={s.onToggleGuidesH} title={t("Ряды уровней направления")}>{t("Горизонтальные направляющие")}</Chip>
         </div>
       </div>
 
       <div className="settings__group">
         <div className="settings__title">{t("Панели")}</div>
         <div className="settings__chips" role="group" aria-label={t("Панели")}>
-          <Chip on={s.agendaOpen} onClick={s.onToggleAgenda} title={t("Сайдбар со списком вопросов")}>{t("Агенда")}</Chip>
           <Chip on={s.showHidden} onClick={s.onToggleHidden} title={t("Показывать вопросы, убранные с доски")}>
             {t("Скрытые вопросы")}{s.hiddenCount ? ` (${s.hiddenCount})` : ""}
           </Chip>
-          <Chip on={s.showTimer} onClick={s.onToggleTimer} title={t("Время на вопрос и на сессию в нижней панели")}>{t("Таймер")}</Chip>
+          <Chip on={s.showTimer} onClick={s.onToggleTimer} title={t("Время на карточку и на весь разбор в нижней панели")}>{t("Таймер")}</Chip>
         </div>
       </div>
 
