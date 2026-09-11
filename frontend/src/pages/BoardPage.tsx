@@ -513,11 +513,14 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   );
 
   const centerOn = useCallback(
-    (id: string) => {
+    (id: string, besideCard = false) => {
       const pos = placement?.positions[id];
-      if (pos && instance.current) {
-        instance.current.setCenter(pos.x + CARD_W / 2, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
-      }
+      if (!pos || !instance.current) return;
+      // Открытая карточка по центру закрывает середину канвы: текущую ставим левее неё (зазор 32px),
+      // чтобы на доске было видно, где ты. На узком экране (≤820px) карточка почти во всю ширину — без сдвига.
+      const vw = window.innerWidth;
+      const shift = besideCard && vw > 820 ? Math.min(600, vw * 0.46) / 2 + 32 + CARD_W / 2 : 0;
+      instance.current.setCenter(pos.x + CARD_W / 2 + shift, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
     },
     [placement],
   );
@@ -559,9 +562,9 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
       // По центру открытая карточка — единственное, что показывает текущую (HUD скрыт), поэтому она
       // идёт за курсором: стрелки, «n», 1–3 и ‹ › листают саму карточку. Справа — как раньше.
       if (cardMode === "center") setSelectedId((s) => (s ? id : s));
-      centerOn(id);
+      centerOn(id, cardMode === "center" && selectedId != null);
     },
-    [centerOn, cardMode],
+    [centerOn, cardMode, selectedId],
   );
 
   // «n»: следующая НЕРАЗОБРАННАЯ карточка по порядку обхода, с переносом по кругу.
