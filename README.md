@@ -11,8 +11,9 @@ is imported into the question bank.
 One screen carries the whole study session: filter the area, walk the matrix with the keyboard,
 mark every card as known / review / unknown, and watch each track's coverage grow on the home page.
 
-Stack: **FastAPI + SQLite** on the back end, **React + Vite + React Flow** on the front. Runs
-locally behind a login (local accounts, `owner` / `member` / `viewer` roles), Russian and English UI.
+Stack: **FastAPI + SQLite** on the back end, **React + Vite + React Flow** on the front. Without
+signing in it opens as a public demo (two tracks, in Russian and English); the full mode is behind a
+login (local accounts, `owner` / `member` / `viewer` roles). Russian and English UI.
 
 ## What it looks like
 
@@ -36,7 +37,7 @@ is the default.
 
 ```bash
 INTERVIEW_OWNER_PASSWORD=<password> ./run.sh   # venv + front-end build (if needed) + server
-# open http://localhost:8000 and sign in as owner@interview.local
+# http://localhost:8000 opens the demo; sign in at http://localhost:8000/#/login as owner@interview.local
 ```
 
 The first launch seeds the owner account `owner@interview.local`. Without
@@ -107,6 +108,30 @@ the `known` ones.
 or added to `content/` and pulled in with "Update from files" (`POST /api/pools/sync`) without a
 restart. "Export" on the bank page saves the whole bank as one self-contained HTML file.
 
+## Modes: demo and full access
+
+The mode follows the session: no session — the demo, signed in — the full mode.
+
+- **Demo, no sign-in.** `/` is a start screen with "Open demo" and the language switch. The demo home
+  (`#/demo`) lists only the tracks marked `demo: true` — Data Engineer and System Analyst — in the
+  language of the interface. Boards, filters, search and hotkeys work as usual; the checklist is kept in
+  this browser's `localStorage` and nothing is written to the server. Editing is hidden (new track, the
+  track menu, card edit and delete, adding and uploading questions); exporting the bank to HTML stays.
+  Any other track address leads back to `#/demo`.
+- **Signing in.** The quiet "Sign in" link in the bottom corner of the start screen, or `#/login`.
+- **Roles.** `owner` can do everything; `viewer` (invited people) reads every track and keeps a
+  checklist of their own on the server; `member` can also edit content. Controls a role cannot use are
+  not shown.
+- **People (owner).** `#/people`: add an account by email — the server generates a one-time password
+  and shows it once, pass it on; "Reset password" issues a new one and signs the user out everywhere;
+  "Delete" removes the account together with its checklist.
+- **Your password.** "Change password" in the account menu on the home page or in ⚙ on a board: the
+  current one, a new one (at least 8 characters) and a repeat. Your other devices are signed out, the
+  current session stays. "Sign out" sits next to it.
+
+Without a session the API serves exactly two read endpoints — `GET /api/pools` (demo tracks, no
+checklist summary) and `GET /api/graph?pool=<demo track>`; everything else answers 401.
+
 ## Content
 
 Questions live in track pools: `content/<pool>/pool.yaml` describes the sections (column order,
@@ -116,8 +141,17 @@ created, edited and deleted from the UI (`POST/PUT/DELETE /api/pools`). A new tr
 of an existing one (structure and questions included) or a structure you build yourself in the
 editor.
 
-The repository ships three Russian-language tracks plus a `demo/content-en` set in English used
-for the screenshots above.
+Three optional `pool.yaml` keys drive the demo: `demo: true` makes a track readable without signing
+in, `lang` is the content language (`ru` by default, or `en`), and `translation_of: <pool id>` marks a
+translation. With the English interface the home page shows the translation instead of the original,
+and the language switch on a board jumps to the paired track; checklists of the original and the
+translation are separate. The keys are content properties: sync carries them over from the files,
+tracks created in the UI are `demo: false`, `lang: ru`.
+
+The repository ships several Russian-language tracks. `data-engineer` and `system-analyst` form the
+demo and have full English translations — `data-engineer-en` and `system-analyst-en`, where a card id
+is the original id plus `-en`. `demo/content-en` is a separate English set used for the screenshots
+above.
 
 ### Markdown format
 
@@ -154,30 +188,36 @@ The answer (Markdown, code blocks supported)…
 
 | method | path                        | purpose                                                |
 |--------|-----------------------------|--------------------------------------------------------|
-| GET    | `/api/pools`                | tracks with sections, question counts and checklist summary |
+| GET    | `/api/pools`                | tracks with sections, question counts and checklist summary; without a session — demo tracks only, no summary |
 | POST   | `/api/pools`                | create a track from a preset or from your own sections |
 | PUT    | `/api/pools/{id}`           | rename a track or edit its sections and levels         |
 | POST   | `/api/pools/sync`           | re-read `content/` into the database (owner)           |
-| GET    | `/api/graph?pool=<id>`      | nodes plus import errors                               |
+| GET    | `/api/graph?pool=<id>`      | nodes plus import errors; without a session — demo tracks only |
 | PUT    | `/api/progress/{node_id}`   | set a card's status (`{status}`: known / review / unknown) |
 | GET    | `/api/progress?pool=<id>`   | the current user's checklist for a track               |
+| POST   | `/api/auth/password`        | change your own password (wrong current one → 403, new one under 8 characters → 422) |
 
 That is the core. The full list (node CRUD on `/api/nodes`, import on `/api/import`, auth on
-`/api/auth/*`, user management on `/api/users`) and the schemas are in the Swagger UI at `/docs`.
+`/api/auth/*`, accounts on `/api/users` — create with a one-time password, reset, delete) and the
+schemas are in the Swagger UI at `/docs`.
 
 ## Tests
 
-Back end — 119 tests: content import, node CRUD, track CRUD with levels, `content/` sync, the
-checklist, auth and RBAC with tenant isolation.
+Back end — 144 tests: content import, node CRUD, track CRUD with levels, `content/` sync with the
+demo flags, the checklist, auth and RBAC with tenant isolation, anonymous demo access, passwords and
+accounts.
 
 ```bash
 cd backend && . .venv/bin/activate && pytest -q
 ```
 
-Front end — a headless smoke test of the real runtime: the track wizard and structure editor, the
-matrix rendering, a card opening the drawer, the checklist (including persistence across a reload),
-filters and search, and the question bank with upload, edit and export. It needs a running server
-on `:8000`:
+Front end — a headless smoke test of the real runtime: the demo without signing in (start screen,
+demo home, the checklist surviving a reload in the browser, the switch to the English translation),
+signing in at `#/login`, the track wizard and structure editor, the matrix rendering, a card opening
+the drawer, the checklist (including persistence across a reload), filters and search, the question
+bank with upload, edit and export, and accounts (People, a viewer signing in read-only and changing the
+password). It needs a running server on `:8000`, best on a fresh database (`INTERVIEW_DB_PATH`
+pointing to a temporary file):
 
 ```bash
 cd frontend && npm run build     # tsc --noEmit + vite build
@@ -186,7 +226,8 @@ npm run smoke
 ```
 
 `frontend/shots.mjs` (the README screenshots) still drives the removed interview mode and is
-currently out of date — see the note under the screenshots.
+currently out of date — see the note under the screenshots. Since the demo mode it also has to sign in
+at `#/login`: `/` is the start screen now.
 
 ## Configuration (env)
 
