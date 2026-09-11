@@ -32,6 +32,7 @@ import { QuestionNode } from "../components/QuestionNode";
 import { ShortcutsHelp } from "../components/ShortcutsHelp";
 import { SubHeadNode } from "../components/SubHeadNode";
 import { readDesign, useTheme } from "../theme";
+import { useFloatingWindow } from "../floating";
 import {
   CARD_H,
   CARD_W,
@@ -315,7 +316,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [cardStart, setCardStart] = useState<number>(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Dropdown toolbar'а: «•••».
+  // Dropdown toolbar'а: «•••» (шпаргалка клавиш и ссылка на банк).
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
@@ -338,11 +339,12 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [guidesV, setGuidesV] = useState<boolean>(() => localStorage.getItem("guidesV") === "1");
   // Таймер в HUD по умолчанию скрыт: тикающие цифры в поле зрения давят.
   const [showTimer, setShowTimer] = useState<boolean>(() => localStorage.getItem("showTimer") === "1");
-  // Оформление доски (итог design-funnel): дефолт — 37 «Брутализм в цвете»,
-  // альтернативы переключаются в ⚙. Применяется атрибутом data-design (design-themes.css).
+  // Оформление доски (итог design-funnel): дефолт — 58 «Изыскания», альтернатива — 37 «Брутализм
+  // в цвете», переключается в ⚙. Применяется атрибутом data-design (design-themes.css).
   const [design, setDesign] = useState<string>(readDesign);
-  // Панель фильтров — popover у правого края канвы, открывается кнопкой toolbar'а; по умолчанию
-  // закрыта (поверх канвы она съедает правую треть доски), выбор запоминается.
+  // Окно фильтров — плавающее над доской, открывается кнопкой toolbar'а; по умолчанию закрыто (поверх
+  // канвы оно съедает правую треть доски), выбор запоминается. Место — у правого края под шапкой,
+  // тащится за шапку (ladder.filtersPos, floating.ts).
   const [filtersOpen, setFiltersOpen] = useState<boolean>(
     () => localStorage.getItem("filtersOpen") === "1",
   );
@@ -393,6 +395,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
 
   const instance = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
 
   // Стартовый viewport: зум 0.5 (карточки читаются), доска — по центру канвы. Если доска шире
   // или выше канвы, прижимаем её к левому/верхнему краю с отступом, чтобы первая карточка была
@@ -404,11 +407,22 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     const zoom = 0.5;
     const bw = (LABEL_W + placement.width) * zoom;
     const bh = placement.height * zoom;
-    // Открытая панель фильтров лежит поверх канвы справа — центрируем в свободной части.
-    const panel = filtersOpen ? el.querySelector<HTMLElement>(".filterpanel") : null;
-    const cw = el.clientWidth - (panel ? panel.offsetWidth + 24 : 0);
+    // Открытое окно фильтров лежит поверх канвы — центрируем в свободной части: левее окна, если оно
+    // в правой половине (место по умолчанию), иначе правее.
+    const panel = filtersOpen ? filtersRef.current : null;
+    let x0 = 0;
+    let cw = el.clientWidth;
+    if (panel) {
+      const c = el.getBoundingClientRect();
+      const f = panel.getBoundingClientRect();
+      if (f.left + f.width / 2 >= c.left + c.width / 2) cw = f.left - c.left - 24;
+      else {
+        x0 = f.right - c.left + 24;
+        cw = c.right - f.right - 24;
+      }
+    }
     const ch = el.clientHeight;
-    const x = (bw < cw - 40 ? (cw - bw) / 2 : 20) + LABEL_W * zoom;
+    const x = x0 + (bw < cw - 40 ? (cw - bw) / 2 : 20) + LABEL_W * zoom;
     const y = bh < ch - 40 ? (ch - bh) / 2 : 20;
     inst.setViewport({ x, y, zoom });
   }, [placement, filtersOpen]);
@@ -512,14 +526,38 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     [graph, pool, placement, bandCounts, statuses, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme],
   );
 
+  // Текущая карточка — в центр канвы (зум 1). Пока открыто окно карточки по центру (besideCard), текущую
+  // ставим сбоку от него, чтобы на доске было видно, где ты: с той стороны, где свободнее, посередине
+  // свободной полосы; по вертикали — по центру канвы. Окно берём по реальному прямоугольнику (его двигают
+  // и тянут). Не влезает ни с одной стороны (карточка + по 8px) — по центру, без сдвига.
   const centerOn = useCallback(
     (id: string, besideCard = false) => {
       const pos = placement?.positions[id];
-      if (!pos || !instance.current) return;
-      // Открытая карточка по центру закрывает середину канвы: текущую ставим левее неё (зазор 32px),
-      // чтобы на доске было видно, где ты. На узком экране (≤820px) карточка почти во всю ширину — без сдвига.
-      const vw = window.innerWidth;
-      const shift = besideCard && vw > 820 ? Math.min(600, vw * 0.46) / 2 + 32 + CARD_W / 2 : 0;
+      const canvas = canvasRef.current;
+      if (!pos || !instance.current || !canvas) return;
+      let shift = 0;
+      if (besideCard) {
+        // Карточка встаёт в самую широкую свободную полосу канвы: препятствия — окно карточки и окно
+        // фильтров, если они пересекают ряд, где окажется карточка (по вертикали она в центре канвы).
+        const c = canvas.getBoundingClientRect();
+        const bandTop = c.top + c.height / 2 - CARD_H / 2;
+        const bandBottom = bandTop + CARD_H;
+        const scope = canvas.parentElement ?? document;
+        let free: [number, number][] = [[0, c.width]];
+        for (const el of scope.querySelectorAll(".drawer--center, .filterpanel")) {
+          const r = el.getBoundingClientRect();
+          if (r.bottom <= bandTop || r.top >= bandBottom) continue;
+          const a = r.left - c.left;
+          const b = r.right - c.left;
+          free = free.flatMap(([x0, x1]): [number, number][] =>
+            b <= x0 || a >= x1
+              ? [[x0, x1]]
+              : ([[x0, Math.max(x0, a)], [Math.min(x1, b), x1]] as [number, number][]).filter(([p0, p1]) => p1 - p0 > 0),
+          );
+        }
+        const best = free.reduce((m, iv) => (iv[1] - iv[0] > m[1] - m[0] ? iv : m), [0, 0] as [number, number]);
+        if (best[1] - best[0] >= CARD_W + 16) shift = c.width / 2 - (best[0] + best[1]) / 2; // зум 1: пиксель = единица доски
+      }
       instance.current.setCenter(pos.x + CARD_W / 2 + shift, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
     },
     [placement],
@@ -746,13 +784,28 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const selectedNode = selectedId ? nodeMap[selectedId] : null;
   // Карточка по центру уже показывает заголовок и кнопки статусов — нижний HUD на это время прячем.
   const centerOpen = cardMode === "center" && selectedNode != null;
+  // Окно фильтров: пока граф не загружен — нет (как раньше внутри канвы); при карточке справа на весь
+  // экран канвы нет — и окна тоже. Не выходит за канву: при панели справа встаёт левее неё.
+  const filtersShown = filtersOpen && rfNodes.length > 0 && !fullscreen;
+  const getCanvas = useCallback(() => canvasRef.current, []);
+  const filtersWin = useFloatingWindow({ storageKey: "ladder.filtersPos", elRef: filtersRef, getArea: getCanvas, active: filtersShown });
+  // Окна карточки и фильтров могут перекрываться (карточка по центру широкая, фильтры у правого края):
+  // сверху то, с которым работали последним. Открыли фильтры или нажали в их окне — сверху фильтры;
+  // открыли карточку или нажали где угодно ещё в области доски (окно карточки, сама доска) — карточка.
+  const [filtersOnTop, setFiltersOnTop] = useState(false);
+  useEffect(() => {
+    if (filtersOpen) setFiltersOnTop(true);
+  }, [filtersOpen]);
+  useEffect(() => {
+    if (selectedId) setFiltersOnTop(false);
+  }, [selectedId]);
 
   const nQuestions = `${graph.length} ${nWord(graph.length, ["вопрос", "вопроса", "вопросов"], ["question", "questions"])}`;
 
   return (
     <div className="app">
       {/* Toolbar (ТЗ 10–14): один ряд — слева «где мы» (назад, направление, число вопросов),
-          справа действия (фильтры, экспорт, язык, •••). */}
+          справа действия (фильтры, тема, ⚙, язык, •••). */}
       <header className="topbar">
         <div className="topbar__row topbar__row--main">
           <div className="topbar__left">
@@ -775,6 +828,17 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               {anyFilterOn && <span className="filtersbtn__dot" title={t("Фильтры активны")} />}
             </button>
             <ThemeToggle />
+            {/* ⚙ — в шапке рядом с темой (решение владельца 2026-09-11); в ••• остались шпаргалка и банк.
+                Повторный клик закрывает панель: SettingsMenu не считает клик по .setbtn «мимо». */}
+            <button
+              className="setbtn iconbtn btn--quiet"
+              onClick={() => setSettingsOpen((v) => !v)}
+              aria-pressed={settingsOpen}
+              aria-label={t("Настройки")}
+              title={t("Настройки")}
+            >
+              <Settings size={16} {...ICON} aria-hidden="true" />
+            </button>
             <LangSwitch />
             <div className="tbdrop tbdrop--more">
               <button
@@ -789,14 +853,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               </button>
               {moreOpen && (
                 <div className="tbmenu moremenu" role="menu">
-                  <button
-                    className="tbmenu__item setbtn"
-                    role="menuitem"
-                    onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}
-                  >
-                    <Settings size={16} {...ICON} aria-hidden="true" />
-                    {t("Настройки")}
-                  </button>
                   <button
                     className="tbmenu__item helpbtn"
                     role="menuitem"
@@ -828,7 +884,10 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
         </div>
       )}
 
-      <div className="main">
+      <div
+        className="main"
+        onPointerDownCapture={(e) => setFiltersOnTop((e.target as Element).closest?.(".filterpanel") != null)}
+      >
         <div className={`canvas ${currentNode ? "canvas--current" : ""}`} ref={canvasRef}>
           {rfNodes.length === 0 ? (
             <div className="loading">{t("Загрузка графа…")}</div>
@@ -870,117 +929,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
                     <button className="boardnote__btn" onClick={() => setUnresolvedOnly(false)}>
                       {t("Показать все")}
                     </button>
-                  </div>
-                </Panel>
-              )}
-
-              {filtersOpen && (
-                <Panel position="top-right">
-                  <div className="filterpanel" role="region" aria-label={t("Фильтры вопросов")}>
-                    <div className="fp__head">
-                      <h2 className="fp__heading">{t("Фильтры")}</h2>
-                      <button
-                        className="fp__close"
-                        onClick={() => setFiltersOpen(false)}
-                        aria-label={t("Закрыть фильтры")}
-                        title={t("Закрыть фильтры")}
-                      >
-                        <X size={16} {...ICON} aria-hidden="true" />
-                      </button>
-                    </div>
-                    <input
-                      className="fp__search"
-                      placeholder={t("Поиск по вопросам…")}
-                      aria-label={t("Поиск по вопросам")}
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                    <div className="fp__group">
-                      <h2 className="fp__title">{t("Блоки")}</h2>
-                      {blockOrder(pool).map((b) => (
-                        <button
-                          key={b}
-                          className={`fp__chip ${activeBlocks[b] ? "" : "fp__chip--off"}`}
-                          style={{
-                            borderColor: blockColor(pool, b),
-                            color: activeBlocks[b] ? "#fff" : blockColor(pool, b),
-                            background: activeBlocks[b] ? blockColor(pool, b) : "transparent",
-                          }}
-                          onClick={() => toggleBlock(b)}
-                          title={`${t("Знаю")} ${blockProgress[b].done}/${blockProgress[b].total}`}
-                        >
-                          {blockLabel(pool, b)} {blockProgress[b].done}/{blockProgress[b].total}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="fp__group">
-                      <h2 className="fp__title">{t("Сложность")}</h2>
-                      {levelOrder(pool).map((d) => (
-                        <button
-                          key={d}
-                          className={`fp__chip ${activeDiffs[d] ? "" : "fp__chip--off"}`}
-                          style={{
-                            borderColor: levelColor(pool, d),
-                            color: activeDiffs[d] ? "#fff" : levelColor(pool, d),
-                            background: activeDiffs[d] ? levelColor(pool, d) : "transparent",
-                          }}
-                          onClick={() => toggleDiff(d)}
-                        >
-                          {levelLabel(pool, d)}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="fp__group">
-                      <h2 className="fp__title">{t("Тип")}</h2>
-                      {KINDS.map((k) => (
-                        <button
-                          key={k}
-                          className={`fp__chip ${activeKinds[k] ? "" : "fp__chip--off"}`}
-                          style={{
-                            borderColor: KIND_COLOR[k],
-                            color: activeKinds[k] ? "#fff" : KIND_COLOR[k],
-                            background: activeKinds[k] ? KIND_COLOR[k] : "transparent",
-                          }}
-                          onClick={() => toggleKind(k)}
-                        >
-                          {t(KIND_LABEL[k])}
-                        </button>
-                      ))}
-                    </div>
-                    {/* Прогресс-фильтр: «только неразобранное» — гасит карточки со статусом «знаю». */}
-                    <div className="fp__group">
-                      <h2 className="fp__title">{t("Прогресс")}</h2>
-                      <button
-                        className={`fp__chip ${unresolvedOnly ? "" : "fp__chip--off"}`}
-                        style={{
-                          borderColor: "#16a34a",
-                          color: unresolvedOnly ? "#fff" : "#16a34a",
-                          background: unresolvedOnly ? "#16a34a" : "transparent",
-                        }}
-                        onClick={() => setUnresolvedOnly((v) => !v)}
-                      >
-                        {t("Только неразобранное")}
-                      </button>
-                    </div>
-                    <div className="fp__group fp__group--tags">
-                      <div className="fp__title">
-                        {t("Теги")}
-                        {anyTagActive && (
-                          <button className="fp__clear" onClick={clearTags}>
-                            {t("сбросить")}
-                          </button>
-                        )}
-                      </div>
-                      {allTags.map((tag) => (
-                        <button
-                          key={tag}
-                          className={`fp__tag ${activeTags[tag] ? "fp__tag--on" : ""}`}
-                          onClick={() => toggleTag(tag)}
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </Panel>
               )}
@@ -1071,8 +1019,131 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
             setFullscreen(false);
           }}
         />
+        {/* Окно фильтров — плавающее над доской (решение владельца 2026-09-11): шапка «Фильтры» + ✕ —
+            ручка перетаскивания, двойной клик — место по умолчанию; тело прокручивается, шапка стоит.
+            С окном карточки перекрываются — сверху то, с которым работали последним (filtersOnTop). */}
+        {filtersShown && (
+          <div
+            ref={filtersRef}
+            className={`filterpanel ${filtersOnTop ? "filterpanel--top" : ""}`}
+            role="region"
+            aria-label={t("Фильтры вопросов")}
+            style={filtersWin.style}
+          >
+            <div
+              className="fp__head"
+              {...filtersWin.handle}
+              title={t("Потяните за шапку, чтобы переместить окно; двойной клик — вернуть на место")}
+            >
+              <h2 className="fp__heading">{t("Фильтры")}</h2>
+              <button
+                className="fp__close"
+                onClick={() => setFiltersOpen(false)}
+                aria-label={t("Закрыть фильтры")}
+                title={t("Закрыть фильтры")}
+              >
+                <X size={16} {...ICON} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="fp__body">
+              <input
+                className="fp__search"
+                placeholder={t("Поиск по вопросам…")}
+                aria-label={t("Поиск по вопросам")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="fp__group">
+                <h2 className="fp__title">{t("Блоки")}</h2>
+                {blockOrder(pool).map((b) => (
+                  <button
+                    key={b}
+                    className={`fp__chip ${activeBlocks[b] ? "" : "fp__chip--off"}`}
+                    style={{
+                      borderColor: blockColor(pool, b),
+                      color: activeBlocks[b] ? "#fff" : blockColor(pool, b),
+                      background: activeBlocks[b] ? blockColor(pool, b) : "transparent",
+                    }}
+                    onClick={() => toggleBlock(b)}
+                    title={`${t("Знаю")} ${blockProgress[b].done}/${blockProgress[b].total}`}
+                  >
+                    {blockLabel(pool, b)} {blockProgress[b].done}/{blockProgress[b].total}
+                  </button>
+                ))}
+              </div>
+              <div className="fp__group">
+                <h2 className="fp__title">{t("Сложность")}</h2>
+                {levelOrder(pool).map((d) => (
+                  <button
+                    key={d}
+                    className={`fp__chip ${activeDiffs[d] ? "" : "fp__chip--off"}`}
+                    style={{
+                      borderColor: levelColor(pool, d),
+                      color: activeDiffs[d] ? "#fff" : levelColor(pool, d),
+                      background: activeDiffs[d] ? levelColor(pool, d) : "transparent",
+                    }}
+                    onClick={() => toggleDiff(d)}
+                  >
+                    {levelLabel(pool, d)}
+                  </button>
+                ))}
+              </div>
+              <div className="fp__group">
+                <h2 className="fp__title">{t("Тип")}</h2>
+                {KINDS.map((k) => (
+                  <button
+                    key={k}
+                    className={`fp__chip ${activeKinds[k] ? "" : "fp__chip--off"}`}
+                    style={{
+                      borderColor: KIND_COLOR[k],
+                      color: activeKinds[k] ? "#fff" : KIND_COLOR[k],
+                      background: activeKinds[k] ? KIND_COLOR[k] : "transparent",
+                    }}
+                    onClick={() => toggleKind(k)}
+                  >
+                    {t(KIND_LABEL[k])}
+                  </button>
+                ))}
+              </div>
+              {/* Прогресс-фильтр: «только неразобранное» — гасит карточки со статусом «знаю». */}
+              <div className="fp__group">
+                <h2 className="fp__title">{t("Прогресс")}</h2>
+                <button
+                  className={`fp__chip ${unresolvedOnly ? "" : "fp__chip--off"}`}
+                  style={{
+                    borderColor: "#16a34a",
+                    color: unresolvedOnly ? "#fff" : "#16a34a",
+                    background: unresolvedOnly ? "#16a34a" : "transparent",
+                  }}
+                  onClick={() => setUnresolvedOnly((v) => !v)}
+                >
+                  {t("Только неразобранное")}
+                </button>
+              </div>
+              <div className="fp__group fp__group--tags">
+                <div className="fp__title">
+                  {t("Теги")}
+                  {anyTagActive && (
+                    <button className="fp__clear" onClick={clearTags}>
+                      {t("сбросить")}
+                    </button>
+                  )}
+                </div>
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    className={`fp__tag ${activeTags[tag] ? "fp__tag--on" : ""}`}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      {/* Панель ⚙ (открывается из •••): fixed-drawer слева; обёртка .settings нужна её проверке «клик мимо». */}
+      {/* Панель ⚙ (кнопка .setbtn в шапке): fixed-drawer слева; обёртка .settings нужна её проверке «клик мимо». */}
       {settingsOpen && (
         <div className="settings">
           <SettingsMenu

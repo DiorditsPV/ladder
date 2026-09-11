@@ -5,7 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 // старый ключ "theme" доска раньше записывала сама из системной настройки, это не выбор человека.
 export type Theme = "light" | "dark";
 const THEME_KEY = "ladder.theme";
-const DESIGNS = ["37", "56", "57", "58"];
+// Оформления доски: 37 «Брутализм в цвете» и 58 «Изыскания» (56/57 убраны 2026-09-11).
+const DESIGNS = ["37", "58"];
+const DESIGN_DEFAULT = "58";
 
 function readTheme(): Theme {
   try {
@@ -15,13 +17,14 @@ function readTheme(): Theme {
   }
 }
 
-/** Оформление доски (design-funnel): выставляется при загрузке, чтобы вид не менялся от захода на доску. */
+/** Оформление доски (design-funnel): выставляется при загрузке, чтобы вид не менялся от захода на доску.
+ *  По умолчанию — «Изыскания»; сохранённое устаревшее 56/57 (или мусор) тоже даёт его. */
 export function readDesign(): string {
   try {
     const v = localStorage.getItem("design");
-    return v && DESIGNS.includes(v) ? v : "37";
+    return v && DESIGNS.includes(v) ? v : DESIGN_DEFAULT;
   } catch {
-    return "37";
+    return DESIGN_DEFAULT;
   }
 }
 
