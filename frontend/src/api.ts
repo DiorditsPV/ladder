@@ -35,6 +35,15 @@ export interface AuthUser {
   tenant_id: string;
 }
 
+// Аккаунт полного режима (страница «Люди», owner): GET /api/users.
+export interface AccountUser {
+  id: string;
+  email: string;
+  role: AuthUser["role"];
+  tenant_id: string;
+  created_at?: string;
+}
+
 // В dev /api проксируется Vite на :8000; в прод тот же origin (раздаёт FastAPI).
 const BASE = "/api";
 
@@ -150,6 +159,32 @@ export const api = {
     fetch(`${BASE}/auth/me`, { credentials: "include" }).then((res) =>
       json<AuthUser>(res, { skipAuthReload: true }),
     ),
+  // Смена своего пароля (любой вошедший). Неверный текущий — 403 (не 401: 401 перезагрузил бы
+  // страницу), короткий новый — 422; остальные сессии пользователя сервер отзывает.
+  changePassword: async (current: string, next: string): Promise<"ok" | "wrong-current" | "too-short"> => {
+    const res = await fetch(`${BASE}/auth/password`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    });
+    if (res.status === 403) return "wrong-current";
+    if (res.status === 422) return "too-short";
+    await json<{ ok: boolean }>(res);
+    return "ok";
+  },
+  // Аккаунты (owner): без password сервер заводит одноразовый и отдаёт его в ответе один раз.
+  users: () => fetch(`${BASE}/users`).then(json<AccountUser[]>),
+  createUser: (email: string) =>
+    fetch(`${BASE}/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    }).then(json<AccountUser & { password: string }>),
+  resetUserPassword: (id: string) =>
+    fetch(`${BASE}/users/${encodeURIComponent(id)}/password`, { method: "POST" }).then(json<{ id: string; password: string }>),
+  deleteUser: (id: string) =>
+    fetch(`${BASE}/users/${encodeURIComponent(id)}`, { method: "DELETE" }).then(json<{ deleted: string }>),
   // Чек-лист разбора (per-user): статус карточки known|review|unknown.
   progress: (pool: string) =>
     fetch(`${BASE}/progress?pool=${encodeURIComponent(pool)}`).then(json<Record<string, Progress>>),

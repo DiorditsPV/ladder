@@ -5,6 +5,7 @@ import BoardPage from "./pages/BoardPage";
 import { BankPage } from "./pages/BankPage";
 import { HomePage } from "./pages/HomePage";
 import { Landing } from "./pages/Landing";
+import { PeoplePage } from "./pages/PeoplePage";
 import { pairOf, poolsForLang } from "./poolLang";
 import { href, useRoute, type Route } from "./router";
 import { useSession } from "./session";
@@ -80,6 +81,9 @@ export default function Router() {
       if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
       return <BankPage key={pool.id} pool={pool} onChanged={reloadPools} />;
     }
+    case "people":
+      // Только owner: остальных redirectFor уже увёл на главную.
+      return <PeoplePage />;
     default:
       return <HomePage pools={homePools} demo={demo} onChanged={reloadPools} />;
   }

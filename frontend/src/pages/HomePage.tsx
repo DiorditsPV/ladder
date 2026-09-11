@@ -1,6 +1,7 @@
 import { ArrowRight, BookOpen, CircleHelp, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { AccountMenu } from "../components/AccountMenu";
 import { LangSwitch } from "../components/LangSwitch";
 import { PoolFormModal } from "../components/PoolFormModal";
 import { nWord, useT } from "../i18n";
@@ -102,6 +103,7 @@ export function HomePage({
       <header className="pageshell">
         <h1 className="pageshell__title">{t("Ladder · разбор тем по ступеням")}</h1>
         <div className="pageshell__actions">
+          {!demo && <AccountMenu />}
           <LangSwitch />
         </div>
       </header>

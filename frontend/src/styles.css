@@ -785,3 +785,25 @@ kbd {
 .landing__note { margin: 0; font-size: 13px; color: var(--text-muted); }
 .landing__login { position: fixed; right: 16px; bottom: 12px; font-size: 12px; color: var(--text-muted); opacity: .55; text-decoration: none; }
 .landing__login:hover { opacity: .9; }
+
+/* Аккаунт полного режима и «Люди». */
+.account { position: relative; }
+.account__btn { font-size: 12px; color: var(--text-muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account__menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 180px; display: flex; flex-direction: column; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
+.account__menu button, .account__menu a { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--text); text-decoration: none; cursor: pointer; }
+.account__menu button:hover, .account__menu a:hover { background: var(--hover); }
+.pwmodal { display: flex; flex-direction: column; gap: 10px; width: 340px; max-width: 100%; }
+.pwmodal input { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.pwmodal__error { color: #dc2626; font-size: 13px; }
+.pwmodal__ok { margin: 8px 0; }
+.settings__account-email { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; overflow-wrap: anywhere; }
+.people__add { display: flex; gap: 8px; margin-bottom: 16px; max-width: 480px; }
+.people__email { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.people__issued { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.people__password { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; padding: 2px 8px; border-radius: 6px; background: var(--hover); }
+.people__table { width: 100%; border-collapse: collapse; }
+.people__table th, .people__table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.people__table th { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+/* Ячейка остаётся table-cell (flex на <td> ломает высоту строки без кнопок — у своей строки). */
+.people__table .people__actions { text-align: right; white-space: nowrap; }
+.people__actions button + button { margin-left: 8px; }
