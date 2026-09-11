@@ -182,10 +182,13 @@ export const EN: Record<string, string> = {
   "Свернуть": "Collapse",
   "На весь экран": "Full screen",
   "💾 Сохранить": "💾 Save",
-  "Показать ответ": "Show answer",
   "Предыдущая карточка": "Previous card",
   "Следующая карточка": "Next card",
   "Потяните, чтобы изменить ширину; двойной клик — ширина по умолчанию": "Drag to change the width; double-click for the default width",
+  // --- окно карточки по центру: перетаскивание за шапку и ручки размера ---
+  "Потяните за шапку, чтобы переместить окно; двойной клик — вернуть в центр": "Drag the header to move the window; double-click to re-center it",
+  "Потяните, чтобы изменить размер; двойной клик — размер по умолчанию": "Drag to resize; double-click for the default size",
+  "Потяните, чтобы изменить ширину; двойной клик — размер по умолчанию": "Drag to change the width; double-click for the default size",
   // --- режим карточки: DetailDrawer (кнопка в шапке) + SettingsMenu (чипы в ⚙) ---
   "Карточка вопроса": "Question card",
   "По центру": "Center",
@@ -224,7 +227,6 @@ export const EN: Record<string, string> = {
   // --- ShortcutsHelp: подписи приходят через t(desc), i18n-check их не видит ---
   "знаю · повторить · не знаю": "known · review · don't know",
   "открыть карточку текущего вопроса": "open the current question's card",
-  "показать ответ в карточке по центру": "show the answer in the centered card",
   "перейти к следующему неразобранному": "go to the next unreviewed question",
   "навигация по сетке вопросов": "navigate the question grid",
   "снять выделение / закрыть эту шпаргалку": "clear selection / close this cheat sheet",

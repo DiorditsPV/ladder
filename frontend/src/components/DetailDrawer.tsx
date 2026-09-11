@@ -1,16 +1,19 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { blockColor, blockLabel, levelLabel, levelOrder, type PoolConfig, type Progress, type QNode } from "../types";
 import type { NodeUpdate } from "../api";
 import { useT } from "../i18n";
+import { EDGE, useFloatingWindow } from "../floating";
 
 // Два режима показа открытой карточки (решение владельца 2026-09-11):
-// - center (по умолчанию) — плавающая карточка по центру доски: ответ скрыт до «Показать ответ» / пробела,
-//   внизу статусы чек-листа и ‹ › по матрице; доска вокруг видна и кликается (затемнения нет);
-// - side — панель справа, как раньше: ответ виден сразу, ширина тянется ручкой на левом краю.
+// - center (по умолчанию) — плавающее окно над доской: вопрос и ответ видны сразу, внизу статусы
+//   чек-листа и ‹ › по матрице. Окно тащится за шапку (ladder.cardPos — смещение от центра), размер
+//   тянется уголком справа внизу и правым краем (ladder.cardSize), двойной клик по шапке / ручке —
+//   центр / размер по умолчанию. Под окном лёгкое притенение доски; доска видна и кликается;
+// - side — панель справа, как раньше: ширина тянется ручкой на левом краю.
 // Корень обоих — `.drawer` (на него ходит smoke) + модификатор `.drawer--center` / `.drawer--side`.
 export type CardMode = "center" | "side";
 
@@ -19,6 +22,40 @@ const WIDTH_KEY = "ladder.drawerWidth";
 const DRAWER_W_DEFAULT = 460;
 const DRAWER_W_MIN = 360;
 const DRAWER_W_MAX = 1100;
+
+// Окно по центру: место (смещение от центра доски) и размер. Ширина по умолчанию — min(760px, 58vw) в CSS;
+// пределы — ширина 420…min(92vw, 1400), высота 280…88vh (и не больше области доски). Высота null — по
+// содержимому (до 72vh), как без ручного размера: правый край меняет только ширину.
+const POS_KEY = "ladder.cardPos";
+const SIZE_KEY = "ladder.cardSize";
+const CARD_W_MIN = 420;
+const CARD_W_MAX = 1400;
+const CARD_H_MIN = 280;
+type CardSize = { w: number; h: number | null };
+
+function readCardSize(): CardSize | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIZE_KEY) ?? "null");
+    if (!v || !Number.isFinite(v.w)) return null;
+    return {
+      w: Math.round(Math.min(Math.max(v.w, CARD_W_MIN), CARD_W_MAX)),
+      h: Number.isFinite(v.h) ? Math.round(Math.max(v.h, CARD_H_MIN)) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveCardSize(size: CardSize | null): void {
+  try {
+    if (size == null) localStorage.removeItem(SIZE_KEY);
+    else localStorage.setItem(SIZE_KEY, JSON.stringify(size.h == null ? { w: size.w } : size));
+  } catch {
+    /* приватный режим */
+  }
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 export function readCardMode(): CardMode {
   try {
@@ -61,15 +98,8 @@ function saveDrawerWidth(w: number | null): void {
   }
 }
 
-// Поле ввода — пробел в нём печатает, а не раскрывает ответ.
-function isEditable(el: EventTarget | null): boolean {
-  const n = el as HTMLElement | null;
-  if (!n || !n.tagName) return false;
-  return n.tagName === "INPUT" || n.tagName === "TEXTAREA" || n.tagName === "SELECT" || n.isContentEditable;
-}
-
-// Клик мышью по кнопке оставляет на ней фокус, и следующий пробел нажал бы её снова (например, › вместо
-// «Показать ответ»). Снимаем фокус только у кликов мышью (detail > 0): с клавиатуры фокус остаётся на месте.
+// Клик мышью по кнопке оставляет на ней фокус, и случайный пробел нажал бы её снова (например, › ещё раз).
+// Снимаем фокус только у кликов мышью (detail > 0): с клавиатуры фокус остаётся на месте.
 function blurAfterMouse(e: ReactMouseEvent<HTMLButtonElement>): void {
   if (e.detail > 0) e.currentTarget.blur();
 }
@@ -107,48 +137,38 @@ export function DetailDrawer({
   const [draft, setDraft] = useState<{ title: string; difficulty: string; question: string; answer: string }>(
     { title: "", difficulty: pool.levels[0]?.id ?? "", question: "", answer: "" },
   );
-  // Ответ раскрыт у карточки с этим id: переход к другой карточке снова прячет ответ — без кадра,
-  // в котором новая карточка успела бы показать свой ответ (как было бы со сбросом в эффекте).
-  const [revealedId, setRevealedId] = useState<string | null>(null);
   const [width, setWidth] = useState(readDrawerWidth);
   const [resizing, setResizing] = useState(false);
+  // Окно по центру: ручной размер (null — по умолчанию) и какую ручку сейчас тянут.
+  const [cardSize, setCardSize] = useState<CardSize | null>(readCardSize);
+  const [sizing, setSizing] = useState<"corner" | "edge" | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
 
   const center = mode === "center";
-  const revealed = !center || (node != null && revealedId === node.id);
+  // Область доски для окна по центру — .main, в котором оно лежит (в режиме center канва занимает его целиком).
+  const getArea = useCallback(() => asideRef.current?.parentElement ?? null, []);
+  const win = useFloatingWindow({ storageKey: POS_KEY, elRef: asideRef, getArea, active: center && node != null });
 
   // Сброс режима правки при переключении на другой вопрос.
   useEffect(() => setEditing(false), [node?.id]);
-  // Справа ответ виден сразу — такую карточку считаем раскрытой: переход «Справа → По центру» не прячет
-  // ответ, который уже читали.
-  useEffect(() => {
-    if (!center && node) setRevealedId(node.id);
-  }, [center, node]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (editing) setEditing(false);
-        else onClose();
-        return;
-      }
-      // Пробел раскрывает ответ карточки по центру — только пока он скрыт и фокус не в поле ввода;
-      // в остальных случаях пробел ведёт себя как обычно (нажимает кнопку в фокусе и т.п.).
-      if (e.key === " " && center && node && !editing && revealedId !== node.id && !isEditable(e.target)) {
-        e.preventDefault();
-        setRevealedId(node.id);
-      }
+      if (e.key !== "Escape") return;
+      if (editing) setEditing(false);
+      else onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, editing, center, node, revealedId]);
+  }, [onClose, editing]);
 
-  // Пока тянем ручку — курсор col-resize и без выделения текста по всей странице.
+  // Пока тянем ручку — курсор ручки и без выделения текста по всей странице.
   useEffect(() => {
-    if (!resizing) return;
-    document.body.classList.add("is-resizing");
-    return () => document.body.classList.remove("is-resizing");
-  }, [resizing]);
+    const cls = resizing || sizing === "edge" ? "is-resizing" : sizing === "corner" ? "is-resizing-corner" : null;
+    if (!cls) return;
+    document.body.classList.add(cls);
+    return () => document.body.classList.remove(cls);
+  }, [resizing, sizing]);
 
   if (!node) return null;
   const color = blockColor(pool, node.block);
@@ -201,6 +221,57 @@ export function DetailDrawer({
   const resetWidth = () => {
     setWidth(DRAWER_W_DEFAULT);
     saveDrawerWidth(null);
+  };
+
+  // Ручки размера окна по центру: уголок — ширина и высота, правый край — только ширина. Левый верхний
+  // угол стоит на месте: окно центрируется по ширине (left/right: 0 + margin auto), и прибавка ширины
+  // сдвигала бы оба края — компенсируем сдвигом на половину прибавки. Правый и нижний края не выходят
+  // за область доски. Пока тянут, окно не поджимается; размер и место запоминаются по отпусканию.
+  const onSizeStart = (edge: "corner" | "edge") => (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = asideRef.current;
+    const areaEl = el?.parentElement;
+    if (e.button !== 0 || !el || !areaEl) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const area = areaEl.getBoundingClientRect();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const off0 = win.current();
+    const maxW = Math.min(window.innerWidth * 0.92, CARD_W_MAX, area.right - EDGE - r.left);
+    const maxH = Math.min(window.innerHeight * 0.88, area.bottom - EDGE - r.top);
+    const keepH = cardSize?.h ?? null;
+    let last: CardSize | null = null;
+    let lastOff = off0;
+    handle.setPointerCapture(e.pointerId);
+    win.hold(true);
+    setSizing(edge);
+    const move = (ev: PointerEvent) => {
+      const w = Math.round(clamp(r.width + ev.clientX - x0, CARD_W_MIN, maxW));
+      const h = edge === "corner" ? Math.round(clamp(r.height + ev.clientY - y0, CARD_H_MIN, maxH)) : keepH;
+      last = { w, h };
+      lastOff = { dx: off0.dx + (w - r.width) / 2, dy: off0.dy };
+      setCardSize(last);
+      win.place(lastOff, false);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      setSizing(null);
+      win.hold(false);
+      if (last) {
+        saveCardSize(last);
+        win.place(lastOff, true);
+      }
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  };
+  const resetSize = () => {
+    setCardSize(null);
+    saveCardSize(null);
   };
 
   const statusButtons = (
@@ -296,7 +367,7 @@ export function DetailDrawer({
     </section>
   );
 
-  // Всё, что прячется под «Показать ответ»: у задач — и стартовый код, и эталон, и критерии.
+  // Ответ виден сразу в обоих режимах: у задач — и стартовый код, и эталон, и критерии.
   const answerBlock = (
     <div className="drawer__answer">
       {node.starterCode && (
@@ -333,76 +404,92 @@ export function DetailDrawer({
   );
 
   if (center) {
+    const sizeStyle = cardSize == null ? {} : cardSize.h == null
+      ? { "--card-w": `${cardSize.w}px` }
+      : { "--card-w": `${cardSize.w}px`, "--card-h": `${cardSize.h}px` };
     return (
-      <aside
-        ref={asideRef}
-        className="drawer drawer--center"
-        role="dialog"
-        aria-label={t("Детали вопроса")}
-        aria-modal="false"
-        tabIndex={-1}
-        style={{ borderTopColor: color }}
-      >
-        <header className="drawer__bar">
-          <span className="drawer__badge" style={{ background: color }}>
-            {blockLabel(pool, node.block)} · {levelLabel(pool, node.difficulty)}
-          </span>
-          <div className="drawer__actions">
-            <button
-              className="drawer__mode"
-              onClick={() => onSetMode("side")}
-              title={t("Показывать карточку в панели справа")}
-            >
-              {t("Справа")}
-            </button>
-            {editButton}
-            {deleteButton}
-            {hideButton}
-            {closeButton}
+      <>
+        {/* Лёгкое притенение доски под окном: доска видна и кликается (pointer-events: none). */}
+        <div className="cardscrim" aria-hidden="true" />
+        <aside
+          ref={asideRef}
+          className={`drawer drawer--center ${cardSize?.h != null ? "drawer--fixed-h" : ""} ${sizing ? "drawer--sizing" : ""}`}
+          role="dialog"
+          aria-label={t("Детали вопроса")}
+          aria-modal="false"
+          tabIndex={-1}
+          style={{ borderTopColor: color, ...sizeStyle, ...win.style } as CSSProperties}
+        >
+          <header
+            className="drawer__bar"
+            {...win.handle}
+            title={t("Потяните за шапку, чтобы переместить окно; двойной клик — вернуть в центр")}
+          >
+            <span className="drawer__badge" style={{ background: color }}>
+              {blockLabel(pool, node.block)} · {levelLabel(pool, node.difficulty)}
+            </span>
+            <div className="drawer__actions">
+              <button
+                className="drawer__mode"
+                onClick={() => onSetMode("side")}
+                title={t("Показывать карточку в панели справа")}
+              >
+                {t("Справа")}
+              </button>
+              {editButton}
+              {deleteButton}
+              {hideButton}
+              {closeButton}
+            </div>
+            {node.title && <h1 className="drawer__title">{node.title}</h1>}
+          </header>
+
+          <div className="drawer__body">
+            {editing ? editForm : (
+              <>
+                {questionSection}
+                {answerBlock}
+              </>
+            )}
           </div>
-          {node.title && <h1 className="drawer__title">{node.title}</h1>}
-        </header>
 
-        <div className="drawer__body">
-          {editing ? editForm : (
-            <>
-              {questionSection}
-              {revealed ? answerBlock : (
-                <button
-                  className="drawer__reveal"
-                  onClick={() => setRevealedId(node.id)}
-                  aria-keyshortcuts="Space"
-                >
-                  {t("Показать ответ")}
-                  <kbd>Space</kbd>
-                </button>
-              )}
-            </>
+          {!editing && (
+            <footer className="drawer__foot">
+              <button
+                className="drawer__prev"
+                onClick={(e) => { blurAfterMouse(e); onPrev(); }}
+                aria-label={t("Предыдущая карточка")}
+                title={t("Предыдущая карточка")}
+              >
+                <ChevronLeft size={18} strokeWidth={2} aria-hidden="true" />
+              </button>
+              {statusButtons}
+              <button
+                className="drawer__next"
+                onClick={(e) => { blurAfterMouse(e); onNext(); }}
+                aria-label={t("Следующая карточка")}
+                title={t("Следующая карточка")}
+              >
+                <ChevronRight size={18} strokeWidth={2} aria-hidden="true" />
+              </button>
+            </footer>
           )}
-        </div>
-
-        {!editing && (
-          <footer className="drawer__foot">
-            <button
-              className="drawer__prev"
-              onClick={(e) => { blurAfterMouse(e); onPrev(); }}
-              aria-label={t("Предыдущая карточка")}
-              title={t("Предыдущая карточка")}
-            >
-              <ChevronLeft size={18} strokeWidth={2} aria-hidden="true" />
-            </button>
-            {statusButtons}
-            <button
-              className="drawer__next"
-              onClick={(e) => { blurAfterMouse(e); onNext(); }}
-              aria-label={t("Следующая карточка")}
-              title={t("Следующая карточка")}
-            >
-              <ChevronRight size={18} strokeWidth={2} aria-hidden="true" />
-            </button>
-          </footer>
-        )}
-      </aside>
+          <div
+            className="drawer__edge"
+            onPointerDown={onSizeStart("edge")}
+            onDoubleClick={resetSize}
+            title={t("Потяните, чтобы изменить ширину; двойной клик — размер по умолчанию")}
+            aria-hidden="true"
+          />
+          <div
+            className="drawer__grip"
+            onPointerDown={onSizeStart("corner")}
+            onDoubleClick={resetSize}
+            title={t("Потяните, чтобы изменить размер; двойной клик — размер по умолчанию")}
+            aria-hidden="true"
+          />
+        </aside>
+      </>
     );
   }
 

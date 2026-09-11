@@ -16,6 +16,8 @@
   --shadow: rgba(0, 0, 0, 0.08);
   --shadow-strong: rgba(0, 0, 0, 0.18);
   --accent: #2563eb;
+  /* Притенение доски под окном карточки по центру: лёгкое — доска читается сквозь него. */
+  --scrim: rgba(15, 23, 42, 0.1);
 }
 [data-theme="dark"] {
   /* Лестница высот (Atlassian elevation): тени в тёмной не читаются, высоту кодирует
@@ -38,6 +40,7 @@
   --shadow: rgba(0, 0, 0, 0.45);
   --shadow-strong: rgba(0, 0, 0, 0.6);
   --accent: #60a5fa;
+  --scrim: rgba(0, 0, 0, 0.28);
 }
 
 * { box-sizing: border-box; }
@@ -268,33 +271,54 @@ button:disabled:hover { background: var(--surface); }
 }
 .drawer__resize:hover::after, .drawer--resizing .drawer__resize::after { background: var(--accent); }
 body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+body.is-resizing-corner, body.is-resizing-corner * { cursor: nwse-resize !important; user-select: none !important; }
+body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none !important; }
 
-/* center — плавающая карточка по центру области доски; доска вокруг видна и кликается (затемнения нет).
-   Ширина min(600px, 46vw) — всегда уже половины экрана; на узком окне ряд статусов переносится, на
-   телефоне (≤ 820px, см. @media ниже) карточка почти во всю ширину — там 46vw уже не читается.
-   Верх — там, где стояла бы по центру карточка максимальной высоты: короткая не прыгает, ответ раскрывается
-   вниз. z-index выше канвы (React Flow — 0/5) и ниже ⚙ (45) и модалок (50). Цвет верхней рамки — цвет
-   колонки (inline); жёсткая тень оформления 37 и тёмной темы — в design-themes.css. */
+/* center — плавающее окно карточки над доской (DetailDrawer.tsx, floating.ts). Место по умолчанию — по
+   центру области доски; верх — там, где стоял бы по центру ответ максимальной высоты (72vh): короткая
+   карточка не прыгает при листании. Пользовательский сдвиг — transform (ladder.cardPos), размер —
+   --card-w / --card-h (ladder.cardSize; без них — ширина min(760px, 58vw), высота по содержимому).
+   Потолок — min(92vw, 1400px) и область доски; на телефоне (≤ 820px, см. @media ниже) окно почти во всю
+   ширину. Под окном лёгкий скрим (.cardscrim), доска видна и кликается. z-index: скрим 18 < окно 20, оба
+   выше канвы (React Flow — 0/5) и ниже ⚙ (45) и модалок (50). Цвет верхней рамки — цвет колонки (inline);
+   жёсткая тень оформления 37 и тёмной темы — в design-themes.css. */
 .drawer--center {
   position: absolute; z-index: 20; left: 0; right: 0; margin-inline: auto;
   top: max(16px, calc((100% - 72vh) / 2));
-  width: min(600px, 46vw); max-height: min(72vh, calc(100% - 32px));
+  width: var(--card-w, min(760px, 58vw)); max-width: min(92vw, 1400px, calc(100% - 24px));
+  height: var(--card-h, auto); max-height: min(72vh, calc(100% - 32px));
   border: 1px solid var(--border-strong); border-top: 4px solid var(--accent); border-radius: 12px;
-  box-shadow: 0 24px 56px -12px var(--shadow-strong), 0 4px 14px var(--shadow);
+  box-shadow: 0 28px 64px -8px var(--shadow-strong), 0 10px 24px -4px var(--shadow-strong), 0 1px 3px var(--shadow);
   overflow: hidden;
 }
-.drawer--center .drawer__bar { border-top: 0; padding: 12px 14px 12px 18px; row-gap: 6px; }
+/* Ручная высота (уголок): до 88vh, но не больше области доски. */
+.drawer--center.drawer--fixed-h { max-height: min(88vh, calc(100% - 24px)); }
+.cardscrim {
+  position: absolute; inset: 0; z-index: 18; background: var(--scrim); pointer-events: none;
+  animation: scrim-in .16s ease-out;
+}
+@keyframes scrim-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cardscrim { animation: none; } }
+/* Шапка — ручка перетаскивания (кроме кнопок в ней); текст шапки не выделяется, чтобы тянуть и двойной
+   клик не цепляли выделение. */
+.drawer--center .drawer__bar {
+  border-top: 0; padding: 12px 14px 12px 18px; row-gap: 6px;
+  cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none;
+}
+/* Ручки размера: уголок справа внизу (ширина + высота) и полоса по правому краю (ширина). */
+.drawer__grip {
+  position: absolute; right: 2px; bottom: 2px; z-index: 2; width: 16px; height: 16px;
+  cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 0 52%, var(--border-strong) 52% 58%, transparent 58% 70%,
+    var(--border-strong) 70% 76%, transparent 76% 88%, var(--border-strong) 88% 94%, transparent 94%);
+  opacity: .8;
+}
+.drawer__grip:hover, .drawer--sizing .drawer__grip { opacity: 1; }
+.drawer__edge { position: absolute; top: 0; right: 0; bottom: 16px; z-index: 2; width: 6px; cursor: ew-resize; touch-action: none; }
+.drawer__edge:hover, .drawer--sizing .drawer__edge { box-shadow: inset -2px 0 0 var(--accent); }
 .drawer--center .drawer__title { flex: 1 0 100%; margin: 2px 0 0; font-size: 19px; line-height: 1.3; }
 .drawer--center .drawer__body { flex: 1 1 auto; padding: 16px 20px 20px; }
 .drawer--center .drawer__answer { margin-top: 18px; padding-top: 2px; border-top: 1px dashed var(--border); }
-/* «Показать ответ» стоит на месте скрытого ответа: пунктирная плашка во всю ширину. */
-.drawer__reveal {
-  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; margin-top: 18px;
-  padding: 14px 16px; border: 1.5px dashed var(--border-strong); border-radius: 10px;
-  background: transparent; color: var(--text); font-size: 14px; font-weight: 600;
-}
-.drawer__reveal:hover { background: var(--hover); border-style: solid; }
-.drawer__reveal kbd { font-weight: 500; }
 /* Низ карточки: ‹ · статусы чек-листа · ›. Статусы делят ширину поровну, узко — переносятся. */
 .drawer__foot {
   display: flex; align-items: center; gap: 8px; padding: 10px 12px;
@@ -392,6 +416,12 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
   backdrop-filter: blur(4px);
 }
 .fp__head { display: flex; align-items: center; justify-content: space-between; }
+.fp__head {
+  display: flex; align-items: center; justify-content: space-between; flex: none;
+  padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border);
+  cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.fp__body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; overflow-y: auto; }
 .fp__heading { margin: 0; font-size: 13px; font-weight: 700; color: var(--heading); }
 .fp__close { display: inline-flex; padding: 3px 5px; border-color: transparent; background: transparent; color: var(--text-muted); }
 .fp__close:hover { background: var(--hover); color: var(--text); }
@@ -626,6 +656,7 @@ kbd {
 }
 @media (max-width: 820px) {
   .drawer--center { width: calc(100% - 24px); }
+  .drawer__grip, .drawer__edge { display: none; } /* окно и так во всю ширину — тянуть некуда */
 }
 
 /* ---- главное меню ---- */

@@ -512,14 +512,27 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
     [graph, pool, placement, bandCounts, statuses, currentId, selectedId, activeBlocks, activeDiffs, activeTags, activeKinds, query, unresolvedOnly, hiddenIds, showHidden, guidesH, guidesV, theme],
   );
 
+  // Текущая карточка — в центр канвы (зум 1). Пока открыто окно карточки по центру (besideCard), текущую
+  // ставим сбоку от него, чтобы на доске было видно, где ты: с той стороны, где свободнее, посередине
+  // свободной полосы; по вертикали — по центру канвы. Окно берём по реальному прямоугольнику (его двигают
+  // и тянут). Не влезает ни с одной стороны (карточка + по 8px) — по центру, без сдвига.
   const centerOn = useCallback(
     (id: string, besideCard = false) => {
       const pos = placement?.positions[id];
-      if (!pos || !instance.current) return;
-      // Открытая карточка по центру закрывает середину канвы: текущую ставим левее неё (зазор 32px),
-      // чтобы на доске было видно, где ты. На узком экране (≤820px) карточка почти во всю ширину — без сдвига.
-      const vw = window.innerWidth;
-      const shift = besideCard && vw > 820 ? Math.min(600, vw * 0.46) / 2 + 32 + CARD_W / 2 : 0;
+      const canvas = canvasRef.current;
+      if (!pos || !instance.current || !canvas) return;
+      let shift = 0;
+      const win = besideCard ? canvas.parentElement?.querySelector(".drawer--center") : null;
+      if (win) {
+        const c = canvas.getBoundingClientRect();
+        const w = win.getBoundingClientRect();
+        const left = Math.max(0, w.left - c.left);
+        const right = Math.max(0, c.right - w.right);
+        if (Math.max(left, right) >= CARD_W + 16) {
+          const target = left >= right ? left / 2 : c.width - right / 2; // центр свободной полосы, от левого края канвы
+          shift = c.width / 2 - target; // зум 1: пиксель экрана = единица доски
+        }
+      }
       instance.current.setCenter(pos.x + CARD_W / 2 + shift, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
     },
     [placement],
