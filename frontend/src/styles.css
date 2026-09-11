@@ -184,7 +184,8 @@ button:disabled:hover { background: var(--surface); }
 
 /* ---- layout ---- */
 .main { flex: 1; display: flex; min-height: 0; position: relative; }
-.canvas { flex: 1; min-width: 0; }
+/* container — ширина канвы для @container ниже: она сужается панелью карточки справа (её ширину тянут). */
+.canvas { flex: 1; min-width: 0; container: canvas / inline-size; }
 .loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); }
 
 /* ---- custom node ---- */
@@ -427,13 +428,33 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .react-flow__panel.bottom.center {
   left: 0; right: 0; transform: none;
   display: flex; justify-content: center; pointer-events: none;
+  container: hudbar / inline-size; /* ширина полосы HUD — для @container ниже */
 }
 .react-flow__panel.bottom.center > * { pointer-events: auto; }
 
+/* max-width — в пределах канвы, с полями под кнопки зума слева (симметрично справа). */
 .hud {
   display: flex; align-items: center; gap: 12px; background: var(--panel-bg);
   border: 1px solid var(--border); border-radius: 12px; padding: 8px 14px;
-  box-shadow: 0 4px 16px var(--shadow); max-width: 80vw; backdrop-filter: blur(4px);
+  box-shadow: 0 4px 16px var(--shadow); max-width: min(80vw, calc(100% - 100px)); backdrop-filter: blur(4px);
+}
+/* Узкая канва (панель справа, особенно растянутая): HUD не вылезает за края — сначала уходит
+   строка прогресса, на совсем узкой заголовок встаёт отдельной строкой над кнопками. */
+@container hudbar (max-width: 920px) {
+  .hud__progress { display: none; }
+}
+@container hudbar (max-width: 660px) {
+  .hud { flex-wrap: wrap; justify-content: center; row-gap: 6px; }
+  .hud__title { order: -1; flex: 1 1 100%; text-align: center; }
+}
+/* На канве уже ~1400px HUD доходит до мини-карты — пока есть текущая карточка, мини-карта стоит над
+   HUD. Класс — по текущей, а не по видимости HUD: карточка по центру прячет HUD, и мини-карта прыгала бы
+   на каждом открытии/закрытии. */
+@container canvas (max-width: 1400px) {
+  .canvas--current .react-flow__minimap { margin-bottom: 78px; }
+}
+@container canvas (max-width: 690px) { /* HUD в две строки (см. hudbar ≤ 660px) — выше на строку */
+  .canvas--current .react-flow__minimap { margin-bottom: 110px; }
 }
 .hud__diff {
   font-size: 10px; text-transform: uppercase; padding: 2px 8px; border-radius: 999px;

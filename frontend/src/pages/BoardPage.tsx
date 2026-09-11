@@ -826,7 +826,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
       )}
 
       <div className="main">
-        <div className="canvas" ref={canvasRef}>
+        <div className={`canvas ${currentNode ? "canvas--current" : ""}`} ref={canvasRef}>
           {rfNodes.length === 0 ? (
             <div className="loading">{t("Загрузка графа…")}</div>
           ) : (
