@@ -26,6 +26,7 @@ from .auth import (
     COOKIE_NAME,
     current_user,
     hash_password,
+    optional_user,
     require_member,
     require_owner,
     verify_password,
@@ -125,11 +126,16 @@ class LoginIn(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Создание пользователя owner'ом: email + пароль + роль."""
+    """Аккаунт от owner'а: без password сервер генерирует одноразовый и отдаёт его один раз."""
 
     email: str = Field(min_length=3)
-    password: str = Field(min_length=6)
-    role: str = Field(default="member", pattern="^(owner|member|viewer)$")
+    password: Optional[str] = Field(default=None, min_length=6)
+    role: str = Field(default="viewer", pattern="^(owner|member|viewer)$")
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
 
 
 class ImportFile(BaseModel):
@@ -221,7 +227,22 @@ def auth_me(request: Request, user: dict = Depends(current_user)) -> dict:
     return _public_user(user)
 
 
+@app.post("/api/auth/password")
+def change_password(body: PasswordChange, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Сменить свой пароль. Неверный текущий — 403 (не 401: фронт на 401 перезагружает страницу).
+    Остальные сессии пользователя отзываются, текущая остаётся."""
+    if not verify_password(body.current_password, user["password_hash"]):
+        raise HTTPException(status_code=403, detail="wrong current password")
+    db.update_password(user["tenant_id"], user["id"], hash_password(body.new_password))
+    db.delete_user_sessions(user["tenant_id"], user["id"], except_token=request.cookies.get(COOKIE_NAME))
+    return {"ok": True}
+
+
 # ---------- users (управление пользователями — owner) ----------
+def _one_time_password() -> str:
+    return secrets.token_urlsafe(9)  # 12 символов; показывается владельцу один раз
+
+
 @app.get("/api/users")
 def list_users(request: Request, _owner: dict = Depends(require_owner)) -> list:
     return db.list_users(resolve_tenant(request))
@@ -229,17 +250,49 @@ def list_users(request: Request, _owner: dict = Depends(require_owner)) -> list:
 
 @app.post("/api/users")
 def create_user(body: UserCreate, request: Request, _owner: dict = Depends(require_owner)) -> dict:
-    """Завести пользователя в тенанте owner'а. 409 при дубликате email."""
+    """Завести пользователя в тенанте owner'а (роль по умолчанию viewer). 409 при дубликате email.
+
+    Без password сервер генерирует одноразовый пароль и отдаёт его в ответе один раз (поле password).
+    """
     import sqlite3
 
     tenant = resolve_tenant(request)
-    if db.get_user_by_email(tenant, body.email) is not None:
+    email = body.email.strip()
+    if db.get_user_by_email(tenant, email) is not None:
         raise HTTPException(status_code=409, detail="email already exists")
+    password = body.password or _one_time_password()
     try:
-        user = db.create_user(tenant, body.email, hash_password(body.password), body.role)
+        user = db.create_user(tenant, email, hash_password(password), body.role)
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="email already exists")
-    return _public_user(user)
+    out = _public_user(user)
+    if body.password is None:
+        out["password"] = password
+    return out
+
+
+@app.post("/api/users/{user_id}/password")
+def reset_user_password(user_id: str, request: Request, owner: dict = Depends(require_owner)) -> dict:
+    """Новый одноразовый пароль пользователю; его сессии отзываются. Свой — через /api/auth/password."""
+    tenant = resolve_tenant(request)
+    if user_id == owner["id"]:
+        raise HTTPException(status_code=400, detail="use /api/auth/password for your own account")
+    if db.get_user_by_id(tenant, user_id) is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    password = _one_time_password()
+    db.update_password(tenant, user_id, hash_password(password))
+    db.delete_user_sessions(tenant, user_id)
+    return {"id": user_id, "password": password}
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: str, request: Request, owner: dict = Depends(require_owner)) -> dict:
+    """Удалить аккаунт с его сессиями и чек-листом. Себя удалить нельзя (400)."""
+    if user_id == owner["id"]:
+        raise HTTPException(status_code=400, detail="cannot delete yourself")
+    if not db.delete_user(resolve_tenant(request), user_id):
+        raise HTTPException(status_code=404, detail="user not found")
+    return {"deleted": user_id}
 
 
 # ---------- graph & content ----------
@@ -262,14 +315,13 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
     return pools[pid]
 
 
-def _pool_out(request: Request, p: PoolCfg, user: dict) -> dict:
-    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа юзера."""
+def _pool_out(request: Request, p: PoolCfg, user: Optional[dict]) -> dict:
+    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа (только у вошедшего)."""
     tenant = resolve_tenant(request)
-    return {
-        **p.to_dict(),
-        "counts": {"nodes": db.count_nodes(tenant, pool=p.id)},
-        "progress": db.progress_summary(tenant, user["id"], p.id),
-    }
+    out = {**p.to_dict(), "counts": {"nodes": db.count_nodes(tenant, pool=p.id)}}
+    if user is not None:
+        out["progress"] = db.progress_summary(tenant, user["id"], p.id)
+    return out
 
 
 def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> List[Node]:
@@ -286,8 +338,11 @@ def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> 
 
 
 @app.get("/api/pools")
-def get_pools(request: Request, _user: dict = Depends(current_user)) -> list:
-    return [_pool_out(request, p, _user) for p in _pools(request).values()]
+def get_pools(request: Request, user: Optional[dict] = Depends(optional_user)) -> list:
+    pools = _pools(request).values()
+    if user is None:  # демо: тенант default, только направления с demo=true
+        return [_pool_out(request, p, None) for p in pools if p.demo]
+    return [_pool_out(request, p, user) for p in pools]
 
 
 @app.post("/api/pools")
@@ -395,9 +450,15 @@ def get_graph(
     request: Request,
     pool: Optional[str] = None,
     include_hidden: bool = False,
-    _user: dict = Depends(current_user),
+    user: Optional[dict] = Depends(optional_user),
 ) -> GraphResponse:
     # Вопросы читаются из БД (а не с диска) — рантайм-правки переживают деплой.
+    if user is None:
+        # Демо: без сессии — только направление с demo=true, без скрытых карточек; иначе (и без ?pool) 401.
+        demo_pool = _pools(request).get(pool or "")
+        if demo_pool is None or not demo_pool.demo:
+            raise HTTPException(status_code=401, detail="not authenticated")
+        return GraphResponse(nodes=_db_nodes(request, demo_pool), errors=[])
     return GraphResponse(
         nodes=_db_nodes(request, _pool_or_404(request, pool), include_hidden=include_hidden), errors=[]
     )
@@ -544,8 +605,8 @@ def get_progress(request: Request, pool: Optional[str] = None, user: dict = Depe
 
 
 @app.put("/api/progress/{node_id}")
-def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(require_member)) -> dict:
-    """Статус карточки для текущего пользователя. Гость (по ссылке) статусы не ставит — 403 из require_member."""
+def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Статус карточки для текущего пользователя — любая роль (чек-лист личный)."""
     tenant = resolve_tenant(request)
     if db.get_node(tenant, node_id) is None:
         raise HTTPException(status_code=404, detail=f"node '{node_id}' not found")
@@ -553,7 +614,7 @@ def set_progress(node_id: str, body: ProgressIn, request: Request, user: dict = 
 
 
 @app.delete("/api/progress/{node_id}")
-def clear_progress(node_id: str, request: Request, user: dict = Depends(require_member)) -> dict:
+def clear_progress(node_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
     return {"cleared": db.clear_progress(resolve_tenant(request), user["id"], node_id)}
 
 
