@@ -315,7 +315,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   const [cardStart, setCardStart] = useState<number>(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Dropdown toolbar'а: «•••».
+  // Dropdown toolbar'а: «•••» (шпаргалка клавиш и ссылка на банк).
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeBlocks, setActiveBlocks] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(blockOrder(pool).map((b) => [b, true])),
@@ -752,7 +752,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
   return (
     <div className="app">
       {/* Toolbar (ТЗ 10–14): один ряд — слева «где мы» (назад, направление, число вопросов),
-          справа действия (фильтры, экспорт, язык, •••). */}
+          справа действия (фильтры, тема, ⚙, язык, •••). */}
       <header className="topbar">
         <div className="topbar__row topbar__row--main">
           <div className="topbar__left">
@@ -775,6 +775,17 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               {anyFilterOn && <span className="filtersbtn__dot" title={t("Фильтры активны")} />}
             </button>
             <ThemeToggle />
+            {/* ⚙ — в шапке рядом с темой (решение владельца 2026-09-11); в ••• остались шпаргалка и банк.
+                Повторный клик закрывает панель: SettingsMenu не считает клик по .setbtn «мимо». */}
+            <button
+              className="setbtn iconbtn btn--quiet"
+              onClick={() => setSettingsOpen((v) => !v)}
+              aria-pressed={settingsOpen}
+              aria-label={t("Настройки")}
+              title={t("Настройки")}
+            >
+              <Settings size={16} {...ICON} aria-hidden="true" />
+            </button>
             <LangSwitch />
             <div className="tbdrop tbdrop--more">
               <button
@@ -789,14 +800,6 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
               </button>
               {moreOpen && (
                 <div className="tbmenu moremenu" role="menu">
-                  <button
-                    className="tbmenu__item setbtn"
-                    role="menuitem"
-                    onClick={() => { setMoreOpen(false); setSettingsOpen(true); }}
-                  >
-                    <Settings size={16} {...ICON} aria-hidden="true" />
-                    {t("Настройки")}
-                  </button>
                   <button
                     className="tbmenu__item helpbtn"
                     role="menuitem"
@@ -1072,7 +1075,7 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
           }}
         />
       </div>
-      {/* Панель ⚙ (открывается из •••): fixed-drawer слева; обёртка .settings нужна её проверке «клик мимо». */}
+      {/* Панель ⚙ (кнопка .setbtn в шапке): fixed-drawer слева; обёртка .settings нужна её проверке «клик мимо». */}
       {settingsOpen && (
         <div className="settings">
           <SettingsMenu

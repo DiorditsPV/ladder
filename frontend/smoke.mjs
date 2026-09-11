@@ -17,16 +17,13 @@ page.on("console", (m) => m.type() === "error" && errors.push(`${m.text()} @ ${m
 page.on("pageerror", (e) => errors.push(String(e)));
 const unexpectedErrors = () => errors.filter((e) => !(e.includes("status of 401") && e.includes("/api/auth/me")));
 
-// topbar-settings: тумблеры отображения — в боковой панели (.setdrawer) под ⚙, а ⚙ (.setbtn) —
-// пункт меню «•••» toolbar'а (board-toolbar). Каждое переключение = ••• → Настройки → чип → Esc.
-// Пункт меню закрывает «•••» сам; Esc закрывает панель (перехватывается в capture-фазе внутри
-// SettingsMenu), поэтому дожидаемся её исчезновения перед следующим шагом.
+// topbar-settings: тумблеры отображения — в боковой панели (.setdrawer) под ⚙; кнопка ⚙ (.setbtn) — в шапке
+// доски рядом с темой (решение владельца 2026-09-11). Каждое переключение = ⚙ → чип → Esc.
+// Esc закрывает панель (перехватывается в capture-фазе внутри SettingsMenu), поэтому дожидаемся её
+// исчезновения перед следующим шагом.
 async function openSettings() {
-  await page.locator(".morebtn").click();
-  await page.waitForSelector(".moremenu", { timeout: 3000 });
-  await page.locator(".moremenu .setbtn").click();
+  await page.locator(".topbar .setbtn").click();
   await page.waitForSelector(".setdrawer", { timeout: 3000 });
-  await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
 }
 async function toggleSetting(label) {
   await openSettings();
@@ -362,13 +359,14 @@ const afterNext = await page.locator(".hud__title").innerText();
 if (afterNext === beforeNext) fail("«n» stuck on the current card");
 console.log("OK: «n» advances to the next unreviewed card");
 
-// 6b. Настройки отображения (topbar-settings): панель под ⚙ (пункт «•••») открывается и содержит
-// тумблеры направляющих, точек-фона, скрытых и таймера.
+// 6b. Настройки отображения (topbar-settings): панель под ⚙ (кнопка в шапке) открывается и содержит
+// тумблеры направляющих, точек-фона, скрытых и таймера; повторный клик по ⚙ её закрывает.
 await openSettings();
 const tbBtns = await page.locator(".setdrawer .tb__toggle").count();
 if (tbBtns < 6) fail(`display toggles missing in settings drawer (got ${tbBtns})`);
-await page.keyboard.press("Escape");
-await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+await page.locator(".topbar .setbtn").click();
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 })
+  .catch(() => fail("second click on ⚙ must close the settings drawer"));
 const vBefore = await page.locator(".guides__v").count();
 if (vBefore !== 0) fail(`vertical guides should be off by default (got ${vBefore})`);
 await toggleSetting("Верт"); // включить вертикальные
@@ -514,26 +512,26 @@ await page.keyboard.press("Escape");
 await page.waitForSelector(".help-modal", { state: "detached", timeout: 3000 });
 console.log("OK: shortcuts help overlay (? opens, Esc closes)");
 
-// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, тема, RU/EN, •••;
-//     прогресса нет; ⚙ — пункт меню •••; экспорта и кнопок банка в шапке нет.
+// 17. board-toolbar: шапка — один ряд: «← Направления», название, фильтры, тема, ⚙, RU/EN, •••;
+//     прогресса нет; ⚙ — кнопка в шапке, в ••• только шпаргалка и банк; экспорта и кнопок банка в шапке нет.
 const topRows = await page.locator(".topbar > .topbar__row").count();
 if (topRows !== 1) fail(`expected exactly 1 topbar row, got ${topRows}`);
 if ((await page.locator(".topbar .topbar__back").count()) !== 1) fail("back-to-menu link missing");
 if (!(await page.locator(".topbar .appname").innerText()).includes("Дата-инженер")) fail("pool label missing in topbar");
-for (const sel of [".filtersbtn", ".themebtn", ".langswitch", ".morebtn"]) {
+for (const sel of [".filtersbtn", ".themebtn", ".setbtn", ".langswitch", ".morebtn"]) {
   if ((await page.locator(`.topbar ${sel}`).count()) !== 1) fail(`toolbar element ${sel} missing`);
 }
 if ((await page.locator(".topbar .progress").count()) !== 0) fail("progress bar must not be in the toolbar");
-if ((await page.locator(".topbar .setbtn").count()) !== 0) fail("settings must live inside the ••• menu, not in the toolbar");
 if ((await page.locator(".topbar .addbtn, .topbar .bankbtn, .topbar .exportbtn").count()) !== 0) fail("export/bank buttons must not be in the topbar");
 await page.locator(".topbar .morebtn").click();
 await page.waitForSelector(".moremenu", { timeout: 3000 });
-if ((await page.locator(".moremenu .setbtn").count()) !== 1) fail("settings item missing in ••• menu");
+if ((await page.locator(".moremenu .setbtn").count()) !== 0) fail("settings must not be in the ••• menu (⚙ lives in the toolbar)");
+if ((await page.locator(".moremenu .tbmenu__item").count()) !== 2) fail("••• menu must hold only the cheat sheet and the bank link");
 if ((await page.locator(".moremenu .helpbtn").count()) !== 1) fail("shortcuts item missing in ••• menu");
 if (!(await page.locator(".moremenu .bankLink").getAttribute("href"))?.startsWith("#/bank/data-engineer")) fail("••• menu must link to the question bank");
 await page.keyboard.press("Escape");
 await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
-console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/•••)`);
+console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/⚙/•••; ••• = cheat sheet + bank)`);
 
 // 22. Карточка вопроса — два режима (решение владельца 2026-09-11). По умолчанию — по центру доски:
 //     уже половины экрана, доска вокруг видна и кликается (клик по другой карточке переключает её),

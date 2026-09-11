@@ -95,6 +95,9 @@ body {
 }
 .boardnote__btn:hover { background: var(--accent); color: #fff; }
 
+/* ⚙ в шапке доски — тихая иконка рядом с темой; пока панель настроек открыта — нажата. */
+.setbtn[aria-pressed="true"] { background: var(--hover); color: var(--text); border-color: var(--border); }
+
 /* Точка на «Фильтры»: панель закрыта, а доска отфильтрована — факт не должен прятаться. */
 .filtersbtn__dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
 
