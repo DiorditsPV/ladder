@@ -527,6 +527,8 @@ kbd {
 .btn--primary { background: #2563eb; color: #fff; border-color: #2563eb; }
 .btn--primary:hover { background: #1d4ed8; }
 .btn--primary:disabled { opacity: .5; }
+/* button:disabled:hover (0,2,1) красит фон в --surface, а текст primary белый — надпись пропадала. */
+.btn--primary:disabled:hover { background: #2563eb; }
 
 .modal {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 50;

@@ -126,7 +126,8 @@ export function HomePage({
         )}
         <div className="home__pools">
           {pools.map((p) => {
-            const { Icon, tint } = poolIcon(p.id);
+            // Перевод — то же направление: иконка и оттенок оригинала, чтобы RU/EN узнавались одинаково.
+            const { Icon, tint } = poolIcon(p.translation_of || p.id);
             // Чек-лист: у вошедшего — сводка сервера, в демо — отметки из localStorage этого браузера.
             const progress = demo ? localSummary(p.id, p.counts?.nodes ?? 0) : p.progress;
             return (
