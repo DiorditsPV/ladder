@@ -15,16 +15,23 @@ import type { PoolConfig } from "./types";
 // Раздаёт страницы по маршруту; режим — из сессии (spec 2026-09-11): без входа — стартовый экран
 // и демо (только демо-направления), после входа — полный режим. Список пулов грузится на вход и
 // перезагружается при смене пользователя: он нужен и меню, и доске (таксономия колонок), и банку.
-// Неизвестный (или недоступный режиму) пул в адресе → меню с пометкой.
+// Неизвестный пул в адресе: у вошедшего → меню с пометкой; в демо → демо-главная (см. redirectFor).
 
-// Куда увести с маршрута, недоступного режиму (null — остаться).
-function redirectFor(route: Route, user: AuthUser | null): string | null {
+// Куда увести с маршрута, недоступного режиму (null — остаться). pools — список текущего режима
+// (null, пока грузится): в демо это только демо-направления.
+function redirectFor(route: Route, user: AuthUser | null, pools: PoolConfig[] | null): string | null {
   if (user) {
     if (route.name === "login" || route.name === "demo") return href.home;
     if (route.name === "people" && user.role !== "owner") return href.home;
     return null;
   }
-  return route.name === "people" ? href.home : null;
+  if (route.name === "people") return href.home;
+  // Демо: направления нет в анонимном списке (закрыто входом или не существует) → демо-главная
+  // без плашки «Направления нет» — оно может и существовать, просто за входом (spec 2026-09-11).
+  if ((route.name === "board" || route.name === "bank") && pools && !pools.some((p) => p.id === route.pool)) {
+    return href.demo;
+  }
+  return null;
 }
 
 export default function Router() {
@@ -41,7 +48,7 @@ export default function Router() {
     void reloadPools();
   }, [reloadPools, user?.id]);
 
-  const redirect = redirectFor(route, user);
+  const redirect = redirectFor(route, user, pools);
   useEffect(() => {
     if (redirect) window.location.replace(redirect);
   }, [redirect]);
@@ -70,6 +77,7 @@ export default function Router() {
   const homePools = poolsForLang(pools, lang);
   const poolOf = (id: string) => pools.find((p) => p.id === id) ?? null;
   switch (route.name) {
+    // Пула нет → главная с пометкой; сюда попадает только вошедший (демо redirectFor увёл на #/demo).
     case "board": {
       const pool = poolOf(route.pool);
       if (!pool) return <HomePage pools={homePools} demo={demo} notice={t("Направления «{pool}» нет", { pool: route.pool })} onChanged={reloadPools} />;
