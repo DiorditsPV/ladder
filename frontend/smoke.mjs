@@ -1,5 +1,5 @@
 // Headless smoke-тест реального рантайма: демо без входа (стартовый экран, демо-доска, чек-лист
-// в браузере, EN-перевод), вход, доска, карточка → drawer, чек-лист, банк, аккаунты («Люди», viewer).
+// в браузере, EN-перевод), вход, доска, карточка (по центру / справа), чек-лист, банк, аккаунты («Люди», viewer).
 // Запуск: node smoke.mjs   (сервер должен слушать http://localhost:8000; свежая БД — см. CLAUDE.md)
 import { chromium } from "playwright";
 
@@ -292,14 +292,22 @@ const box = await page.locator(".qnode").first().boundingBox();
 if (!box || box.y < 0 || box.x < 0) fail(`first node off-screen: ${JSON.stringify(box)}`);
 console.log(`OK: first node in viewport at (${Math.round(box.x)}, ${Math.round(box.y)})`);
 
-// 3. Клик по ноде с УСЛОВНЫМ ребром (sql-01 → conditional → sql-02) открывает drawer.
+// 3. Клик по карточке открывает её — по умолчанию по центру доски (режим center). Ответ там скрыт
+//    до «Показать ответ»: раскрываем и читаем тело целиком, как раньше из панели.
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
 await page.waitForSelector(".drawer", { timeout: 5000 });
+if ((await page.locator(".drawer.drawer--center").count()) !== 1) fail("card must open in the center by default");
+await page.locator(".drawer__reveal").click();
+await page.waitForSelector(".drawer__answer", { timeout: 3000 });
 const drawerText = await page.locator(".drawer__body").innerText();
 if (drawerText.length < 50) fail("drawer body too short");
 console.log("OK: drawer opened with content");
 
-// 3b. Клик задаёт «текущую карточку» → появляется HUD.
+// 3b. Клик задаёт «текущую карточку». Пока карточка открыта по центру, HUD скрыт (заголовок и статусы —
+//     в самой карточке); Esc закрывает карточку, курсор остаётся — HUD показывает текущий вопрос.
+if ((await page.locator(".hud").count()) !== 0) fail("HUD must be hidden while the center card is open");
+await page.keyboard.press("Escape");
+await page.waitForSelector(".drawer", { state: "detached", timeout: 3000 });
 await page.waitForSelector(".hud", { timeout: 3000 });
 const hudTitle = await page.locator(".hud__title").innerText();
 if (!hudTitle.includes("ROW_NUMBER")) fail(`HUD shows wrong question: ${hudTitle}`);
@@ -342,7 +350,10 @@ await page.locator(".fp__chip", { hasText: "вопрос" }).click(); // вер�
 console.log(`OK: kind filter dims ${dimmedByKind} nodes`);
 
 // 6. «n» уводит к следующей неразобранной карточке (в том числе с последней в колонке).
+//    Клик открывает карточку по центру (HUD скрыт) — закрываем её Esc, курсор остаётся на карточке.
 await page.locator(".qnode__title", { hasText: "KubernetesExecutor" }).first().click();
+await page.waitForSelector(".drawer", { timeout: 3000 });
+await page.keyboard.press("Escape");
 await page.waitForSelector(".hud", { timeout: 3000 });
 const beforeNext = await page.locator(".hud__title").innerText();
 await page.keyboard.press("n");
@@ -390,8 +401,12 @@ console.log(`OK: theme toggles in the header (${before} → ${after} → ${befor
 //  идут до шага 21, который делает page.reload() и стирает накопленное состояние.
 
 // 9b. Таймер разбора: по умолчанию скрыт (topbar-settings), включается тумблером в ⚙ — и тикает.
-await page.keyboard.press("Escape"); // закрыть drawer, если открыт с предыдущих шагов
-await page.waitForTimeout(150);
+// Закрыть карточку, если открыта с предыдущих шагов: Esc без открытой карточки снял бы текущую, а с ней и HUD.
+if ((await page.locator(".drawer").count()) > 0) {
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".drawer", { state: "detached", timeout: 3000 });
+}
+await page.waitForSelector(".hud", { timeout: 3000 }); // таймер живёт в HUD текущей карточки
 if ((await page.locator(".hud__timer").count()) !== 0) fail("HUD timer must be hidden by default");
 await toggleSetting("Таймер");
 await page.waitForSelector(".hud__timer", { timeout: 3000 });
@@ -501,6 +516,121 @@ if (!(await page.locator(".moremenu .bankLink").getAttribute("href"))?.startsWit
 await page.keyboard.press("Escape");
 await page.waitForSelector(".moremenu", { state: "detached", timeout: 3000 });
 console.log(`OK: board toolbar (${topRows} row, back link, pool label, filters/theme/•••)`);
+
+// 22. Карточка вопроса — два режима (решение владельца 2026-09-11). По умолчанию — по центру доски:
+//     уже половины экрана, доска вокруг видна и кликается (клик по другой карточке переключает её),
+//     ответ скрыт до «Показать ответ» / пробела и снова прячется на соседней карточке, ‹ › листают матрицу.
+//     «Справа» — панель как раньше, ответ виден сразу; ширина тянется ручкой на левом краю и переживает
+//     перезагрузку, двойной клик — ширина по умолчанию. Выбор режима — ещё и в ⚙ «Карточка вопроса».
+await page.reload({ waitUntil: "networkidle" }); // чистый старт: карточка закрыта, вьюпорт по умолчанию
+await page.waitForSelector(".qnode", { timeout: 10000 });
+await closeFiltersIfOpen();
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+const centerCard = page.locator(".drawer.drawer--center");
+await centerCard.waitFor({ timeout: 3000 });
+const vp = page.viewportSize();
+const cardBox = await centerCard.boundingBox();
+if (!(cardBox.width < vp.width / 2)) fail(`center card must be narrower than half the screen: ${Math.round(cardBox.width)} of ${vp.width}`);
+if ((await page.locator(".hud").count()) !== 0) fail("HUD must be hidden while the center card is open");
+// Карточки доски вне центральной: целиком на канве, не погашены и не перекрыты (elementFromPoint
+// в их центре попадает в саму карточку — значит, видны и кликабельны).
+const around = await page.evaluate(() => {
+  const card = document.querySelector(".drawer--center").getBoundingClientRect();
+  const pane = document.querySelector(".react-flow").getBoundingClientRect();
+  const hits = [];
+  for (const el of document.querySelectorAll(".react-flow__node-question")) {
+    if (el.querySelector(".qnode--dimmed")) continue;
+    const r = el.getBoundingClientRect();
+    const inPane = r.left >= pane.left && r.right <= pane.right && r.top >= pane.top && r.bottom <= pane.bottom;
+    const overlaps = !(r.right <= card.left || r.left >= card.right || r.bottom <= card.top || r.top >= card.bottom);
+    if (!inPane || overlaps) continue;
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    if (!el.contains(document.elementFromPoint(x, y))) continue;
+    hits.push({ x, y, title: el.querySelector(".qnode__title")?.textContent?.trim() ?? "" });
+  }
+  return hits;
+});
+if (around.length < 3) fail(`board cards around the center card are not visible (${around.length})`);
+console.log(`OK: center card ${Math.round(cardBox.width)}px of ${vp.width} (< half), ${around.length} board cards visible around it, HUD hidden`);
+const openTitle = await page.locator(".drawer__title").innerText();
+const other = around.find((o) => o.title && o.title !== openTitle);
+if (!other) fail("no other board card to click around the center card");
+await page.mouse.click(other.x, other.y);
+await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent === t, other.title, { timeout: 3000 })
+  .catch(() => fail(`click on a board card did not switch the center card to «${other.title}»`));
+console.log(`OK: board stays clickable — «${other.title}» replaced «${openTitle}» in the center card`);
+// «Показать ответ»: до нажатия ответа нет, после — есть, кнопка уходит.
+if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden until revealed");
+await page.locator(".drawer__reveal").click();
+await page.waitForSelector(".drawer__answer", { timeout: 3000 });
+if ((await page.locator(".drawer__reveal").count()) !== 0) fail("reveal button must go away once the answer is shown");
+// › — соседняя карточка по матрице, ответ снова скрыт; пробел раскрывает его (и не жмёт кнопку в фокусе);
+// ‹ — обратно, ответ опять скрыт.
+const t1 = await page.locator(".drawer__title").innerText();
+await page.locator(".drawer__next").click();
+await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent !== t, t1, { timeout: 3000 })
+  .catch(() => fail("› did not switch the card"));
+const t2 = await page.locator(".drawer__title").innerText();
+if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden again on the next card");
+await page.keyboard.press(" ");
+await page.waitForSelector(".drawer__answer", { timeout: 3000 }).catch(() => fail("Space did not reveal the answer"));
+if ((await page.locator(".drawer__title").innerText()) !== t2) fail("Space must reveal the answer, not switch the card");
+await page.locator(".drawer__prev").click();
+await page.waitForFunction((t) => document.querySelector(".drawer__title")?.textContent === t, t1, { timeout: 3000 })
+  .catch(() => fail("‹ did not return to the previous card"));
+if ((await page.locator(".drawer__answer").count()) !== 0) fail("answer must be hidden after ‹ as well");
+console.log(`OK: «Показать ответ» and Space reveal the answer; › / ‹ switch the card («${t1}» → «${t2}» → back)`);
+// «Справа»: панель как раньше — ответ сразу, без «Показать ответ» и ‹ ›; режим запомнен, ⚙ его показывает.
+await page.locator(".drawer__mode").click();
+const sideCard = page.locator(".drawer.drawer--side");
+await sideCard.waitFor({ timeout: 3000 });
+if ((await page.locator(".drawer__answer").count()) !== 1) fail("side: the answer must be visible right away");
+if ((await page.locator(".drawer__reveal, .drawer__prev, .drawer__next").count()) !== 0) fail("side: no reveal / ‹ › in the side panel");
+if ((await page.evaluate(() => localStorage.getItem("ladder.cardMode"))) !== "side") fail("card mode was not stored");
+await page.waitForSelector(".hud", { timeout: 3000 }); // справа HUD — как раньше
+await openSettings();
+if ((await page.locator('.setdrawer .cardmode__opt[data-mode="side"]').getAttribute("aria-checked")) !== "true") fail("⚙: «Справа» is not checked");
+await page.keyboard.press("Escape");
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+console.log("OK: «Справа» — side panel with the answer shown, mode stored, ⚙ reflects it");
+// Ручка на левом краю: тянем влево на 240px → панель шире на 240px, ширина в localStorage и после
+// перезагрузки та же; двойной клик по ручке — ширина по умолчанию (460), сохранённое значение убрано.
+const w0 = Math.round((await sideCard.boundingBox()).width);
+if (Math.abs(w0 - 460) > 2) fail(`side panel default width must be 460, got ${w0}`);
+const handleBox = await page.locator(".drawer__resize").boundingBox();
+const gx = handleBox.x + handleBox.width / 2;
+const gy = handleBox.y + handleBox.height / 2;
+await page.mouse.move(gx, gy);
+await page.mouse.down();
+await page.mouse.move(gx - 120, gy, { steps: 6 });
+await page.mouse.move(gx - 240, gy, { steps: 6 });
+await page.mouse.up();
+const w1 = Math.round((await sideCard.boundingBox()).width);
+if (Math.abs(w1 - (w0 + 240)) > 3) fail(`dragging the handle did not widen the panel: ${w0} → ${w1}`);
+const storedW = Number(await page.evaluate(() => localStorage.getItem("ladder.drawerWidth")));
+if (Math.abs(storedW - w1) > 1) fail(`panel width not stored: ${storedW} vs ${w1}`);
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector(".qnode", { timeout: 10000 });
+await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await sideCard.waitFor({ timeout: 3000 });
+const w2 = Math.round((await sideCard.boundingBox()).width);
+if (Math.abs(w2 - w1) > 1) fail(`panel width did not survive reload: ${w1} → ${w2}`);
+await page.locator(".drawer__resize").dblclick();
+await page.waitForFunction(() => Math.round(document.querySelector(".drawer--side")?.getBoundingClientRect().width ?? 0) === 460, null, { timeout: 3000 })
+  .catch(() => fail("double click on the handle did not restore the default width"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.drawerWidth"))) !== null) fail("default width must drop the stored value");
+console.log(`OK: side panel handle — ${w0} → ${w1}px, same after reload, double click → 460`);
+// ⚙ «По центру» возвращает режим по умолчанию — открытая карточка переезжает в центр; дальше smoke идёт в нём.
+await openSettings();
+await page.locator('.setdrawer .cardmode__opt[data-mode="center"]').click();
+await page.keyboard.press("Escape");
+await page.waitForSelector(".setdrawer", { state: "detached", timeout: 3000 });
+await page.waitForSelector(".drawer.drawer--center", { timeout: 3000 }).catch(() => fail("⚙ «По центру» did not move the open card to the center"));
+if ((await page.evaluate(() => localStorage.getItem("ladder.cardMode"))) !== "center") fail("⚙: center mode was not stored");
+await page.keyboard.press("Escape"); // закрыть карточку
+await page.waitForSelector(".drawer", { state: "detached", timeout: 3000 });
+console.log("OK: ⚙ «Карточка вопроса» switches the open card back to the center");
 
 // Работа с банком — страница #/bank/<pool> (pools-main-menu).
 await page.goto(URL + "#/bank/data-engineer", { waitUntil: "load" });
@@ -616,6 +746,9 @@ await page.waitForSelector(".qnode", { timeout: 10000 });
 await page.keyboard.press("Escape"); // закрыть drawer
 await closeFiltersIfOpen();
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+// Карточка открылась по центру — HUD на это время скрыт; Esc закрывает её, курсор остаётся на ROW_NUMBER.
+await page.waitForSelector(".drawer", { timeout: 3000 });
+await page.keyboard.press("Escape");
 await page.waitForSelector(".hud__score .statusbtn--review", { timeout: 3000 });
 await page.locator(".hud__score .statusbtn--review").click(); // «повторить»
 await page.waitForSelector('.qnode__status[data-status="review"]', { timeout: 3000 });
@@ -630,6 +763,8 @@ console.log("OK: checklist status survives reload (review)");
 // снять статус обратно (повтор той же кнопки) — не портим финальное состояние стенда.
 await closeFiltersIfOpen();
 await page.locator(".qnode__title", { hasText: "ROW_NUMBER" }).first().click();
+await page.waitForSelector(".drawer", { timeout: 3000 });
+await page.keyboard.press("Escape"); // карточка по центру прячет HUD — закрываем её
 await page.waitForSelector(".hud__score .statusbtn--review", { timeout: 3000 });
 await page.locator(".hud__score .statusbtn--review").click();
 await rowNumberCard

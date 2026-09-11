@@ -3,6 +3,7 @@ import { useT } from "../i18n";
 import { href } from "../router";
 import { useSession } from "../session";
 import { ChangePasswordModal } from "./ChangePasswordModal";
+import type { CardMode } from "./DetailDrawer";
 
 // Боковая панель настроек (⚙ в шапке доски), выезжает слева — справа живут фильтры
 // и drawer вопроса. Всё, что настраивают редко — оформление, тема, холст, панели,
@@ -21,6 +22,8 @@ import { ChangePasswordModal } from "./ChangePasswordModal";
 export type DisplaySettings = {
   design: string;
   onSetDesign: (id: string) => void;
+  cardMode: CardMode;
+  onSetCardMode: (mode: CardMode) => void;
   bgDots: boolean;
   onToggleBgDots: () => void;
   guidesV: boolean;
@@ -106,6 +109,24 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
           <Chip on={s.bgDots} onClick={s.onToggleBgDots}>{t("Точки на фоне")}</Chip>
           <Chip on={s.guidesV} onClick={s.onToggleGuidesV} title={t("Границы блоков")}>{t("Вертикальные направляющие")}</Chip>
           <Chip on={s.guidesH} onClick={s.onToggleGuidesH} title={t("Ряды уровней направления")}>{t("Горизонтальные направляющие")}</Chip>
+        </div>
+      </div>
+
+      {/* Как показывать открытую карточку: по центру доски (по умолчанию) или панелью справа.
+          Тот же выбор — кнопкой в шапке самой карточки. */}
+      <div className="settings__group">
+        <div className="settings__title">{t("Карточка вопроса")}</div>
+        <div className="settings__chips" role="radiogroup" aria-label={t("Карточка вопроса")}>
+          <button className={`tb__toggle cardmode__opt ${s.cardMode === "center" ? "tb__toggle--on" : ""}`} data-mode="center"
+            onClick={() => s.onSetCardMode("center")} role="radio" aria-checked={s.cardMode === "center"}
+            title={t("Показывать карточку по центру доски")}>
+            {t("По центру")}
+          </button>
+          <button className={`tb__toggle cardmode__opt ${s.cardMode === "side" ? "tb__toggle--on" : ""}`} data-mode="side"
+            onClick={() => s.onSetCardMode("side")} role="radio" aria-checked={s.cardMode === "side"}
+            title={t("Показывать карточку в панели справа")}>
+            {t("Справа")}
+          </button>
         </div>
       </div>
 
