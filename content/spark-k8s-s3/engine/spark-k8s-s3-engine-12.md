@@ -1,22 +1,22 @@
 ---
 block: engine
-difficulty: config
+difficulty: practice
 id: spark-k8s-s3-engine-12
 kind: question
 subblock: streaming
 tags:
 - streaming
 - storage
-title: Kafka в Iceberg через availableNow
+title: Kafka в Iceberg по расписанию
 topic: kafka-to-iceberg
 weight: 1
 ---
 
 ## Вопрос
-Airflow раз в час запускает PySpark-джоб, который должен дочитать из Kafka всё накопившееся в топике `events`, дописать это в Iceberg-таблицу и завершиться. Что пропишешь в readStream и writeStream?
+Как сделать джоб, который по расписанию дочитывает всё накопившееся в топике Kafka, пишет это в Iceberg и завершается?
 
 ## Ответ
-Нужен стриминговый запрос с `availableNow`: он фиксирует оффсеты на старте, дочитывает их микробатчами и останавливается; следующий запуск продолжит с места из чекпоинта.
+Нужен стриминговый запрос с триггером `availableNow`: он фиксирует, сколько данных накопилось на момент старта, дочитывает это микробатчами и сам останавливается. Следующий запуск по расписанию продолжит с места, записанного в чекпоинте.
 
 ```python
 src = (spark.readStream.format("kafka")
@@ -25,13 +25,13 @@ src = (spark.readStream.format("kafka")
        .option("startingOffsets", "earliest")
        .option("maxOffsetsPerTrigger", 5000000).load())
 q = (src.selectExpr("CAST(value AS STRING) AS payload", "timestamp")
-     .writeStream.format("iceberg").outputMode("append").trigger(availableNow=True)
+     .writeStream.format("iceberg").trigger(availableNow=True)
      .option("checkpointLocation", "s3a://lake/checkpoints/events_raw")
      .toTable("lake.db.events_raw"))
 q.awaitTermination()
 ```
-- `startingOffsets` действует только при первом запуске, дальше позиция берётся из чекпоинта. Оффсеты в consumer group Kafka Spark не коммитит — lag группы отставание джоба не покажет.
-- `maxOffsetsPerTrigger` режет догоняющий объём на микробатчи. `availableNow` лимит учитывает, устаревший `once` — нет.
-- `checkpointLocation` — свой у каждого запроса и постоянный между запусками.
-- `failOnDataLoss` (по умолчанию true) уронит запуск, если retention Kafka удалил непрочитанные оффсеты, — не выключай ради зелёного статуса.
-- Партиционированная таблица без sort order: fanout в Iceberg 1.4+ уже по умолчанию, зато `hash`-распределение добавляет в микробатч shuffle (в 3.5 без AQE — 200 тасков); убрать его — `.option("distribution-mode", "none")`, ценой большего числа файлов.
+- `startingOffsets` действует только при самом первом запуске, дальше позиция берётся из чекпоинта.
+- `maxOffsetsPerTrigger` делит большой накопившийся объём на несколько микробатчей; `availableNow` этот лимит учитывает, устаревший триггер `once` — нет.
+- `checkpointLocation` — свой у каждого запроса и постоянный между запусками: удалишь — джоб начнёт заново.
+- Оффсеты в consumer group Kafka Spark не коммитит, поэтому lag группы отставание джоба не покажет — смотри прогресс запроса.
+- `failOnDataLoss` (по умолчанию true) уронит запуск, если Kafka уже удалила непрочитанные сообщения по retention. Выключать его ради зелёного статуса — значит молча терять данные.

@@ -8,7 +8,7 @@ blocks:
 - id: engine
   label: Движок Spark
   color: '#2563eb'
-  weight: 25
+  weight: 29
   subblocks:
   - id: execution
     label: Исполнение
@@ -21,7 +21,7 @@ blocks:
 - id: sql
   label: Spark SQL
   color: '#16a34a'
-  weight: 25
+  weight: 29
   subblocks:
   - id: plans
     label: Планы и AQE
@@ -34,7 +34,7 @@ blocks:
 - id: storage
   label: S3 и таблицы
   color: '#d97706'
-  weight: 25
+  weight: 21
   subblocks:
   - id: s3a
     label: S3A
@@ -45,7 +45,7 @@ blocks:
 - id: k8s
   label: Запуск в k8s
   color: '#9333ea'
-  weight: 25
+  weight: 21
   subblocks:
   - id: submit
     label: spark-submit и Operator
@@ -54,13 +54,11 @@ blocks:
   - id: airflow
     label: Airflow
 levels:
-- id: concepts
-  label: Понятия
-- id: config
-  label: Настройка
-- id: debug
-  label: Диагностика
-- id: internals
-  label: Внутренности
-- id: design
-  label: Проектирование
+- id: basics
+  label: Основы
+- id: practice
+  label: Практика
+- id: advanced
+  label: Продвинутый
+- id: expert
+  label: Эксперт
