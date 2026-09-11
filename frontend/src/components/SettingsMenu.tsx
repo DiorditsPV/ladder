@@ -95,7 +95,7 @@ export function SettingsMenu({ settings: s, onClose }: { settings: DisplaySettin
           {DESIGNS.map(([id, label]) => (
             <button key={id} className={`tb__toggle design__opt ${s.design === id ? "tb__toggle--on" : ""}`} data-design={id}
               onClick={() => s.onSetDesign(id)} role="radio" aria-checked={s.design === id}>
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>

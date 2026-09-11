@@ -150,6 +150,8 @@ export const EN: Record<string, string> = {
   "Оформление": "Look",
   "Оформление доски": "Board look",
   "Тёмная тема": "Dark theme",
+  "Брутализм в цвете": "Colour brutalism",
+  "Изыскания": "Survey",
   "Светлая тема": "Light theme",
   "Холст": "Canvas",
   "Отображение холста": "Canvas display",

@@ -536,16 +536,27 @@ export default function BoardPage({ pool }: { pool: PoolConfig }) {
       const canvas = canvasRef.current;
       if (!pos || !instance.current || !canvas) return;
       let shift = 0;
-      const win = besideCard ? canvas.parentElement?.querySelector(".drawer--center") : null;
-      if (win) {
+      if (besideCard) {
+        // Карточка встаёт в самую широкую свободную полосу канвы: препятствия — окно карточки и окно
+        // фильтров, если они пересекают ряд, где окажется карточка (по вертикали она в центре канвы).
         const c = canvas.getBoundingClientRect();
-        const w = win.getBoundingClientRect();
-        const left = Math.max(0, w.left - c.left);
-        const right = Math.max(0, c.right - w.right);
-        if (Math.max(left, right) >= CARD_W + 16) {
-          const target = left >= right ? left / 2 : c.width - right / 2; // центр свободной полосы, от левого края канвы
-          shift = c.width / 2 - target; // зум 1: пиксель экрана = единица доски
+        const bandTop = c.top + c.height / 2 - CARD_H / 2;
+        const bandBottom = bandTop + CARD_H;
+        const scope = canvas.parentElement ?? document;
+        let free: [number, number][] = [[0, c.width]];
+        for (const el of scope.querySelectorAll(".drawer--center, .filterpanel")) {
+          const r = el.getBoundingClientRect();
+          if (r.bottom <= bandTop || r.top >= bandBottom) continue;
+          const a = r.left - c.left;
+          const b = r.right - c.left;
+          free = free.flatMap(([x0, x1]): [number, number][] =>
+            b <= x0 || a >= x1
+              ? [[x0, x1]]
+              : ([[x0, Math.max(x0, a)], [Math.min(x1, b), x1]] as [number, number][]).filter(([p0, p1]) => p1 - p0 > 0),
+          );
         }
+        const best = free.reduce((m, iv) => (iv[1] - iv[0] > m[1] - m[0] ? iv : m), [0, 0] as [number, number]);
+        if (best[1] - best[0] >= CARD_W + 16) shift = c.width / 2 - (best[0] + best[1]) / 2; // зум 1: пиксель = единица доски
       }
       instance.current.setCenter(pos.x + CARD_W / 2 + shift, pos.y + CARD_H / 2, { zoom: 1, duration: 400 });
     },
