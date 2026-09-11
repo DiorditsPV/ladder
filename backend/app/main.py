@@ -26,6 +26,7 @@ from .auth import (
     COOKIE_NAME,
     current_user,
     hash_password,
+    optional_user,
     require_member,
     require_owner,
     verify_password,
@@ -262,14 +263,13 @@ def _pool_or_404(request: Request, pool_id: Optional[str]) -> PoolCfg:
     return pools[pid]
 
 
-def _pool_out(request: Request, p: PoolCfg, user: dict) -> dict:
-    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа юзера."""
+def _pool_out(request: Request, p: PoolCfg, user: Optional[dict]) -> dict:
+    """Форма направления для API: конфиг + счётчик вопросов + сводка чек-листа (только у вошедшего)."""
     tenant = resolve_tenant(request)
-    return {
-        **p.to_dict(),
-        "counts": {"nodes": db.count_nodes(tenant, pool=p.id)},
-        "progress": db.progress_summary(tenant, user["id"], p.id),
-    }
+    out = {**p.to_dict(), "counts": {"nodes": db.count_nodes(tenant, pool=p.id)}}
+    if user is not None:
+        out["progress"] = db.progress_summary(tenant, user["id"], p.id)
+    return out
 
 
 def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> List[Node]:
@@ -286,8 +286,11 @@ def _db_nodes(request: Request, pool: PoolCfg, include_hidden: bool = False) -> 
 
 
 @app.get("/api/pools")
-def get_pools(request: Request, _user: dict = Depends(current_user)) -> list:
-    return [_pool_out(request, p, _user) for p in _pools(request).values()]
+def get_pools(request: Request, user: Optional[dict] = Depends(optional_user)) -> list:
+    pools = _pools(request).values()
+    if user is None:  # демо: тенант default, только направления с demo=true
+        return [_pool_out(request, p, None) for p in pools if p.demo]
+    return [_pool_out(request, p, user) for p in pools]
 
 
 @app.post("/api/pools")
@@ -395,9 +398,15 @@ def get_graph(
     request: Request,
     pool: Optional[str] = None,
     include_hidden: bool = False,
-    _user: dict = Depends(current_user),
+    user: Optional[dict] = Depends(optional_user),
 ) -> GraphResponse:
     # Вопросы читаются из БД (а не с диска) — рантайм-правки переживают деплой.
+    if user is None:
+        # Демо: без сессии — только направление с demo=true, без скрытых карточек; иначе (и без ?pool) 401.
+        demo_pool = _pools(request).get(pool or "")
+        if demo_pool is None or not demo_pool.demo:
+            raise HTTPException(status_code=401, detail="not authenticated")
+        return GraphResponse(nodes=_db_nodes(request, demo_pool), errors=[])
     return GraphResponse(
         nodes=_db_nodes(request, _pool_or_404(request, pool), include_hidden=include_hidden), errors=[]
     )

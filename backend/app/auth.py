@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request
@@ -61,6 +61,15 @@ def current_user(request: Request) -> dict:
     request.state.tenant = user["tenant_id"]
     request.state.user = user
     return user
+
+
+def optional_user(request: Request) -> Optional[dict]:
+    """Как current_user, но без сессии — None вместо 401. Только для ручек демо-чтения
+    (GET /api/pools, GET /api/graph; spec 2026-09-11)."""
+    try:
+        return current_user(request)
+    except HTTPException:
+        return None
 
 
 def require_role(min_role: str) -> Callable[..., dict]:
