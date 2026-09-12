@@ -68,6 +68,15 @@ def test_compare_fails_only_when_cards_disappear(tmp_path):
     assert "one: было 2 карточек, стало 1" in lost.stderr and "two: было 1 карточек, стало 0" in lost.stderr
 
 
+def test_rotation_touches_only_its_own_label(tmp_path):
+    """Ротация метки не должна съедать снимки другой метки: 'deploy' и 'pre-deploy' — разные серии."""
+    db = _db(tmp_path)
+    pre = Path(_run(tmp_path, db, "pre-deploy", "--keep", "10").stdout.strip())
+    r = _run(tmp_path, db, "deploy", "--keep", "1")
+    assert r.returncode == 0, r.stderr
+    assert pre.exists(), "снимок pre-deploy удалён ротацией метки deploy"
+
+
 def test_label_is_required(tmp_path):
     r = _run(tmp_path, _db(tmp_path))
     assert r.returncode != 0 and "метка" in r.stderr

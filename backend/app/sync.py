@@ -82,11 +82,19 @@ def seed_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> None
         report["created"].append(pool.id)
     nodes, errors = load_pool_content(pool)
     report["errors"].extend({"file": e.file, "error": e.error} for e in errors)
+    # Засев не трогает конфиг направления, поэтому карточка из файла может не подходить живой структуре
+    # (колонку или уровень убрали в UI/MCP — вопросы там удаляются насовсем, и id снова свободен).
+    # Такие карточки не заносим: иначе на доске появился бы фантомный столбец/ряд, которого нет в конфиге.
+    blocks = {b["id"] for b in (existing["blocks"] or [])} if existing is not None else None
+    levels = {lv["id"] for lv in (existing["levels"] or [])} if existing is not None else None
     taken = {n["id"] for n in db.list_nodes(tenant_id)}
     added = 0
     for node in nodes:
         if node.id in taken:
             report["skipped"] += 1
+            continue
+        if (blocks and node.block not in blocks) or (levels and node.difficulty not in levels):
+            report["mismatched"] += 1
             continue
         db.upsert_node(tenant_id, node.model_dump(), source="seed")
         taken.add(node.id)
@@ -117,10 +125,12 @@ def update_pool(db: Database, tenant_id: str, pool: PoolCfg, report: Dict) -> No
     # Два множества user-нод: user_ids_all — вся защита от upsert (включая tombstone —
     # скрытую, но всё ещё source='user'); user_visible — только видимые, по ним репортим
     # конфликт id (иначе tombstone сыпал бы шумом в conflicts на каждый sync).
-    user_ids_all = set(db.list_node_ids(tenant_id, pool.id, source="user"))
-    user_visible = set(db.list_node_ids(tenant_id, pool.id, source="user", hidden=False))
-    hidden_ids = set(db.list_node_ids(tenant_id, pool.id, source="seed", hidden=True))
+    # Считаем их по всему тенанту, а не по этому направлению: id уникален в тенанте, и правленная
+    # карточка могла переехать в другое направление — иначе файл перезаписал бы её и утащил обратно.
     before = {row["id"]: row for row in db.list_nodes(tenant_id)}
+    user_ids_all = {nid for nid, row in before.items() if row["source"] == "user"}
+    user_visible = {nid for nid in user_ids_all if not before[nid]["hidden"]}
+    hidden_ids = set(db.list_node_ids(tenant_id, pool.id, source="seed", hidden=True))
     file_ids: List[str] = []
     for node in nodes:
         if node.id in user_ids_all:
@@ -175,6 +185,7 @@ def sync_pools(
         "nodes_upserted": 0,
         "nodes_changed": 0,  # новые + те, чьё содержимое upsert действительно меняет
         "skipped": 0,
+        "mismatched": 0,  # засев: карточка из файла не подходит живой структуре направления
         "hidden": [],
         "conflicts": [],
         "errors": [],

@@ -24,14 +24,27 @@ SNAP=$("${SSH[@]}" "$HOST" /usr/local/bin/ladder-backup pull)
 NAME=$(basename "$SNAP")
 "${SSH[@]}" "$HOST" cat "$SNAP" > "$DEST/$NAME"
 chmod 600 "$DEST/$NAME"
-python3 -c '
+# Оборванная передача даёт пустой файл, который проходит integrity_check как «ok» — проверяем и содержимое,
+# а негодный снимок удаляем, чтобы он не оказался «самым свежим» при восстановлении.
+if ! python3 -c '
 import sqlite3, sys
-con = sqlite3.connect(sys.argv[1])
+path = sys.argv[1]
+con = sqlite3.connect(path)
 status = con.execute("PRAGMA integrity_check").fetchone()[0]
+if status != "ok":
+    print("✗ integrity_check:", status); sys.exit(1)
+tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = \"table\"")}
+if not {"nodes", "pools"} <= tables:
+    print("✗ в снимке нет таблиц nodes/pools — передача оборвалась"); sys.exit(1)
 rows = con.execute("SELECT pool, COUNT(*) FROM nodes WHERE hidden = 0 GROUP BY pool ORDER BY pool").fetchall()
+if not rows:
+    print("✗ в снимке нет ни одной карточки"); sys.exit(1)
 print("integrity:", status); print("карточки:", ", ".join(f"{p} {n}" for p, n in rows))
-sys.exit(0 if status == "ok" else 1)
-' "$DEST/$NAME"
+' "$DEST/$NAME"; then
+  rm -f "$DEST/$NAME"
+  echo "✗ снимок не забрался целиком — файл удалён, повтори" >&2
+  exit 1
+fi
 echo "✓ снимок: $DEST/$NAME"
 
 if [ -n "${LADDER_EMAIL:-}" ] && [ -n "${LADDER_PASSWORD:-}" ]; then

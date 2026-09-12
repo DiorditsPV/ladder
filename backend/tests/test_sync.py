@@ -65,6 +65,34 @@ def test_seed_never_overwrites_or_hides_existing(tmp_path):
     assert db.get_node("t", "demo-03")["source"] == "seed"
 
 
+def test_update_keeps_user_card_moved_to_another_pool(tmp_path):
+    """id уникален в тенанте: правленная карточка, переехавшая в другое направление, файлом не перезаписывается."""
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    sync_pools(db, "t", root)
+    db.upsert_node("t", {**db.get_node("t", "demo-01"), "pool": "mine", "question": "МОЯ КАРТОЧКА"}, source="user")
+    rep = sync_pools(db, "t", root, update=True, only="demo")
+    assert rep["conflicts"] == ["demo-01"]
+    node = db.get_node("t", "demo-01")
+    assert node["pool"] == "mine" and node["question"] == "МОЯ КАРТОЧКА" and node["source"] == "user"
+
+
+def test_seed_does_not_add_cards_outside_live_structure(tmp_path):
+    """Уровень (или колонку) убрали из направления — вопросы там удаляются насовсем; засев не возвращает их
+    фантомным рядом, которого нет в конфиге."""
+    db = Database(tmp_path / "t.db")
+    db.ensure_tenant("t")
+    root = _content(tmp_path)
+    sync_pools(db, "t", root)
+    db.delete_node("t", "demo-02")
+    cfg = db.get_pool("t", "demo")
+    db.set_pool_config("t", "demo", {**cfg, "levels": [{"id": "intro", "label": "I"}]})
+    rep = sync_pools(db, "t", root)
+    assert rep["mismatched"] == 1 and rep["nodes_upserted"] == 0
+    assert db.get_node("t", "demo-02") is None
+
+
 def test_seed_skips_ids_taken_in_other_pools(tmp_path):
     """id карточки уникален в тенанте: засев не переносит чужую карточку в своё направление."""
     db = Database(tmp_path / "t.db")
