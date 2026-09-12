@@ -28,9 +28,11 @@ def main() -> None:
         r = http.post("/api/auth/login", json={"email": email, "password": password})
         if r.status_code != 200:
             raise SystemExit(f"login failed: {r.status_code}")
+        # manifest пишется всегда, в том числе при обрыве: каталог выгрузки без него неотличим от полного
+        manifest = {"url": url, "complete": False, "expected": None, "pools": []}
         try:
             pools = http.get("/api/pools").raise_for_status().json()
-            manifest = {"url": url, "pools": []}
+            manifest["expected"] = len(pools)
             for pool in pools:
                 nodes = http.get("/api/nodes", params={"pool": pool["id"], "include_hidden": "true"}).raise_for_status().json()
                 (out / f"{pool['id']}.json").write_text(
@@ -39,8 +41,12 @@ def main() -> None:
                 hidden = sum(1 for n in nodes if n.get("hidden"))
                 manifest["pools"].append({"id": pool["id"], "nodes": len(nodes), "hidden": hidden})
                 print(f"{pool['id']}: {len(nodes)} cards ({hidden} hidden)")
-            (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+            manifest["complete"] = len(manifest["pools"]) == manifest["expected"]
+        except Exception as exc:
+            manifest["error"] = f"{type(exc).__name__}: {exc}"
+            raise
         finally:
+            (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
             http.post("/api/auth/logout")
     print(f"exported to {out}")
 

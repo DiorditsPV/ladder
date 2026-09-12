@@ -83,7 +83,8 @@ export function HomePage({
         ? ". " + t("Ошибок импорта: {n}; первая — {file}: {error}", { n: preview.errors.length, file: preview.errors[0].file, error: preview.errors[0].error })
         : "";
       const cfg = preview.config_changed.length > 0;
-      if (!cfg && !preview.nodes_changed && !preview.hidden.length && !preview.errors.length) {
+      // конфликты тоже показываем: карточки правили в UI/MCP, файлы их не перезапишут — «нечего обновлять» соврало бы
+      if (!cfg && !preview.nodes_changed && !preview.hidden.length && !preview.errors.length && !preview.conflicts.length) {
         setNote(t("«{label}» совпадает с файлами — обновлять нечего", { label: p.label }));
         return;
       }
