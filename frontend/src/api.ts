@@ -95,6 +95,7 @@ export interface SyncReport {
   nodes_upserted: number;
   nodes_changed: number;
   skipped: number;
+  mismatched: number; // засев: карточка из файла не подходит живой структуре направления
   hidden: string[];
   conflicts: string[];
   errors: { file: string; error: string }[];

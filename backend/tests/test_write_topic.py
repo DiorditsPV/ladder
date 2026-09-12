@@ -124,6 +124,31 @@ def test_upload_extends_structure_of_existing_direction():
         http.delete(f"/api/pools/{pid}")
 
 
+def test_upload_overwrite_does_not_steal_a_card_of_another_direction():
+    """409 = id занят в тенанте, а не в этом направлении: чужую карточку --overwrite не перезаписывает и не утаскивает."""
+    import uuid
+
+    wt = _module()
+    mine, other = f"wt-{uuid.uuid4().hex[:6]}", f"wt-{uuid.uuid4().hex[:6]}"
+    spec = _spec([_card(1)])
+    spec["pool"]["id"] = mine
+    spec["cards"][0]["id"] = f"{mine}-ops-01"
+    spec["cards"][0]["answer"] = _answer(1)
+    http = _owner_client()
+    try:
+        assert http.post("/api/pools", json={"id": other, "label": "Чужое",
+                                             "blocks": [{"label": "Ops", "color": "#2563eb"}]}).status_code == 200
+        assert http.post("/api/nodes", json={"pool": other, "id": f"{mine}-ops-01", "block": "ops", "topic": "t",
+                                             "difficulty": "base", "question": "ЧУЖОЙ ВОПРОС"}).status_code == 200
+        rep = wt.upload(spec, http, overwrite=True)
+        assert rep["updated"] == 0 and rep["errors"] and other in rep["errors"][0]["error"]
+        node = http.get(f"/api/nodes/{mine}-ops-01").json()
+        assert node["pool"] == other and node["question"] == "ЧУЖОЙ ВОПРОС"
+    finally:
+        http.delete(f"/api/pools/{other}")
+        http.delete(f"/api/pools/{mine}")
+
+
 def test_mode_is_required(tmp_path):
     f = tmp_path / "topic.json"
     f.write_text(json.dumps(_spec([_card(1)]), ensure_ascii=False), encoding="utf-8")
