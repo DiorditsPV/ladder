@@ -50,6 +50,13 @@ def snapshot(label: str, keep: int) -> Path:
     out = sqlite3.connect(dst)
     try:
         src.backup(out)
+    except BaseException:
+        # оборвалось (база занята, кончилось место) — недоделанный файл не оставляем: он самый свежий
+        # по имени, и восстановление по «последнему снимку» подняло бы обрезанную базу
+        out.close()
+        src.close()
+        dst.unlink(missing_ok=True)
+        raise
     finally:
         out.close()
         src.close()
@@ -62,7 +69,9 @@ def snapshot(label: str, keep: int) -> Path:
         dst.unlink()
         raise SystemExit(f"✗ снимок не прошёл integrity_check: {status}")
     os.chmod(dst, 0o600)
-    for old in sorted(BACKUP_DIR.glob(f"ladder-*-{label}.db"))[:-keep]:
+    # Ротация — только снимки ровно этой метки: glob 'ladder-*-deploy.db' съел бы и 'pre-deploy'.
+    mine = re.compile(rf"^ladder-\d{{8}}-\d{{6}}-{re.escape(label)}\.db$")
+    for old in sorted(p for p in BACKUP_DIR.glob("ladder-*.db") if mine.match(p.name))[:-keep]:
         old.unlink()
     return dst
 

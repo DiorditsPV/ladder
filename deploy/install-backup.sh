@@ -21,6 +21,9 @@ systemctl daemon-reload
 systemctl enable --now ladder-backup.timer >/dev/null
 echo "→ ladder-backup, deploy-ladder.sh и таймер установлены; следующий запуск: $(systemctl show ladder-backup.timer -p NextElapseUSecRealtime --value 2>/dev/null || echo '?')"
 if [ -f /var/lib/ladder/ladder.db ]; then
-  echo "→ контрольный снимок: $(/usr/local/bin/ladder-backup manual)"
-  echo "→ карточки: $(/usr/local/bin/ladder-backup --counts)"
+  # присваивание, а не echo "$(…)": иначе падение снимка проглатывается и установка «успешна» без страховки
+  SNAP=$(/usr/local/bin/ladder-backup manual)
+  COUNTS=$(/usr/local/bin/ladder-backup --counts)
+  echo "→ контрольный снимок: $SNAP"
+  echo "→ карточки: $COUNTS"
 fi
