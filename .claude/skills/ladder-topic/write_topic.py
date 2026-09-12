@@ -260,8 +260,16 @@ def upload(spec: dict, http, *, overwrite: bool = False) -> dict:
         if r.status_code == 200:
             report["created"] += 1
         elif r.status_code == 409 and overwrite:
+            # 409 = id занят в тенанте, а не обязательно в этом направлении: чужую карточку не трогаем,
+            # иначе PUT с pool=<наш> перезаписал бы её и утащил к нам.
+            owner = http.get(f"/api/nodes/{c['id']}")
+            if owner.status_code == 200 and owner.json().get("pool") != pid:
+                report["errors"].append({"id": c["id"], "error": f"id занят карточкой направления {owner.json()['pool']}"})
+                continue
             update = {k: v for k, v in payload.items() if k != "id"}
             update.setdefault("subblock", "")  # в JSON под-колонки нет — снять и на сервере
+            update.setdefault("starterCode", "")  # как и поля задачи: карточка могла перестать быть task
+            update.setdefault("rubric", [])
             u = http.put(f"/api/nodes/{c['id']}", json=update)
             if u.status_code == 200:
                 report["updated"] += 1
